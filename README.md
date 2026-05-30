@@ -11,22 +11,21 @@
 *   **Material You Support**: Deep integration with Material 3 dynamic color schemes and themed icons.
 *   **Performance First**: Built with Jetpack Compose and optimized with Baseline Profiles for zero-lag interactions.
 
-## Technical Details
+## Project Status & Availability
 
+**Pxl Launcher Neo** is currently a closed-source project. While the source code remains private, we are committed to making the application accessible to the community.
+
+### How to Get the App
+*   **GitHub Releases**: APKs will be available in the [Releases](https://github.com/klarkengkoy/PxlLauncher-Neo-Showcase/releases) section of this showcase repository soon.
+*   **Play Store**: A Google Play Store link will be provided here once the app is published.
+
+## Technical Highlights
+
+Although the repository is private, the project is built using modern Android standards:
 *   **Language**: 100% Kotlin
 *   **UI Framework**: Jetpack Compose with Material 3
 *   **Architecture**: MVVM with Clean Architecture
-*   **Reactive Flow**: Kotlin Coroutines and StateFlow
-*   **Persistence**: Room Database for efficient app metadata and layout caching
-*   **Image Loading**: Coil for optimized icon and widget rendering
-
-## Development & Build
-
-To build the project locally, ensure you have the latest stable version of Android Studio.
-
-1. Clone the repository.
-2. Open the project in Android Studio.
-3. Sync Gradle and run the `:app` module.
+*   **Performance**: Optimized with Baseline Profiles for zero-lag interactions.
 
 ## Project Vision
 
