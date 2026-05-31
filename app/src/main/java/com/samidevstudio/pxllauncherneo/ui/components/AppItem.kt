@@ -9,11 +9,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -95,73 +97,79 @@ fun AppItem(
 
         Column(
             modifier = modifier
-                .fillMaxWidth()
                 .onGloballyPositioned { coords = it }
-                .combinedClickable(
-                    onClick = {
-                        val bundle = coords?.let {
-                            val pos = it.positionInWindow()
-                            ActivityOptions.makeScaleUpAnimation(
-                                view,
-                                pos.x.toInt(),
-                                pos.y.toInt(),
-                                it.size.width,
-                                it.size.height
-                            ).toBundle()
-                        }
-                        onClick(bundle)
-                    },
-                    onLongClick = { showMenu = true }
-                )
-                .padding(4.dp),
+                .wrapContentSize(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Box(modifier = sharedIconModifier) {
-                AppIcon(
-                    packageName = app.packageName,
-                    contentDescription = app.label,
-                    useMonochrome = useMonochrome,
-                    iconPackPackageName = iconPackPackageName
-                )
-                
-                // NOTIFICATION DOT
-                if (hasNotification) {
-                    val dotColor = MaterialTheme.colorScheme.primary
-                    val borderColor = if (sharedElementKeyPrefix != "drawer") Color.White else MaterialTheme.colorScheme.surface
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(2.dp)
-                            .size(10.dp)
-                            .background(dotColor, CircleShape)
-                            .padding(1.dp)
-                            .background(borderColor, CircleShape)
-                            .padding(1.dp)
-                            .background(dotColor, CircleShape)
+            Column(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .combinedClickable(
+                        onClick = {
+                            val bundle = coords?.let {
+                                val pos = it.positionInWindow()
+                                ActivityOptions.makeScaleUpAnimation(
+                                    view,
+                                    pos.x.toInt(),
+                                    pos.y.toInt(),
+                                    it.size.width,
+                                    it.size.height
+                                ).toBundle()
+                            }
+                            onClick(bundle)
+                        },
+                        onLongClick = { showMenu = true }
+                    )
+                    .padding(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(modifier = sharedIconModifier) {
+                    AppIcon(
+                        packageName = app.packageName,
+                        contentDescription = app.label,
+                        useMonochrome = useMonochrome,
+                        iconPackPackageName = iconPackPackageName
+                    )
+                    
+                    // NOTIFICATION DOT
+                    if (hasNotification) {
+                        val dotColor = MaterialTheme.colorScheme.primary
+                        val borderColor = if (sharedElementKeyPrefix != "drawer") Color.White else MaterialTheme.colorScheme.surface
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(2.dp)
+                                .size(10.dp)
+                                .background(dotColor, CircleShape)
+                                .padding(1.dp)
+                                .background(borderColor, CircleShape)
+                                .padding(1.dp)
+                                .background(dotColor, CircleShape)
+                        )
+                    }
+                    
+                    AppContextMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false },
+                        packageName = app.packageName,
+                        label = app.label,
+                        shortcuts = shortcuts,
+                        isHidden = isHidden,
+                        onShortcutClick = onShortcutClick,
+                        onHideToggle = onHideToggle
                     )
                 }
-                
-                AppContextMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false },
-                    packageName = app.packageName,
-                    label = app.label,
-                    shortcuts = shortcuts,
-                    isHidden = isHidden,
-                    onShortcutClick = onShortcutClick,
-                    onHideToggle = onHideToggle
-                )
-            }
-            if (showLabel) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = app.label,
-                    style = labelStyle,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = sharedLabelModifier
-                )
+                if (showLabel) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = app.label,
+                        style = labelStyle,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = sharedLabelModifier
+                    )
+                }
             }
         }
     }
@@ -207,79 +215,87 @@ fun SearchAppItem(
             modifier = modifier
                 .fillMaxWidth()
                 .onGloballyPositioned { coords = it }
-                .combinedClickable(
-                    onClick = {
-                        val bundle = coords?.let {
-                            val pos = it.positionInWindow()
-                            ActivityOptions.makeScaleUpAnimation(
-                                view,
-                                pos.x.toInt(),
-                                pos.y.toInt(),
-                                it.size.width,
-                                it.size.height
-                            ).toBundle()
-                        }
-                        onClick(bundle)
-                    },
-                    onLongClick = { showMenu = true }
-                )
-                .padding(vertical = 8.dp),
+                .wrapContentHeight(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier.sharedElement(
-                    rememberSharedContentState(key = "$sharedElementKeyPrefix-icon-${app.packageName}"),
-                    animatedVisibilityScope = animatedVisibilityScope,
-                    boundsTransform = boundsTransform
-                )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .combinedClickable(
+                        onClick = {
+                            val bundle = coords?.let {
+                                val pos = it.positionInWindow()
+                                ActivityOptions.makeScaleUpAnimation(
+                                    view,
+                                    pos.x.toInt(),
+                                    pos.y.toInt(),
+                                    it.size.width,
+                                    it.size.height
+                                ).toBundle()
+                            }
+                            onClick(bundle)
+                        },
+                        onLongClick = { showMenu = true }
+                    )
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                AppIcon(
-                    packageName = app.packageName,
-                    contentDescription = app.label,
-                    useMonochrome = useMonochrome,
-                    iconPackPackageName = iconPackPackageName
-                )
-                
-                // NOTIFICATION DOT
-                if (hasNotification) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(2.dp)
-                            .size(10.dp)
-                            .background(MaterialTheme.colorScheme.primary, CircleShape)
-                            .padding(1.dp)
-                            .background(Color.White, CircleShape)
-                            .padding(1.dp)
-                            .background(MaterialTheme.colorScheme.primary, CircleShape)
+                Box(
+                    modifier = Modifier.sharedElement(
+                        rememberSharedContentState(key = "$sharedElementKeyPrefix-icon-${app.packageName}"),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        boundsTransform = boundsTransform
+                    )
+                ) {
+                    AppIcon(
+                        packageName = app.packageName,
+                        contentDescription = app.label,
+                        useMonochrome = useMonochrome,
+                        iconPackPackageName = iconPackPackageName
+                    )
+                    
+                    // NOTIFICATION DOT
+                    if (hasNotification) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(2.dp)
+                                .size(10.dp)
+                                .background(MaterialTheme.colorScheme.primary, CircleShape)
+                                .padding(1.dp)
+                                .background(Color.White, CircleShape)
+                                .padding(1.dp)
+                                .background(MaterialTheme.colorScheme.primary, CircleShape)
+                        )
+                    }
+                    
+                    AppContextMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false },
+                        packageName = app.packageName,
+                        label = app.label,
+                        shortcuts = shortcuts,
+                        isHidden = isHidden,
+                        onShortcutClick = onShortcutClick,
+                        onHideToggle = onHideToggle
                     )
                 }
-                
-                AppContextMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false },
-                    packageName = app.packageName,
-                    label = app.label,
-                    shortcuts = shortcuts,
-                    isHidden = isHidden,
-                    onShortcutClick = onShortcutClick,
-                    onHideToggle = onHideToggle
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = app.label,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.sharedElement(
+                        rememberSharedContentState(key = "$sharedElementKeyPrefix-label-${app.packageName}"),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        boundsTransform = boundsTransform
+                    )
                 )
             }
-            Spacer(modifier = Modifier.width(16.dp))
-            Text(
-                text = app.label,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    color = MaterialTheme.colorScheme.onSurface
-                ),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.sharedElement(
-                    rememberSharedContentState(key = "$sharedElementKeyPrefix-label-${app.packageName}"),
-                    animatedVisibilityScope = animatedVisibilityScope,
-                    boundsTransform = boundsTransform
-                )
-            )
         }
     }
 }

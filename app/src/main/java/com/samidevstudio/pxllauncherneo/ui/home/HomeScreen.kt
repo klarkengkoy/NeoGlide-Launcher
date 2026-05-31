@@ -13,17 +13,12 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -31,6 +26,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel as hiltViewModelV2
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
@@ -48,7 +44,7 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModelV2(),
     settingsViewModel: com.samidevstudio.pxllauncherneo.ui.settings.SettingsViewModel = hiltViewModelV2(),
     sharedTransitionScope: SharedTransitionScope,
-    onNavigateToDetail: (String) -> Unit,
+    onNavigateToDetail: (String) -> Unit = {},
 ) {
     val dockApps by viewModel.dockApps.collectAsStateWithLifecycle()
     val widgets by viewModel.widgets.collectAsStateWithLifecycle()
@@ -157,7 +153,7 @@ fun HomeScreen(
             }
     ) {
         // FULL SCREEN FROSTED GLASS
-        androidx.compose.animation.AnimatedVisibility(
+        AnimatedVisibility(
             visible = editingWidgetId != -1,
             enter = fadeIn(),
             exit = fadeOut()
@@ -175,17 +171,14 @@ fun HomeScreen(
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0, 0, 0, 0)
         ) { padding ->
-            Column(
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                Spacer(modifier = Modifier.height(16.dp))
-                
                 BoxWithConstraints(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
+                        .fillMaxSize()
                         .padding(horizontal = 24.dp)
                         .pointerInput(Unit) {
                             detectTapGestures(
@@ -195,6 +188,7 @@ fun HomeScreen(
                                     focusManager.clearFocus()
                                 },
                                 onLongPress = { offset ->
+                                    // Disable home screen menu when editing a widget
                                     if (editingWidgetId == -1 && !preferences.lockLayout) {
                                         contextMenuOffset = DpOffset(
                                             x = with(density) { offset.x.toDp() },
@@ -208,8 +202,17 @@ fun HomeScreen(
                             )
                         }
                 ) {
-                    val unitWidth = maxWidth / 4
-                    val unitHeight = 96.dp
+                    val unitWidth = maxWidth / 4f
+                    val topOffset = 64.dp
+                    val bottomPadding = 24.dp // Minimal padding to keep handles reachable near bottom edge
+                    val topOffsetPx = with(density) { topOffset.toPx() }
+                    
+                    // Adaptive Grid: Calculate nearest row count and stretch to fill height minus bottom padding
+                    val availableHeight = maxHeight - topOffset - bottomPadding
+                    val maxRows = (availableHeight / 96.dp).let { 
+                        if (it % 1 > 0.7f) it.toInt() + 1 else it.toInt()
+                    }.coerceAtLeast(1)
+                    val unitHeight = availableHeight / maxRows
 
                     // GRID OVERLAY
                     if (editingWidgetId != -1) {
@@ -218,28 +221,87 @@ fun HomeScreen(
                             val mainGridColor = (if (isDark) Color.White else Color.Black).copy(alpha = 0.3f)
                             val subGridColor = (if (isDark) Color.White else Color.Black).copy(alpha = 0.1f)
                             
-                            val totalRows = (size.height / unitHeight.toPx()).toInt()
-                            for (i in 0..totalRows) {
-                                val y = i * unitHeight.toPx()
+                            // Draw exactly maxRows lines, starting from topOffset
+                            for (i in 0..maxRows) {
+                                val y = topOffsetPx + (i * unitHeight.toPx())
                                 drawLine(mainGridColor, androidx.compose.ui.geometry.Offset(0f, y), androidx.compose.ui.geometry.Offset(size.width, y), strokeWidth = 2f)
-                                val midY = y + (unitHeight.toPx() / 2f)
-                                if (midY <= size.height) {
+                                if (i < maxRows) {
+                                    val midY = y + (unitHeight.toPx() / 2f)
                                     drawLine(subGridColor, androidx.compose.ui.geometry.Offset(0f, midY), androidx.compose.ui.geometry.Offset(size.width, midY), strokeWidth = 1f)
                                 }
                             }
                             
+                            val gridBottomY = topOffsetPx + (maxRows * unitHeight.toPx())
                             for (i in 0..4) {
                                 val x = i * unitWidth.toPx()
-                                drawLine(mainGridColor, androidx.compose.ui.geometry.Offset(x, 0f), androidx.compose.ui.geometry.Offset(x, size.height), strokeWidth = 2f)
+                                drawLine(mainGridColor, androidx.compose.ui.geometry.Offset(x, topOffsetPx), androidx.compose.ui.geometry.Offset(x, gridBottomY), strokeWidth = 2f)
                                 if (i < 4) {
                                     val midX = x + (unitWidth.toPx() / 2f)
-                                    drawLine(subGridColor, androidx.compose.ui.geometry.Offset(midX, 0f), androidx.compose.ui.geometry.Offset(midX, size.height), strokeWidth = 1f)
+                                    drawLine(subGridColor, androidx.compose.ui.geometry.Offset(midX, topOffsetPx), androidx.compose.ui.geometry.Offset(midX, gridBottomY), strokeWidth = 1f)
                                 }
                             }
                         }
                     }
 
+                    // Dock Widget (Placed here to be covered by the scrim)
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(bottom = 48.dp)
+                            .zIndex(0f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                        ) {
+                            dockApps.forEach { app ->
+                                AppItem(
+                                    app = app,
+                                    sharedTransitionScope = sharedTransitionScope,
+                                    animatedVisibilityScope = animatedVisibilityScope,
+                                    useMonochrome = preferences.useMonochromeIcons,
+                                    iconPackPackageName = preferences.iconPackPackageName,
+                                    isHidden = app.packageName in preferences.hiddenPackages,
+                                    hasNotification = (preferences.notificationDotMode == NotificationDotMode.APP_ICON || 
+                                                     preferences.notificationDotMode == NotificationDotMode.BOTH) &&
+                                                     app.packageName in activeNotifications,
+                                    sharedElementKeyPrefix = "dock",
+                                    getShortcuts = { viewModel.getShortcuts(it) },
+                                    onShortcutClick = { viewModel.launchShortcut(it) },
+                                    onHideToggle = { 
+                                        if (app.packageName in preferences.hiddenPackages) {
+                                            viewModel.unhideApp(app.packageName)
+                                        } else {
+                                            viewModel.hideApp(app.packageName)
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) { options ->
+                                    viewModel.launchApp(app.packageName, options)
+                                }
+                            }
+                        }
+                    }
+
+                    // TOUCH BLOCKER (Scrim) - placed below the active widget but above everything else in the grid (including Dock)
+                    if (editingWidgetId != -1) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .zIndex(0.5f)
+                                .pointerInput(Unit) {
+                                    detectTapGestures(onTap = { 
+                                        editingWidgetId = -1 
+                                        showWidgetMenu = false
+                                    })
+                                }
+                        )
+                    }
+
                     widgets.forEach { widget ->
+                        val isCurrentEditing = editingWidgetId == widget.widgetId
                         PxlWidgetHost(
                             widgetId = widget.widgetId,
                             appWidgetHost = viewModel.appWidgetHost,
@@ -250,78 +312,105 @@ fun HomeScreen(
                             spanY = widget.spanY,
                             unitWidth = unitWidth,
                             unitHeight = unitHeight,
-                            isEditing = editingWidgetId == widget.widgetId,
-                            onLongClick = { offset ->
+                            isEditing = isCurrentEditing,
+                            modifier = Modifier
+                                .offset(y = topOffset)
+                                .zIndex(if (isCurrentEditing) 1f else 0f), // Lift active widget above scrim
+                            onDragStart = { showWidgetMenu = false },
+                            onLongClick = {
                                 if (!preferences.lockLayout) {
                                     editingWidgetId = widget.widgetId
-                                    val widgetTop = unitHeight * widget.row
-                                    val widgetBottom = unitHeight * (widget.row + widget.spanY)
-                                    val menuHeightEstimate = 100.dp
-                                    val menuY = if (widgetTop > menuHeightEstimate) {
-                                        widgetTop - menuHeightEstimate
-                                    } else {
-                                        widgetBottom + 8.dp
+                                    
+                                    val widgetLeft = (unitWidth * widget.column) + 4.dp
+                                    val widgetTop = topOffset + (unitHeight * widget.row) + 4.dp
+                                    val widgetWidth = (unitWidth * widget.spanX) - 8.dp
+                                    val widgetHeight = (unitHeight * widget.spanY) - 8.dp
+                                    val widgetBottom = widgetTop + widgetHeight
+                                    val widgetRight = widgetLeft + widgetWidth
+                                    
+                                    // Estimated menu size (Our Dynamic Popup is now compact)
+                                    val menuH = 100.dp 
+                                    val menuW = 150.dp
+                                    val gap = 12.dp
+                                    
+                                    var finalX = widgetLeft
+                                    var finalY = widgetBottom + gap
+                                    
+                                    // gridW/H are derived from maxWidth/maxHeight which are Dp in BoxWithConstraints
+                                    val gridW = maxWidth
+                                    val gridH = maxHeight
+                                    
+                                    if (widgetBottom + menuH + gap > gridH) {
+                                        if (widgetTop > menuH + gap) {
+                                            finalY = widgetTop - menuH - gap
+                                        } else {
+                                            finalY = widgetTop
+                                            if (widgetRight + menuW + gap <= gridW) {
+                                                finalX = widgetRight + gap
+                                            } else if (widgetLeft > menuW + gap) {
+                                                finalX = widgetLeft - menuW - gap
+                                            } else {
+                                                finalX = (gridW - menuW) / 2f
+                                                finalY = (gridH - menuH) / 2f
+                                            }
+                                        }
                                     }
-                                    contextMenuOffset = DpOffset(
-                                        x = (unitWidth * widget.column) + offset.x,
-                                        y = menuY
-                                    )
+                                    
+                                    contextMenuOffset = DpOffset(x = finalX, y = finalY)
                                     showWidgetMenu = true
                                 } else {
                                     Toast.makeText(context, "Layout is locked", Toast.LENGTH_SHORT).show()
                                 }
                             },
                             onResize = { newRow, newCol, newSpanX, newSpanY ->
+                                // Constrain widgets to the visible maxRows
                                 viewModel.updateWidgetBounds(
                                     widget.widgetId,
-                                    newRow,
-                                    newCol,
+                                    newRow.coerceIn(0f, (maxRows - newSpanY).coerceAtLeast(0f)),
+                                    newCol.coerceIn(0f, (4f - newSpanX).coerceAtLeast(0f)),
                                     newSpanX,
                                     newSpanY
                                 )
                             }
                         )
                     }
-                }
 
-                // Dock Widget
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, bottom = 48.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.wrapContentSize()
-                    ) {
-                        dockApps.forEach { app ->
-                            AppItem(
-                                app = app,
-                                sharedTransitionScope = sharedTransitionScope,
-                                animatedVisibilityScope = animatedVisibilityScope,
-                                useMonochrome = preferences.useMonochromeIcons,
-                                iconPackPackageName = preferences.iconPackPackageName,
-                                isHidden = app.packageName in preferences.hiddenPackages,
-                                hasNotification = (preferences.notificationDotMode == NotificationDotMode.APP_ICON || 
-                                                 preferences.notificationDotMode == NotificationDotMode.BOTH) &&
-                                                 app.packageName in activeNotifications,
-                                sharedElementKeyPrefix = "dock",
-                                getShortcuts = { viewModel.getShortcuts(it) },
-                                onShortcutClick = { viewModel.launchShortcut(it) },
-                                onHideToggle = { 
-                                    if (app.packageName in preferences.hiddenPackages) {
-                                        viewModel.unhideApp(app.packageName)
-                                    } else {
-                                        viewModel.hideApp(app.packageName)
-                                    }
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) { options ->
-                                viewModel.launchApp(app.packageName, options)
+                    HomeContextMenu(
+                        expanded = showContextMenu,
+                        onDismissRequest = { showContextMenu = false },
+                        offset = contextMenuOffset,
+                        onOpenWidgets = {
+                            val appWidgetId = viewModel.allocateWidgetId()
+                            val intent = android.content.Intent(AppWidgetManager.ACTION_APPWIDGET_PICK).apply {
+                                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                             }
-                        }
-                    }
+                            widgetPickLauncher.launch(intent)
+                        },
+                        onOpenLauncherSettings = { showSettings = true }
+                    )
+
+                    WidgetContextMenu(
+                        expanded = showWidgetMenu,
+                        onDismissRequest = { showWidgetMenu = false },
+                        onRemove = {
+                            if (editingWidgetId != -1) {
+                                viewModel.removeWidget(editingWidgetId)
+                                editingWidgetId = -1
+                            }
+                            showWidgetMenu = false
+                        },
+                        onOpenApp = {
+                            if (editingWidgetId != -1) {
+                                val info = viewModel.appWidgetManager.getAppWidgetInfo(editingWidgetId)
+                                info?.provider?.packageName?.let { pkg ->
+                                    viewModel.launchApp(pkg)
+                                }
+                                editingWidgetId = -1
+                            }
+                            showWidgetMenu = false
+                        },
+                        offset = contextMenuOffset
+                    )
                 }
             }
         }
@@ -334,43 +423,6 @@ fun HomeScreen(
                 onDismiss = { viewModel.dismissDefaultPrompt() }
             )
         }
-
-        HomeContextMenu(
-            expanded = showContextMenu,
-            onDismissRequest = { showContextMenu = false },
-            offset = contextMenuOffset,
-            onOpenWidgets = {
-                val appWidgetId = viewModel.allocateWidgetId()
-                val intent = android.content.Intent(AppWidgetManager.ACTION_APPWIDGET_PICK).apply {
-                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-                }
-                widgetPickLauncher.launch(intent)
-            },
-            onOpenLauncherSettings = { showSettings = true }
-        )
-
-        WidgetContextMenu(
-            expanded = showWidgetMenu,
-            onDismissRequest = { showWidgetMenu = false },
-            onRemove = {
-                if (editingWidgetId != -1) {
-                    viewModel.removeWidget(editingWidgetId)
-                    editingWidgetId = -1
-                }
-                showWidgetMenu = false
-            },
-            onOpenApp = {
-                if (editingWidgetId != -1) {
-                    val info = viewModel.appWidgetManager.getAppWidgetInfo(editingWidgetId)
-                    info?.provider?.packageName?.let { pkg ->
-                        viewModel.launchApp(pkg)
-                    }
-                    editingWidgetId = -1
-                }
-                showWidgetMenu = false
-            },
-            offset = contextMenuOffset
-        )
 
         if (showSettings) {
             SettingsSheet(
@@ -386,6 +438,7 @@ fun HomeScreen(
         ) {
             Surface(
                 modifier = Modifier.fillMaxSize(),
+                shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
             ) {
                 DrawerScreen(
@@ -408,6 +461,7 @@ fun DefaultLauncherDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(28.dp),
         title = { Text("Set PxlLauncher as default?") },
         text = { 
             Text("PxlLauncher is not your default launcher. Set it as default for the best experience. You can always change it back in settings.") 

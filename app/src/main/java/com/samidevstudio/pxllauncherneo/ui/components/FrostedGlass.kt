@@ -28,7 +28,7 @@ fun FrostedGlass(
     modifier: Modifier = Modifier,
     blurRadius: Dp = 20.dp,
     tintColor: Color? = null,
-    cornerRadius: Dp = 0.dp,
+    cornerRadius: Dp = 16.dp,
     content: @Composable BoxScope.() -> Unit = {}
 ) {
     val isDark = isSystemInDarkTheme()

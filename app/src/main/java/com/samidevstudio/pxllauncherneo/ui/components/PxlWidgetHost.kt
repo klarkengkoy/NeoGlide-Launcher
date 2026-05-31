@@ -5,12 +5,16 @@ import android.appwidget.AppWidgetManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToDown
@@ -46,6 +50,7 @@ fun PxlWidgetHost(
     isEditing: Boolean,
     modifier: Modifier = Modifier,
     onLongClick: (DpOffset) -> Unit = {},
+    onDragStart: () -> Unit = {},
     onResize: (Float, Float, Float, Float) -> Unit = { _, _, _, _ -> }
 ) {
     val widgetInfo = appWidgetManager.getAppWidgetInfo(widgetId)
@@ -53,8 +58,12 @@ fun PxlWidgetHost(
     val unitWidthPx = with(density) { unitWidth.toPx() }
     val unitHeightPx = with(density) { unitHeight.toPx() }
 
-    // STABLE UPDATED STATE
+    // STABLE UPDATED STATE - These allow the pointerInput blocks to stay alive 
+    // across state changes while still having access to the latest values.
     val currentOnResize by rememberUpdatedState(onResize)
+    val currentOnDragStart by rememberUpdatedState(onDragStart)
+    val currentOnLongClick by rememberUpdatedState(onLongClick)
+    val currentIsEditing by rememberUpdatedState(isEditing)
     val currentRow by rememberUpdatedState(row)
     val currentCol by rememberUpdatedState(column)
     val currentSpanX by rememberUpdatedState(spanX)
@@ -122,27 +131,41 @@ fun PxlWidgetHost(
                     .padding(4.dp)
                     .then(
                         if (isEditing) {
-                            Modifier.border(2.dp, Color.White.copy(alpha = 0.9f), RoundedCornerShape(16.dp))
+                            Modifier
+                                .shadow(
+                                    elevation = 8.dp,
+                                    shape = RoundedCornerShape(28.dp),
+                                    spotColor = Color.Black.copy(alpha = 0.5f)
+                                )
+                                .border(2.dp, Color.White, RoundedCornerShape(28.dp))
                         } else Modifier
                     )
-                    .pointerInput(isEditing, widgetId) {
-                        if (!isEditing) {
-                            awaitPointerEventScope {
-                                while (true) {
-                                    val down = awaitFirstDown(pass = PointerEventPass.Initial)
+                    .pointerInput(widgetId) {
+                        // HIJACK GESTURE TO PREVENT APP OPENING ON LONG PRESS
+                        // This block is stable and doesn't restart when isEditing changes.
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                                val down = event.changes.find { it.changedToDown() }
+                                
+                                // Only process long press if we aren't already editing
+                                if (down != null && !currentIsEditing) {
                                     val result = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
                                         while (true) {
-                                            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                                            if (event.changes.any { it.changedToUp() }) break
+                                            val nextEvent = awaitPointerEvent(pass = PointerEventPass.Initial)
+                                            if (nextEvent.changes.any { it.changedToUp() }) break
                                         }
                                     }
                                     if (result == null) {
-                                        onLongClick(DpOffset(with(density) { down.position.x.toDp() }, with(density) { down.position.y.toDp() }))
-                                        down.consume()
-                                        while (true) {
-                                            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                                            event.changes.forEach { it.consume() }
-                                            if (event.changes.all { it.changedToUp() }) break
+                                        // LONG PRESS CONFIRMED
+                                        currentOnLongClick(DpOffset(with(density) { down.position.x.toDp() }, with(density) { down.position.y.toDp() }))
+                                        
+                                        // DRAIN THE GESTURE: Consume everything until all fingers are up.
+                                        // Because this block doesn't restart, the Up event is guaranteed to be consumed.
+                                        var currentEvent = event
+                                        while (currentEvent.changes.any { it.pressed }) {
+                                            currentEvent.changes.forEach { it.consume() }
+                                            currentEvent = awaitPointerEvent(pass = PointerEventPass.Initial)
                                         }
                                     }
                                 }
@@ -156,7 +179,7 @@ fun PxlWidgetHost(
                             setAppWidget(widgetId, widgetInfo)
                         }
                     },
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp))
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(24.dp))
                 )
 
                 if (isEditing) {
@@ -166,8 +189,13 @@ fun PxlWidgetHost(
                             .fillMaxSize()
                             .background(Color.Transparent)
                             .pointerInput(widgetId) {
+                                // Block taps from reaching the widget below
+                                detectTapGestures(onTap = { /* consume */ })
+                            }
+                            .pointerInput(widgetId) {
                                 detectDragGestures(
                                     onDragStart = {
+                                        currentOnDragStart()
                                         activeHandle = Handle.MOVE
                                         initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                                     },
@@ -203,7 +231,13 @@ fun PxlWidgetHost(
                     )
 
                     // TOP HANDLE
-                    ResizeHandle(Alignment.TopCenter, Modifier.fillMaxWidth().height(32.dp)) { handle, delta, isEnd ->
+                    ResizeHandle(
+                        Alignment.TopCenter,
+                        Modifier.fillMaxWidth().height(32.dp),
+                        unitWidth,
+                        unitHeight,
+                        visualRect
+                    ) { handle, delta, isEnd ->
                         if (isEnd) {
                             val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                             val finalSpanY = ((base.spanY - dragDeltaY / unitHeightPx) * 2).roundToInt() / 2f
@@ -216,6 +250,7 @@ fun PxlWidgetHost(
                             initialSnapshot = null
                         } else {
                             if (activeHandle == Handle.NONE) {
+                                currentOnDragStart()
                                 activeHandle = handle
                                 initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                             }
@@ -224,7 +259,13 @@ fun PxlWidgetHost(
                     }
 
                     // BOTTOM HANDLE
-                    ResizeHandle(Alignment.BottomCenter, Modifier.fillMaxWidth().height(32.dp)) { handle, delta, isEnd ->
+                    ResizeHandle(
+                        Alignment.BottomCenter,
+                        Modifier.fillMaxWidth().height(32.dp),
+                        unitWidth,
+                        unitHeight,
+                        visualRect
+                    ) { handle, delta, isEnd ->
                         if (isEnd) {
                             val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                             val finalSpanY = ((base.spanY + dragDeltaY / unitHeightPx) * 2).roundToInt() / 2f
@@ -234,6 +275,7 @@ fun PxlWidgetHost(
                             initialSnapshot = null
                         } else {
                             if (activeHandle == Handle.NONE) {
+                                currentOnDragStart()
                                 activeHandle = handle
                                 initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                             }
@@ -242,7 +284,13 @@ fun PxlWidgetHost(
                     }
 
                     // LEFT HANDLE
-                    ResizeHandle(Alignment.CenterStart, Modifier.fillMaxHeight().width(32.dp)) { handle, delta, isEnd ->
+                    ResizeHandle(
+                        Alignment.CenterStart,
+                        Modifier.fillMaxHeight().width(32.dp),
+                        unitWidth,
+                        unitHeight,
+                        visualRect
+                    ) { handle, delta, isEnd ->
                         if (isEnd) {
                             val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                             val finalSpanX = ((base.spanX - dragDeltaX / unitWidthPx) * 2).roundToInt() / 2f
@@ -255,6 +303,7 @@ fun PxlWidgetHost(
                             initialSnapshot = null
                         } else {
                             if (activeHandle == Handle.NONE) {
+                                currentOnDragStart()
                                 activeHandle = handle
                                 initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                             }
@@ -263,7 +312,13 @@ fun PxlWidgetHost(
                     }
 
                     // RIGHT HANDLE
-                    ResizeHandle(Alignment.CenterEnd, Modifier.fillMaxHeight().width(32.dp)) { handle, delta, isEnd ->
+                    ResizeHandle(
+                        Alignment.CenterEnd,
+                        Modifier.fillMaxHeight().width(32.dp),
+                        unitWidth,
+                        unitHeight,
+                        visualRect
+                    ) { handle, delta, isEnd ->
                         if (isEnd) {
                             val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                             val finalSpanX = ((base.spanX + dragDeltaX / unitWidthPx) * 2).roundToInt() / 2f
@@ -273,6 +328,7 @@ fun PxlWidgetHost(
                             initialSnapshot = null
                         } else {
                             if (activeHandle == Handle.NONE) {
+                                currentOnDragStart()
                                 activeHandle = handle
                                 initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                             }
@@ -289,6 +345,9 @@ fun PxlWidgetHost(
 private fun BoxScope.ResizeHandle(
     alignment: Alignment,
     modifier: Modifier,
+    unitWidth: Dp,
+    unitHeight: Dp,
+    visualRect: FloatArray,
     onDrag: (Handle, androidx.compose.ui.geometry.Offset, Boolean) -> Unit
 ) {
     val handle = when(alignment) {
@@ -314,24 +373,33 @@ private fun BoxScope.ResizeHandle(
                     }
                 )
             },
-        contentAlignment = Alignment.Center
+        contentAlignment = when(alignment) {
+            Alignment.TopCenter -> Alignment.TopCenter
+            Alignment.BottomCenter -> Alignment.BottomCenter
+            Alignment.CenterStart -> Alignment.CenterStart
+            Alignment.CenterEnd -> Alignment.CenterEnd
+            else -> Alignment.Center
+        }
     ) {
         val isHorizontal = handle == Handle.LEFT || handle == Handle.RIGHT
-        Box(
-            modifier = Modifier
-                .size(if (isHorizontal) 4.dp else 40.dp, if (isHorizontal) 40.dp else 4.dp)
-                .background(Color.White, RoundedCornerShape(2.dp))
-        )
-    }
-}
+        
+        // Calculate dynamic handle length as 30% of the edge, with a 48dp minimum
+        val handleLength = if (isHorizontal) {
+            (unitHeight * visualRect[3] * 0.3f).coerceAtLeast(48.dp)
+        } else {
+            (unitWidth * visualRect[2] * 0.3f).coerceAtLeast(48.dp)
+        }
 
-private suspend fun androidx.compose.ui.input.pointer.AwaitPointerEventScope.awaitFirstDown(
-    requireUnconsumed: Boolean = true,
-    pass: PointerEventPass = PointerEventPass.Main
-): androidx.compose.ui.input.pointer.PointerInputChange {
-    var event: androidx.compose.ui.input.pointer.PointerEvent
-    do {
-        event = awaitPointerEvent(pass)
-    } while (!event.changes.all { if (requireUnconsumed) it.changedToDown() else it.pressed })
-    return event.changes[0]
+        // The "Thickened" part of the border
+        Surface(
+            modifier = Modifier
+                .size(
+                    width = if (isHorizontal) 6.dp else handleLength,
+                    height = if (isHorizontal) handleLength else 6.dp
+                ),
+            shape = CircleShape,
+            color = Color.White,
+            shadowElevation = 2.dp
+        ) {}
+    }
 }

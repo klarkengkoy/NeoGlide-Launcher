@@ -216,6 +216,7 @@ fun DrawerScreen(
                 ) {
                     Surface(
                         color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(28.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         Row(
@@ -244,7 +245,7 @@ fun DrawerScreen(
                                 decorationBox = { innerTextField ->
                                     Surface(
                                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                        shape = RoundedCornerShape(18.dp),
+                                        shape = RoundedCornerShape(24.dp),
                                         modifier = Modifier.fillMaxSize()
                                     ) {
                                         Box(
@@ -651,14 +652,14 @@ private fun CategoryIconItem(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(16.dp))
             .then(if (isSelected && !isHovered) Modifier.padding(4.dp) else Modifier),
         contentAlignment = Alignment.Center
     ) {
         Surface(
             color = color,
             contentColor = if (isHovered) MaterialTheme.colorScheme.onSecondaryContainer else if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxSize()
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -870,8 +871,9 @@ fun SearchResults(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
                         .clickable { onWebSearch(suggestion) }
-                        .padding(vertical = 12.dp),
+                        .padding(vertical = 12.dp, horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary)

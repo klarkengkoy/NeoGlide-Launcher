@@ -3,6 +3,7 @@ package com.samidevstudio.pxllauncherneo.ui.components
 import android.content.ComponentName
 import android.content.Intent
 import android.provider.Settings
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
@@ -27,7 +28,8 @@ fun HomeContextMenu(
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
-        offset = offset
+        offset = offset,
+        shape = RoundedCornerShape(24.dp)
     ) {
         DropdownMenuItem(
             text = { Text("Widgets") },

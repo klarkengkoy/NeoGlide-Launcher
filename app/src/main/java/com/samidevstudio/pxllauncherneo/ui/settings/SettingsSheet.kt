@@ -291,7 +291,11 @@ fun SelectionDialog(title: String, options: List<DialogOption>, onDismiss: () ->
             Column {
                 options.forEach { option ->
                     Row(
-                        modifier = Modifier.fillMaxWidth().selectable(selected = option.isSelected, onClick = { onSelect(option.value); onDismiss() }).padding(vertical = 12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .selectable(selected = option.isSelected, onClick = { onSelect(option.value); onDismiss() })
+                            .padding(vertical = 12.dp, horizontal = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(selected = option.isSelected, onClick = null)
@@ -343,7 +347,13 @@ private fun ProBadge() {
 
 @Composable
 fun QuickActionItem(icon: ImageVector, label: String, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable { onClick() }) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onClick() }
+            .padding(8.dp)
+    ) {
         Surface(modifier = Modifier.size(48.dp), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(icon, label, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
@@ -359,8 +369,10 @@ fun ToggleSettingsItem(icon: ImageVector, title: String, checked: Boolean, onChe
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 8.dp)
+            .clip(RoundedCornerShape(16.dp))
             .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 24.dp, vertical = 10.dp), // Reduced vertical padding
+            .padding(horizontal = 16.dp, vertical = 10.dp), // Adjusted horizontal padding to account for outer padding
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(icon, null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -377,7 +389,12 @@ fun ToggleSettingsItem(icon: ImageVector, title: String, checked: Boolean, onChe
 @Composable
 fun SettingsItem(icon: ImageVector, title: String, onClick: (() -> Unit)? = null, trailing: @Composable (() -> Unit)? = null) {
     Row(
-        modifier = Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(horizontal = 24.dp, vertical = 14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(icon, null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
