@@ -170,69 +170,61 @@ class AppRepository @Inject constructor(
         try {
             launcherApps.startShortcut(packageName, shortcutId, null, null, android.os.Process.myUserHandle())
             updateLastUsedTime(packageName)
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             launchApp(packageName)
         }
     }
 
     suspend fun getDefaultDockApps(): List<String> = withContext(Dispatchers.IO) {
-        val intents = listOf(
-            // Browser
-            Intent(Intent.ACTION_VIEW, "https://www.google.com".toUri()),
-            Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_APP_BROWSER) },
-            // Phone
-            Intent(Intent.ACTION_DIAL),
-            // Messages
-            Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_APP_MESSAGING) },
-            // Camera
-            Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA),
-            Intent(Intent.ACTION_MAIN).apply { addCategory("android.intent.category.APP_CAMERA") }
-        )
-
         val dockPackages = mutableListOf<String>()
-        for (intent in intents) {
-            val resolveInfo = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
-            val pkg = resolveInfo?.activityInfo?.packageName
-            
-            if ((pkg != null) && (pkg != "android") && (pkg !in dockPackages)) {
-                // Verify the package actually exists in our launcher list
-                if (packageManager.getLaunchIntentForPackage(pkg) != null) {
+
+        // 1. Browser
+        val browserIntent = Intent(Intent.ACTION_VIEW, "https://www.google.com".toUri())
+        findDefaultPackage(browserIntent)?.let { if (it !in dockPackages) dockPackages.add(it) }
+
+        // 2. Phone
+        val phoneIntent = Intent(Intent.ACTION_DIAL)
+        findDefaultPackage(phoneIntent)?.let { if (it !in dockPackages) dockPackages.add(it) }
+
+        // 3. Messages
+        val messagesIntent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_APP_MESSAGING) }
+        findDefaultPackage(messagesIntent)?.let { if (it !in dockPackages) dockPackages.add(it) }
+
+        // 4. Camera
+        val cameraIntent = Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)
+        findDefaultPackage(cameraIntent)?.let { if (it !in dockPackages) dockPackages.add(it) }
+
+        // Fallbacks if we still have less than 4 apps (rare on Pixel)
+        if (dockPackages.size < 4) {
+            val fallbacks = listOf(
+                "com.android.chrome",
+                "com.google.android.dialer",
+                "com.google.android.apps.messaging",
+                "com.google.android.GoogleCamera",
+                "com.brave.browser"
+            )
+            for (pkg in fallbacks) {
+                if (dockPackages.size >= 4) break
+                if (pkg !in dockPackages && packageManager.getLaunchIntentForPackage(pkg) != null) {
                     dockPackages.add(pkg)
                 }
-            }
-            
-            // If still searching for browser specifically
-            if ((dockPackages.isEmpty()) && (intent.action == Intent.ACTION_VIEW)) {
-                val browsers = packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
-                for (browser in browsers) {
-                    val browserPkg = browser.activityInfo.packageName
-                    if (browserPkg != "android" && packageManager.getLaunchIntentForPackage(browserPkg) != null) {
-                        dockPackages.add(browserPkg)
-                        break
-                    }
-                }
-            }
-
-            if (dockPackages.size >= 4) break
-        }
-        
-        // Fallbacks for common Pixel apps if we're short on dock items
-        val fallbacks = listOf(
-            "com.brave.browser",
-            "com.android.chrome",
-            "com.google.android.dialer",
-            "com.google.android.apps.messaging",
-            "com.google.android.GoogleCamera"
-        )
-
-        for (pkg in fallbacks) {
-            if (dockPackages.size >= 4) break
-            if (!dockPackages.contains(pkg) && packageManager.getLaunchIntentForPackage(pkg) != null) {
-                dockPackages.add(pkg)
             }
         }
 
         dockPackages.take(4)
+    }
+
+    private fun findDefaultPackage(intent: Intent): String? {
+        val resolveInfo = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        val pkg = resolveInfo?.activityInfo?.packageName
+        return if (pkg != null && pkg != "android" && packageManager.getLaunchIntentForPackage(pkg) != null) {
+            pkg
+        } else {
+            // If resolveActivity fails, try querying all activities and pick the first non-system one
+            val resolved = packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            resolved.firstOrNull { it.activityInfo.packageName != "android" && packageManager.getLaunchIntentForPackage(it.activityInfo.packageName) != null }
+                ?.activityInfo?.packageName
+        }
     }
 
     suspend fun isDefaultLauncher(): Boolean = withContext(Dispatchers.IO) {
