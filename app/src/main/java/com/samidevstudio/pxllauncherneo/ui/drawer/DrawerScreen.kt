@@ -376,6 +376,7 @@ fun DrawerScreen(
                                         useMonochrome = preferences.useMonochromeIcons,
                                         iconPackPackageName = preferences.iconPackPackageName,
                                         hiddenPackages = preferences.hiddenPackages,
+                                        isBottomAnchored = preferences.isBottomAnchored,
                                         activeNotifications = activeNotifications,
                                         showNotificationDots = preferences.notificationDotMode in listOf(NotificationDotMode.APP_ICON, NotificationDotMode.BOTH),
                                         getShortcuts = { viewModel.getShortcuts(it) },
@@ -707,6 +708,7 @@ fun AppGrid(
     useMonochrome: Boolean = false,
     iconPackPackageName: String? = null,
     hiddenPackages: Set<String> = emptySet(),
+    isBottomAnchored: Boolean = true,
     activeNotifications: Set<String> = emptySet(),
     showNotificationDots: Boolean = true,
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
@@ -719,7 +721,11 @@ fun AppGrid(
         reverseLayout = false,
         contentPadding = PaddingValues(bottom = bottomPadding, start = 8.dp, end = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.Bottom),
+        verticalArrangement = if (isBottomAnchored) {
+            Arrangement.spacedBy(16.dp, Alignment.Bottom)
+        } else {
+            Arrangement.spacedBy(16.dp, Alignment.Top)
+        },
         modifier = modifier
     ) {
         items(

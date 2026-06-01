@@ -154,6 +154,14 @@ fun SettingsSheet(
                     )
                 }
                 item {
+                    ToggleSettingsItem(
+                        icon = Icons.Default.Anchor,
+                        title = "Bottom-anchored drawer",
+                        checked = preferences.isBottomAnchored,
+                        onCheckedChange = { viewModel.setIsBottomAnchored(it) }
+                    )
+                }
+                item {
                     SettingsItem(
                         icon = Icons.Default.VisibilityOff,
                         title = "Hidden apps",

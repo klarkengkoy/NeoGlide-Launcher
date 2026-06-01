@@ -48,6 +48,7 @@ data class UserPreferences(
     val lockLayout: Boolean = false,
     val doubleTapToSleep: Boolean = false,
     val swipeDownForNotifications: Boolean = true,
+    val isBottomAnchored: Boolean = true,
     val iconPackPackageName: String? = null
 )
 
@@ -69,6 +70,7 @@ class UserPreferencesRepository @Inject constructor(
         val LOCK_LAYOUT = booleanPreferencesKey("lock_layout")
         val DOUBLE_TAP_TO_SLEEP = booleanPreferencesKey("double_tap_to_sleep")
         val SWIPE_DOWN_FOR_NOTIFICATIONS = booleanPreferencesKey("swipe_down_for_notifications")
+        val IS_BOTTOM_ANCHORED = booleanPreferencesKey("is_bottom_anchored")
         val ICON_PACK_PACKAGE_NAME = stringPreferencesKey("icon_pack_package_name")
     }
 
@@ -110,6 +112,7 @@ class UserPreferencesRepository @Inject constructor(
                 lockLayout = preferences[PreferencesKeys.LOCK_LAYOUT] ?: false,
                 doubleTapToSleep = preferences[PreferencesKeys.DOUBLE_TAP_TO_SLEEP] ?: false,
                 swipeDownForNotifications = preferences[PreferencesKeys.SWIPE_DOWN_FOR_NOTIFICATIONS] ?: true,
+                isBottomAnchored = preferences[PreferencesKeys.IS_BOTTOM_ANCHORED] ?: true,
                 iconPackPackageName = preferences[PreferencesKeys.ICON_PACK_PACKAGE_NAME]
             )
         }
@@ -174,6 +177,10 @@ class UserPreferencesRepository @Inject constructor(
 
     suspend fun updateSwipeDownForNotifications(enable: Boolean) {
         context.dataStore.edit { preferences -> preferences[PreferencesKeys.SWIPE_DOWN_FOR_NOTIFICATIONS] = enable }
+    }
+
+    suspend fun updateIsBottomAnchored(anchored: Boolean) {
+        context.dataStore.edit { preferences -> preferences[PreferencesKeys.IS_BOTTOM_ANCHORED] = anchored }
     }
 
     suspend fun updateIconPack(packageName: String?) {

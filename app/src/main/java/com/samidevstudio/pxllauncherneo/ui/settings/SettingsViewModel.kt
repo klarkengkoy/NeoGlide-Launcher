@@ -78,6 +78,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { preferencesRepository.updateSwipeDownForNotifications(enable) }
     }
 
+    fun setIsBottomAnchored(anchored: Boolean) {
+        viewModelScope.launch { preferencesRepository.updateIsBottomAnchored(anchored) }
+    }
+
     fun setIconPack(packageName: String?) {
         viewModelScope.launch { preferencesRepository.updateIconPack(packageName) }
     }
