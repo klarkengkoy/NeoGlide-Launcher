@@ -22,7 +22,7 @@ object DatabaseModule {
             context,
             PxlDatabase::class.java,
             PxlDatabase.DATABASE_NAME
-        ).fallbackToDestructiveMigration().build()
+        ).fallbackToDestructiveMigration(dropAllTables = true).build()
     }
 
     @Provides
