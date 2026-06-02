@@ -849,7 +849,12 @@ fun SearchResults(
 
         if (filteredApps.isNotEmpty()) {
             item {
-                Text("Apps", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "Apps",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
             items(filteredApps) { app ->
                 SearchAppItem(
@@ -871,7 +876,12 @@ fun SearchResults(
 
         if (webSuggestions.isNotEmpty()) {
             item {
-                Text("Web Suggestions", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "Web Suggestions",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
             items(webSuggestions) { suggestion ->
                 Row(
@@ -884,7 +894,10 @@ fun SearchResults(
                 ) {
                     Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.width(16.dp))
-                    Text(suggestion)
+                    Text(
+                        text = suggestion,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
             }
         }
