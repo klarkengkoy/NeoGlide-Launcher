@@ -9,8 +9,8 @@ import kotlinx.coroutines.flow.asStateFlow
 class PxlNotificationListener : NotificationListenerService() {
 
     companion object {
-        private val _activeNotifications = MutableStateFlow<Set<String>>(emptySet())
-        val activeNotifications: StateFlow<Set<String>> = _activeNotifications.asStateFlow()
+        private val _activeNotifications = MutableStateFlow<Map<String, Int>>(emptyMap())
+        val activeNotifications: StateFlow<Map<String, Int>> = _activeNotifications.asStateFlow()
 
         private var instance: PxlNotificationListener? = null
     }
@@ -38,9 +38,10 @@ class PxlNotificationListener : NotificationListenerService() {
 
     private fun updateNotifications() {
         try {
-            // Use getActiveNotifications() explicitly to avoid shadowing with companion property
-            val packages = getActiveNotifications()?.map { it.packageName }?.toSet() ?: emptySet()
-            _activeNotifications.value = packages
+            val notifications = getActiveNotifications()
+            val counts = notifications?.groupBy { it.packageName }
+                ?.mapValues { it.value.size } ?: emptyMap()
+            _activeNotifications.value = counts
         } catch (_: Exception) {
             // Service might be disconnected
         }

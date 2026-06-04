@@ -63,8 +63,8 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    val activeNotifications: StateFlow<Set<String>> = PxlNotificationListener.activeNotifications
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+    val activeNotifications: StateFlow<Map<String, Int>> = PxlNotificationListener.activeNotifications
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val homeItems: StateFlow<List<HomeItem>> = combine(
         appRepository.allApps,

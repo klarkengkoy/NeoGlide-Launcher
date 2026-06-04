@@ -18,7 +18,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -31,6 +30,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel as hiltViewModelV
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import com.samidevstudio.pxllauncherneo.data.local.entity.WidgetEntity
+import com.samidevstudio.pxllauncherneo.data.repository.AppLabelMode
 import com.samidevstudio.pxllauncherneo.data.repository.NotificationDotMode
 import com.samidevstudio.pxllauncherneo.domain.model.AppModel
 import com.samidevstudio.pxllauncherneo.ui.components.*
@@ -44,6 +44,7 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModelV2(),
     settingsViewModel: com.samidevstudio.pxllauncherneo.ui.settings.SettingsViewModel = hiltViewModelV2(),
     sharedTransitionScope: SharedTransitionScope,
+    drawerViewModel: com.samidevstudio.pxllauncherneo.ui.drawer.DrawerViewModel = hiltViewModelV2(),
     onNavigateToDetail: (String) -> Unit = {},
 ) {
     val dockApps by viewModel.dockApps.collectAsStateWithLifecycle()
@@ -136,6 +137,7 @@ fun HomeScreen(
         } else if (showContextMenu) {
             showContextMenu = false
         } else {
+            drawerViewModel.resetState()
             showDrawer = false
         }
     }
@@ -266,7 +268,9 @@ fun HomeScreen(
                                     isHidden = app.packageName in preferences.hiddenPackages,
                                     hasNotification = (preferences.notificationDotMode == NotificationDotMode.APP_ICON || 
                                                      preferences.notificationDotMode == NotificationDotMode.BOTH) &&
-                                                     app.packageName in activeNotifications,
+                                                     app.packageName in activeNotifications.keys,
+                                    notificationCount = activeNotifications[app.packageName] ?: 0,
+                                    showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
                                     sharedElementKeyPrefix = "dock",
                                     getShortcuts = { viewModel.getShortcuts(it) },
                                     onShortcutClick = { viewModel.launchShortcut(it) },
@@ -298,6 +302,48 @@ fun HomeScreen(
                                     })
                                 }
                         )
+                    }
+
+                    val homeApps by viewModel.homeItems.collectAsStateWithLifecycle()
+                    
+                    homeApps.forEach { item ->
+                        if (item is HomeItem.App) {
+                            val app = item.appModel
+                            Box(
+                                modifier = Modifier
+                                    .offset(
+                                        x = unitWidth * item.column,
+                                        y = topOffset + (unitHeight * item.row)
+                                    )
+                                    .size(unitWidth, unitHeight)
+                            ) {
+                                AppItem(
+                                    app = app,
+                                    sharedTransitionScope = sharedTransitionScope,
+                                    animatedVisibilityScope = animatedVisibilityScope,
+                                    useMonochrome = preferences.useMonochromeIcons,
+                                    iconPackPackageName = preferences.iconPackPackageName,
+                                    isHidden = app.packageName in preferences.hiddenPackages,
+                                    hasNotification = (preferences.notificationDotMode == NotificationDotMode.APP_ICON || 
+                                                     preferences.notificationDotMode == NotificationDotMode.BOTH) &&
+                                                     app.packageName in activeNotifications.keys,
+                                    notificationCount = activeNotifications[app.packageName] ?: 0,
+                                    showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
+                                    sharedElementKeyPrefix = "home",
+                                    getShortcuts = { viewModel.getShortcuts(it) },
+                                    onShortcutClick = { viewModel.launchShortcut(it) },
+                                    onHideToggle = { 
+                                        if (app.packageName in preferences.hiddenPackages) {
+                                            viewModel.unhideApp(app.packageName)
+                                        } else {
+                                            viewModel.hideApp(app.packageName)
+                                        }
+                                    }
+                                ) { options ->
+                                    viewModel.launchApp(app.packageName, options)
+                                }
+                            }
+                        }
                     }
 
                     widgets.forEach { widget ->
@@ -442,9 +488,11 @@ fun HomeScreen(
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
             ) {
                 DrawerScreen(
+                    viewModel = drawerViewModel,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = this@AnimatedVisibility,
                     onAppClick = { packageName, options ->
+                        drawerViewModel.resetState()
                         viewModel.launchApp(packageName, options)
                         showDrawer = false
                     }

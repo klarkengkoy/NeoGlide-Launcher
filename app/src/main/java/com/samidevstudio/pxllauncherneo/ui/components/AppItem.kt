@@ -24,7 +24,9 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.samidevstudio.pxllauncherneo.domain.model.AppModel
 import com.samidevstudio.pxllauncherneo.domain.model.AppShortcut
 
@@ -39,6 +41,7 @@ fun AppItem(
     iconPackPackageName: String? = null,
     isHidden: Boolean = false,
     hasNotification: Boolean = false,
+    notificationCount: Int = 0,
     sharedElementKeyPrefix: String = "drawer",
     showLabel: Boolean = true,
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
@@ -136,17 +139,42 @@ fun AppItem(
                     if (hasNotification) {
                         val dotColor = MaterialTheme.colorScheme.primary
                         val borderColor = if (sharedElementKeyPrefix != "drawer") Color.White else MaterialTheme.colorScheme.surface
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(2.dp)
-                                .size(10.dp)
-                                .background(dotColor, CircleShape)
-                                .padding(1.dp)
-                                .background(borderColor, CircleShape)
-                                .padding(1.dp)
-                                .background(dotColor, CircleShape)
-                        )
+                        
+                        if (notificationCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = 4.dp, y = (-4).dp)
+                                    .background(dotColor, CircleShape)
+                                    .padding(1.dp)
+                                    .background(borderColor, CircleShape)
+                                    .padding(1.dp)
+                                    .background(dotColor, CircleShape)
+                                    .padding(horizontal = 4.dp, vertical = 1.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (notificationCount > 99) "99+" else notificationCount.toString(),
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                )
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(2.dp)
+                                    .size(10.dp)
+                                    .background(dotColor, CircleShape)
+                                    .padding(1.dp)
+                                    .background(borderColor, CircleShape)
+                                    .padding(1.dp)
+                                    .background(dotColor, CircleShape)
+                            )
+                        }
                     }
                     
                     AppContextMenu(
@@ -187,7 +215,9 @@ fun SearchAppItem(
     iconPackPackageName: String? = null,
     isHidden: Boolean = false,
     hasNotification: Boolean = false,
+    notificationCount: Int = 0,
     sharedElementKeyPrefix: String = "search",
+    showLabel: Boolean = true,
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: () -> Unit = {},
@@ -258,17 +288,44 @@ fun SearchAppItem(
                     
                     // NOTIFICATION DOT
                     if (hasNotification) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(2.dp)
-                                .size(10.dp)
-                                .background(MaterialTheme.colorScheme.primary, CircleShape)
-                                .padding(1.dp)
-                                .background(Color.White, CircleShape)
-                                .padding(1.dp)
-                                .background(MaterialTheme.colorScheme.primary, CircleShape)
-                        )
+                        val dotColor = MaterialTheme.colorScheme.primary
+                        val borderColor = Color.White
+                        
+                        if (notificationCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = 4.dp, y = (-4).dp)
+                                    .background(dotColor, CircleShape)
+                                    .padding(1.dp)
+                                    .background(borderColor, CircleShape)
+                                    .padding(1.dp)
+                                    .background(dotColor, CircleShape)
+                                    .padding(horizontal = 4.dp, vertical = 1.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (notificationCount > 99) "99+" else notificationCount.toString(),
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                )
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(2.dp)
+                                    .size(10.dp)
+                                    .background(dotColor, CircleShape)
+                                    .padding(1.dp)
+                                    .background(borderColor, CircleShape)
+                                    .padding(1.dp)
+                                    .background(dotColor, CircleShape)
+                            )
+                        }
                     }
                     
                     AppContextMenu(
@@ -282,20 +339,22 @@ fun SearchAppItem(
                         onHideToggle = onHideToggle
                     )
                 }
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = app.label,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        color = MaterialTheme.colorScheme.onSurface
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.sharedElement(
-                        rememberSharedContentState(key = "$sharedElementKeyPrefix-label-${app.packageName}"),
-                        animatedVisibilityScope = animatedVisibilityScope,
-                        boundsTransform = boundsTransform
+                if (showLabel) {
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = app.label,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurface
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.sharedElement(
+                            rememberSharedContentState(key = "$sharedElementKeyPrefix-label-${app.packageName}"),
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            boundsTransform = boundsTransform
+                        )
                     )
-                )
+                }
             }
         }
     }
