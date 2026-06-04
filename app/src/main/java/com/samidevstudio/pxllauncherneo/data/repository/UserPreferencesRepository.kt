@@ -34,6 +34,10 @@ enum class NotificationDotMode {
     APP_ICON, CATEGORY_BAR, BOTH, NONE
 }
 
+enum class AppLabelMode {
+    HOME_ONLY, DRAWER_ONLY, BOTH, NONE
+}
+
 data class UserPreferences(
     val categoryBarType: CategoryBarType,
     val useMonochromeIcons: Boolean = false,
@@ -42,7 +46,7 @@ data class UserPreferences(
     val lastDefaultPromptTime: Long = 0L,
     val sortingMode: SortingMode = SortingMode.ALPHABETICAL,
     val gridSize: GridSize = GridSize.GRID_5X5,
-    val showIconLabels: Boolean = true,
+    val appLabelMode: AppLabelMode = AppLabelMode.BOTH,
     val searchProvider: SearchProvider = SearchProvider.GOOGLE,
     val notificationDotMode: NotificationDotMode = NotificationDotMode.BOTH,
     val lockLayout: Boolean = false,
@@ -64,7 +68,7 @@ class UserPreferencesRepository @Inject constructor(
         val LAST_DEFAULT_PROMPT_TIME = longPreferencesKey("last_default_prompt_time")
         val SORTING_MODE = stringPreferencesKey("sorting_mode")
         val GRID_SIZE = stringPreferencesKey("grid_size")
-        val SHOW_ICON_LABELS = booleanPreferencesKey("show_icon_labels")
+        val APP_LABEL_MODE = stringPreferencesKey("app_label_mode")
         val SEARCH_PROVIDER = stringPreferencesKey("search_provider")
         val NOTIFICATION_DOT_MODE = stringPreferencesKey("notification_dot_mode")
         val LOCK_LAYOUT = booleanPreferencesKey("lock_layout")
@@ -92,6 +96,13 @@ class UserPreferencesRepository @Inject constructor(
             val gridSizeStr = preferences[PreferencesKeys.GRID_SIZE] ?: GridSize.GRID_5X5.name
             val gridSize = try { GridSize.valueOf(gridSizeStr) } catch (_: Exception) { GridSize.GRID_5X5 }
 
+            val appLabelModeStr = preferences[PreferencesKeys.APP_LABEL_MODE] ?: run {
+                // Migration logic for old boolean setting
+                val oldShowLabels = preferences[booleanPreferencesKey("show_icon_labels")] ?: true
+                if (oldShowLabels) AppLabelMode.BOTH.name else AppLabelMode.NONE.name
+            }
+            val appLabelMode = try { AppLabelMode.valueOf(appLabelModeStr) } catch (_: Exception) { AppLabelMode.BOTH }
+
             val searchProviderStr = preferences[PreferencesKeys.SEARCH_PROVIDER] ?: SearchProvider.GOOGLE.name
             val searchProvider = try { SearchProvider.valueOf(searchProviderStr) } catch (_: Exception) { SearchProvider.GOOGLE }
 
@@ -106,7 +117,7 @@ class UserPreferencesRepository @Inject constructor(
                 lastDefaultPromptTime = preferences[PreferencesKeys.LAST_DEFAULT_PROMPT_TIME] ?: 0L,
                 sortingMode = sortingMode,
                 gridSize = gridSize,
-                showIconLabels = preferences[PreferencesKeys.SHOW_ICON_LABELS] ?: true,
+                appLabelMode = appLabelMode,
                 searchProvider = searchProvider,
                 notificationDotMode = dotMode,
                 lockLayout = preferences[PreferencesKeys.LOCK_LAYOUT] ?: false,
@@ -129,8 +140,8 @@ class UserPreferencesRepository @Inject constructor(
         context.dataStore.edit { preferences -> preferences[PreferencesKeys.GRID_SIZE] = size.name }
     }
 
-    suspend fun updateShowIconLabels(show: Boolean) {
-        context.dataStore.edit { preferences -> preferences[PreferencesKeys.SHOW_ICON_LABELS] = show }
+    suspend fun updateAppLabelMode(mode: AppLabelMode) {
+        context.dataStore.edit { preferences -> preferences[PreferencesKeys.APP_LABEL_MODE] = mode.name }
     }
 
     suspend fun updateSearchProvider(provider: SearchProvider) {

@@ -4,7 +4,6 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -33,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -108,6 +109,14 @@ fun DrawerScreen(
     val showCategoryBar = preferences.categoryBarType != CategoryBarType.NONE
     
     var isSearchActive by remember { mutableStateOf(false) }
+
+    // Reset search when drawer is hidden
+    LaunchedEffect(animatedVisibilityScope.transition.currentState) {
+        if (animatedVisibilityScope.transition.currentState == EnterExitState.PostExit) {
+            isSearchActive = false
+            viewModel.resetState()
+        }
+    }
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val dragInfo = remember { DragTargetInfo() }
@@ -316,6 +325,7 @@ fun DrawerScreen(
                             hiddenPackages = preferences.hiddenPackages,
                             activeNotifications = activeNotifications,
                             showNotificationDots = preferences.notificationDotMode in listOf(NotificationDotMode.APP_ICON, NotificationDotMode.BOTH),
+                            showLabel = preferences.appLabelMode == AppLabelMode.DRAWER_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
                             getShortcuts = { viewModel.getShortcuts(it) },
                             onShortcutClick = { viewModel.launchShortcut(it) },
                             onHideToggle = { packageName, isHidden ->
@@ -366,26 +376,27 @@ fun DrawerScreen(
                                 }
 
                                 Column(modifier = Modifier.weight(1f)) {
-                                    AppGrid(
-                                        apps = appsToDisplay,
-                                        columns = 4,
-                                        bottomPadding = if (showCategoryBar && orientation == CategoryOrientation.HORIZONTAL_BOTTOM) 8.dp else 20.dp,
-                                        modifier = Modifier.weight(1f),
-                                        sharedTransitionScope = sharedTransitionScope,
-                                        animatedVisibilityScope = animatedVisibilityScope,
-                                        useMonochrome = preferences.useMonochromeIcons,
-                                        iconPackPackageName = preferences.iconPackPackageName,
-                                        hiddenPackages = preferences.hiddenPackages,
-                                        isBottomAnchored = preferences.isBottomAnchored,
-                                        activeNotifications = activeNotifications,
-                                        showNotificationDots = preferences.notificationDotMode in listOf(NotificationDotMode.APP_ICON, NotificationDotMode.BOTH),
-                                        getShortcuts = { viewModel.getShortcuts(it) },
-                                        onShortcutClick = { viewModel.launchShortcut(it) },
-                                        onHideToggle = { packageName, isHidden ->
-                                            if (isHidden) viewModel.unhideApp(packageName) else viewModel.hideApp(packageName)
-                                        },
-                                        onAppClick = onAppClick
-                                    )
+                                        AppGrid(
+                                            apps = appsToDisplay,
+                                            columns = 4,
+                                            bottomPadding = if (showCategoryBar && orientation == CategoryOrientation.HORIZONTAL_BOTTOM) 8.dp else 20.dp,
+                                            modifier = Modifier.weight(1f),
+                                            sharedTransitionScope = sharedTransitionScope,
+                                            animatedVisibilityScope = animatedVisibilityScope,
+                                            useMonochrome = preferences.useMonochromeIcons,
+                                            iconPackPackageName = preferences.iconPackPackageName,
+                                            hiddenPackages = preferences.hiddenPackages,
+                                            isBottomAnchored = preferences.isBottomAnchored,
+                                            activeNotifications = activeNotifications,
+                                            showNotificationDots = preferences.notificationDotMode in listOf(NotificationDotMode.APP_ICON, NotificationDotMode.BOTH),
+                                            showLabel = preferences.appLabelMode == AppLabelMode.DRAWER_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
+                                            getShortcuts = { viewModel.getShortcuts(it) },
+                                            onShortcutClick = { viewModel.launchShortcut(it) },
+                                            onHideToggle = { packageName, isHidden ->
+                                                if (isHidden) viewModel.unhideApp(packageName) else viewModel.hideApp(packageName)
+                                            },
+                                            onAppClick = onAppClick
+                                        )
 
                                     if (showCategoryBar && orientation == CategoryOrientation.HORIZONTAL_BOTTOM) {
                                         CategorySelector(
@@ -491,7 +502,7 @@ fun CategorySelector(
     modifier: Modifier = Modifier,
     onCategorySelected: (AppCategory?) -> Unit,
     onDrop: (AppModel, AppCategory?) -> Unit = { _, _ -> },
-    activeNotifications: Set<String> = emptySet(),
+    activeNotifications: Map<String, Int> = emptyMap(),
     categorizedApps: Map<AppCategory, List<AppModel>> = emptyMap(),
     showNotificationDots: Boolean = true
 ) {
@@ -559,14 +570,20 @@ fun CategorySelector(
                                 globalTouchPos.x <= containerOffset.x + with(density) { 56.dp.toPx() } &&
                                 localTouchY >= itemTop && localTouchY <= itemBottom
                 
-                val categoryHasNotif = remember(category, activeNotifications, categorizedApps) {
+                val categoryNotifs = remember(category, activeNotifications, categorizedApps) {
                     if (category == null) {
-                        activeNotifications.isNotEmpty()
+                        val hasNotif = activeNotifications.isNotEmpty()
+                        val count = activeNotifications.values.sum()
+                        hasNotif to count
                     } else {
                         val appPackages = categorizedApps[category]?.map { it.packageName } ?: emptyList()
-                        appPackages.any { it in activeNotifications }
+                        val hasNotif = appPackages.any { it in activeNotifications.keys }
+                        val count = activeNotifications.filter { it.key in appPackages }.values.sum()
+                        hasNotif to count
                     }
                 }
+                val categoryHasNotif = categoryNotifs.first
+                val categoryNotifCount = categoryNotifs.second
 
                 LaunchedEffect(dragInfo.isDragging) {
                     if (!dragInfo.isDragging && isHovered) {
@@ -579,6 +596,7 @@ fun CategorySelector(
                     icon = category?.toIcon() ?: Icons.Default.AllInclusive,
                     isHovered = isHovered,
                     hasNotification = categoryHasNotif && showNotificationDots,
+                    notificationCount = categoryNotifCount,
                     size = iconSize
                 )
                 
@@ -610,19 +628,26 @@ fun CategorySelector(
             verticalAlignment = Alignment.CenterVertically
         ) {
             allCategories.forEachIndexed { index, category ->
-                val categoryHasNotif = remember(category, activeNotifications, categorizedApps) {
+                val categoryNotifs = remember(category, activeNotifications, categorizedApps) {
                     if (category == null) {
-                        activeNotifications.isNotEmpty()
+                        val hasNotif = activeNotifications.isNotEmpty()
+                        val count = activeNotifications.values.sum()
+                        hasNotif to count
                     } else {
                         val appPackages = categorizedApps[category]?.map { it.packageName } ?: emptyList()
-                        appPackages.any { it in activeNotifications }
+                        val hasNotif = appPackages.any { it in activeNotifications.keys }
+                        val count = activeNotifications.filter { it.key in appPackages }.values.sum()
+                        hasNotif to count
                     }
                 }
+                val categoryHasNotif = categoryNotifs.first
+                val categoryNotifCount = categoryNotifs.second
 
                 CategoryIconItem(
                     isSelected = selectedCategory == category,
                     icon = category?.toIcon() ?: Icons.Default.AllInclusive,
                     hasNotification = categoryHasNotif && showNotificationDots,
+                    notificationCount = categoryNotifCount,
                     size = iconSize
                 )
 
@@ -641,6 +666,7 @@ private fun CategoryIconItem(
     modifier: Modifier = Modifier,
     isHovered: Boolean = false,
     hasNotification: Boolean = false,
+    notificationCount: Int = 0,
     size: androidx.compose.ui.unit.Dp = 48.dp
 ) {
     val scale by animateFloatAsState(if (isHovered) 1.2f else 1f)
@@ -669,13 +695,37 @@ private fun CategoryIconItem(
         }
         
         if (hasNotification) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(4.dp)
-                    .size(8.dp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-            )
+            if (notificationCount > 0) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 4.dp, y = (-4).dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                        .padding(1.dp)
+                        .background(MaterialTheme.colorScheme.surface, CircleShape)
+                        .padding(1.dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (notificationCount > 99) "99+" else notificationCount.toString(),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                        .size(8.dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                )
+            }
         }
     }
 }
@@ -709,8 +759,9 @@ fun AppGrid(
     iconPackPackageName: String? = null,
     hiddenPackages: Set<String> = emptySet(),
     isBottomAnchored: Boolean = true,
-    activeNotifications: Set<String> = emptySet(),
+    activeNotifications: Map<String, Int> = emptyMap(),
     showNotificationDots: Boolean = true,
+    showLabel: Boolean = true,
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: (String, Boolean) -> Unit = { _, _ -> },
@@ -767,7 +818,9 @@ fun AppGrid(
                     useMonochrome = useMonochrome,
                     iconPackPackageName = iconPackPackageName,
                     isHidden = app.packageName in hiddenPackages,
-                    hasNotification = showNotificationDots && app.packageName in activeNotifications,
+                    hasNotification = showNotificationDots && app.packageName in activeNotifications.keys,
+                    notificationCount = activeNotifications[app.packageName] ?: 0,
+                    showLabel = showLabel,
                     sharedElementKeyPrefix = "drawer",
                     getShortcuts = getShortcuts,
                     onShortcutClick = onShortcutClick,
@@ -793,8 +846,9 @@ fun SearchResults(
     useMonochrome: Boolean = false,
     iconPackPackageName: String? = null,
     hiddenPackages: Set<String> = emptySet(),
-    activeNotifications: Set<String> = emptySet(),
+    activeNotifications: Map<String, Int> = emptyMap(),
     showNotificationDots: Boolean = true,
+    showLabel: Boolean = true,
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: (String, Boolean) -> Unit = { _, _ -> },
@@ -820,7 +874,7 @@ fun SearchResults(
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     recentlyUsedApps.forEach { app ->
-                        Box(modifier = Modifier.weight(1f)) {
+                                Box(modifier = Modifier.weight(1f)) {
                             AppItem(
                                 app = app,
                                 sharedTransitionScope = sharedTransitionScope,
@@ -828,9 +882,10 @@ fun SearchResults(
                                 useMonochrome = useMonochrome,
                                 iconPackPackageName = iconPackPackageName,
                                 isHidden = app.packageName in hiddenPackages,
-                                hasNotification = showNotificationDots && app.packageName in activeNotifications,
+                                hasNotification = showNotificationDots && app.packageName in activeNotifications.keys,
+                                notificationCount = activeNotifications[app.packageName] ?: 0,
+                                showLabel = showLabel,
                                 sharedElementKeyPrefix = "recent",
-                                showLabel = true,
                                 getShortcuts = getShortcuts,
                                 onShortcutClick = onShortcutClick,
                                 onHideToggle = { onHideToggle(app.packageName, app.packageName in hiddenPackages) }
@@ -864,7 +919,9 @@ fun SearchResults(
                     useMonochrome = useMonochrome,
                     iconPackPackageName = iconPackPackageName,
                     isHidden = app.packageName in hiddenPackages,
-                    hasNotification = showNotificationDots && app.packageName in activeNotifications,
+                    hasNotification = showNotificationDots && app.packageName in activeNotifications.keys,
+                    notificationCount = activeNotifications[app.packageName] ?: 0,
+                    showLabel = showLabel,
                     sharedElementKeyPrefix = "search",
                     getShortcuts = getShortcuts,
                     onShortcutClick = onShortcutClick,

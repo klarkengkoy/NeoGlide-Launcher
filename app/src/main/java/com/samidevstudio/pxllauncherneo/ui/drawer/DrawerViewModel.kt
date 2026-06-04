@@ -32,8 +32,8 @@ class DrawerViewModel @Inject constructor(
 
     private val preferences = userPreferencesRepository.userPreferencesFlow
 
-    val activeNotifications: StateFlow<Set<String>> = PxlNotificationListener.activeNotifications
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+    val activeNotifications: StateFlow<Map<String, Int>> = PxlNotificationListener.activeNotifications
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val recentlyUsedApps: StateFlow<List<AppModel>> = appRepository.allApps
         .map { apps ->
@@ -94,13 +94,19 @@ class DrawerViewModel @Inject constructor(
         }
     }
 
+    fun resetState() {
+        onSearchQueryChanged("")
+        _webSuggestions.value = emptyList()
+    }
+
     fun launchFirstResult(options: android.os.Bundle? = null) {
-        filteredApps.value.firstOrNull()?.let {
-            appRepository.launchApp(it.packageName, options)
+        filteredApps.value.firstOrNull()?.let { app ->
+            launchApp(app.packageName, options)
         }
     }
 
     fun launchApp(packageName: String, options: android.os.Bundle? = null) {
+        onSearchQueryChanged("")
         appRepository.launchApp(packageName, options)
     }
 
