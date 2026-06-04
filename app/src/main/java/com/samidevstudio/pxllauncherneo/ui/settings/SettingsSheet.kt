@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,8 +33,8 @@ fun SettingsSheet(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val preferences by viewModel.userPreferences.collectAsStateWithLifecycle()
+    val isNotifEnabled by viewModel.isNotificationServiceEnabled.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-    val context = androidx.compose.ui.platform.LocalContext.current
 
     var activeDialog by remember { mutableStateOf<String?>(null) }
 
@@ -42,10 +43,10 @@ fun SettingsSheet(
         "category" -> SelectionDialog(
             title = "Category bar",
             options = listOf(
-                DialogOption("Left handed", CategoryBarType.LEFT, preferences.categoryBarType == CategoryBarType.LEFT),
-                DialogOption("Right handed", CategoryBarType.RIGHT, preferences.categoryBarType == CategoryBarType.RIGHT),
-                DialogOption("Bottom priority", CategoryBarType.BOTTOM, preferences.categoryBarType == CategoryBarType.BOTTOM),
-                DialogOption("None", CategoryBarType.NONE, preferences.categoryBarType == CategoryBarType.NONE)
+                DialogOption("Left side", CategoryBarType.LEFT, preferences.categoryBarType == CategoryBarType.LEFT),
+                DialogOption("Right side", CategoryBarType.RIGHT, preferences.categoryBarType == CategoryBarType.RIGHT),
+                DialogOption("Bottom bar", CategoryBarType.BOTTOM, preferences.categoryBarType == CategoryBarType.BOTTOM),
+                DialogOption("Hidden", CategoryBarType.NONE, preferences.categoryBarType == CategoryBarType.NONE)
             ),
             onDismiss = { activeDialog = null },
             onSelect = { viewModel.setCategoryBarType(it as CategoryBarType) }
@@ -104,6 +105,21 @@ fun SettingsSheet(
             }
         )
         "about" -> AboutDialog(onDismiss = { activeDialog = null })
+        "notif_settings" -> NotificationSettingsDialog(
+            isNotifEnabled = isNotifEnabled,
+            dotMode = preferences.notificationDotMode,
+            onDismiss = { activeDialog = null },
+            onSelectDotMode = { viewModel.setNotificationDotMode(it) }
+        )
+        "label_settings" -> AppLabelSettingsDialog(
+            labelMode = preferences.appLabelMode,
+            onDismiss = { activeDialog = null },
+            onSelectLabelMode = { viewModel.setAppLabelMode(it) }
+        )
+    }
+    
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        viewModel.checkNotificationPermission()
     }
     
     ModalBottomSheet(
@@ -128,116 +144,110 @@ fun SettingsSheet(
             )
 
             LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                item { SectionHeader("APPLICATION DRAWER") }
-                item {
-                    SettingsItem(
-                        icon = Icons.Default.ViewStream,
-                        title = "Category bar",
-                        onClick = { activeDialog = "category" },
-                        trailing = { ValueLabel(preferences.categoryBarType.name.formatLabel()) }
-                    )
-                }
-                item {
-                    SettingsItem(
-                        icon = Icons.Default.SortByAlpha,
-                        title = "Sorting",
-                        onClick = { activeDialog = "sorting" },
-                        trailing = { ValueLabel(preferences.sortingMode.name.formatLabel()) }
-                    )
-                }
-                item {
-                    SettingsItem(
-                        icon = Icons.Default.Circle,
-                        title = "Notification dots",
-                        onClick = { activeDialog = "notif" },
-                        trailing = { ValueLabel(preferences.notificationDotMode.name.formatLabel()) }
-                    )
-                }
-                item {
-                    ToggleSettingsItem(
-                        icon = Icons.Default.Anchor,
-                        title = "Bottom-anchored drawer",
-                        checked = preferences.isBottomAnchored,
-                        onCheckedChange = { viewModel.setIsBottomAnchored(it) }
-                    )
-                }
-                item {
-                    SettingsItem(
-                        icon = Icons.Default.VisibilityOff,
-                        title = "Hidden apps",
-                        onClick = { /* TODO */ }
-                    )
-                }
-
                 item {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.SpaceAround
                     ) {
-                        QuickActionItem(Icons.Default.Add, "Add shortcut") { }
-                        QuickActionItem(Icons.Default.CreateNewFolder, "Add folder") { }
-                        QuickActionItem(Icons.Default.Category, "Add category") { }
+                        QuickActionItem(Icons.Default.Add, "Shortcut") { }
+                        QuickActionItem(Icons.Default.CreateNewFolder, "Folder") { }
+                        QuickActionItem(Icons.Default.Category, "Category") { }
                     }
                 }
 
-                item { Divider() }
-                item { SectionHeader("GLOBAL") }
-                item { SettingsItem(Icons.Default.Wallpaper, "Wallpaper", onClick = { }) }
-                item { SettingsItem(Icons.Default.Palette, "Global appearance", onClick = { }) }
-                item { 
-                    SettingsItem(
-                        icon = Icons.Default.Gesture, 
-                        title = "Gestures and hot keys", 
-                        onClick = { 
-                            android.widget.Toast.makeText(context, "Coming Soon", android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                    ) 
-                }
-                item { SettingsItem(Icons.Default.Backup, "Backup", onClick = { }) }
-
-                item { Spacer(modifier = Modifier.height(16.dp)) }
-                item { SectionHeader("PAGES") }
-                item { 
-                    SettingsItem(
-                        icon = Icons.Default.Smartphone, 
-                        title = "Home screen", 
-                        onClick = { activeDialog = "grid" },
-                        trailing = { ValueLabel(preferences.gridSize.name.split("_").last()) }
-                    ) 
-                }
                 item {
-                    ToggleSettingsItem(
-                        icon = Icons.Default.Lock,
-                        title = "Lock layout",
-                        checked = preferences.lockLayout,
-                        onCheckedChange = { viewModel.setLockLayout(it) }
-                    )
+                    SettingsGroup(title = "APPLICATION DRAWER") {
+                        SettingsItem(
+                            icon = Icons.Default.ViewStream,
+                            title = "Category bar",
+                            onClick = { activeDialog = "category" },
+                            trailing = { 
+                                val label = when(preferences.categoryBarType) {
+                                    CategoryBarType.LEFT -> "Left"
+                                    CategoryBarType.RIGHT -> "Right"
+                                    CategoryBarType.BOTTOM -> "Bottom"
+                                    CategoryBarType.NONE -> "Hidden"
+                                }
+                                ValueLabel(label) 
+                            }
+                        )
+                        ToggleSettingsItem(
+                            icon = Icons.Default.Anchor,
+                            title = "Bottom-anchored",
+                            checked = preferences.isBottomAnchored,
+                            onCheckedChange = { viewModel.setIsBottomAnchored(it) }
+                        )
+                        SettingsItem(
+                            icon = Icons.Default.SortByAlpha,
+                            title = "Sorting",
+                            onClick = { activeDialog = "sorting" },
+                            trailing = { ValueLabel(preferences.sortingMode.name.formatLabel()) }
+                        )
+                        SettingsItem(
+                            icon = Icons.Default.VisibilityOff,
+                            title = "Hidden apps",
+                            onClick = { /* TODO */ }
+                        )
+                    }
                 }
-                item { 
-                    SettingsItem(
-                        icon = Icons.Default.Search, 
-                        title = "Search provider", 
-                        onClick = { activeDialog = "search" },
-                        trailing = { ValueLabel(preferences.searchProvider.name.formatLabel()) }
-                    ) 
-                }
-                item { SettingsItem(Icons.Default.Layers, "Page manager", onClick = { }, trailing = { ProBadge() }) }
 
-                item { Spacer(modifier = Modifier.height(16.dp)) }
-                item { SectionHeader("OTHER") }
-                item { SettingsItem(Icons.Default.Star, "Premium features", onClick = { }, trailing = { Icon(Icons.Default.WorkspacePremium, null, tint = MaterialTheme.colorScheme.tertiary) }) }
-                item { SettingsItem(Icons.Default.VerifiedUser, "Security and privacy", onClick = { }) }
-                item { SettingsItem(Icons.Default.Build, "Troubleshooting", onClick = { activeDialog = "trouble" }) }
-                item { SettingsItem(Icons.Default.RateReview, "Support us with a review", onClick = { }) }
                 item {
-                    SettingsItem(
-                        icon = Icons.Default.Info,
-                        title = "About Pxl Launcher",
-                        onClick = { activeDialog = "about" },
-                        trailing = { Text("v1.0-neo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                    )
+                    SettingsGroup(title = "HOME SCREEN") {
+                        SettingsItem(
+                            icon = Icons.Default.Smartphone, 
+                            title = "Home grid", 
+                            onClick = { activeDialog = "grid" },
+                            trailing = { ValueLabel(preferences.gridSize.name.split("_").last()) }
+                        ) 
+                        ToggleSettingsItem(
+                            icon = Icons.Default.Lock,
+                            title = "Prevent changes",
+                            checked = preferences.lockLayout,
+                            onCheckedChange = { viewModel.setLockLayout(it) }
+                        )
+                    }
                 }
-                item { Spacer(modifier = Modifier.height(48.dp)) }
+
+                item {
+                    SettingsGroup(title = "GLOBAL") {
+                        SettingsItem(
+                            icon = Icons.Default.Notifications,
+                            title = "Notifications",
+                            onClick = { activeDialog = "notif_settings" }
+                        )
+                        SettingsItem(
+                            icon = Icons.Default.Search, 
+                            title = "Search provider", 
+                            onClick = { activeDialog = "search" },
+                            trailing = { ValueLabel(preferences.searchProvider.name.formatLabel()) }
+                        )
+                        SettingsItem(
+                            icon = Icons.Default.FontDownload,
+                            title = "App names",
+                            onClick = { activeDialog = "label_settings" }
+                        )
+                        SettingsItem(Icons.Default.Wallpaper, "Wallpaper", onClick = { })
+                        SettingsItem(Icons.Default.Palette, "Appearance", onClick = { })
+                        SettingsItem(Icons.Default.Backup, "Backup", onClick = { })
+                    }
+                }
+
+                item {
+                    SettingsGroup(title = "OTHER") {
+                        SettingsItem(Icons.Default.WorkspacePremium, "Premium features", onClick = { }, trailing = { Icon(Icons.Default.WorkspacePremium, null, tint = MaterialTheme.colorScheme.tertiary) })
+                        SettingsItem(Icons.Default.VerifiedUser, "Security and privacy", onClick = { })
+                        SettingsItem(Icons.Default.Build, "Troubleshooting", onClick = { activeDialog = "trouble" })
+                        SettingsItem(Icons.Default.RateReview, "Support us with a review", onClick = { })
+                        SettingsItem(
+                            icon = Icons.Default.Info,
+                            title = "About Pxl Launcher",
+                            onClick = { activeDialog = "about" },
+                            trailing = { Text("v1.0-neo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        )
+                    }
+                }
+                
+                item { Spacer(modifier = Modifier.height(32.dp)) }
             }
         }
     }
@@ -246,6 +256,256 @@ fun SettingsSheet(
 private fun String.formatLabel(): String = this.replace("_", " ")
     .lowercase(Locale.getDefault())
     .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NotificationSettingsDialog(
+    isNotifEnabled: Boolean,
+    dotMode: NotificationDotMode,
+    onDismiss: () -> Unit,
+    onSelectDotMode: (NotificationDotMode) -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Notifications, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("Notifications")
+            }
+        },
+        text = {
+            Column {
+                Text(
+                    "Stay organized with notification badges. Enable access to see counts on your icons and in the app drawer.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Permission Item
+                Surface(
+                    onClick = {
+                        try {
+                            val intent = android.content.Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+                            context.startActivity(intent)
+                        } catch (_: Exception) {
+                            android.widget.Toast.makeText(context, "Cannot open settings", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    border = if (!isNotifEnabled) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)) else null
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (isNotifEnabled) Icons.Default.CheckCircle else Icons.Default.Error,
+                            contentDescription = null,
+                            tint = if (isNotifEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Enable Notification Badges",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (isNotifEnabled) "Active • Counting notifications" else "Tap to enable numeric badges",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isNotifEnabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Icon(
+                            Icons.AutoMirrored.Filled.OpenInNew,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    text = "Display badges on:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // CHIP GROUP FOR MODERN SELECTION
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val showOnIcons = dotMode == NotificationDotMode.APP_ICON || dotMode == NotificationDotMode.BOTH
+                    val showOnRail = dotMode == NotificationDotMode.CATEGORY_BAR || dotMode == NotificationDotMode.BOTH
+
+                    FilterChip(
+                        selected = showOnIcons,
+                        onClick = {
+                            val newMode = when {
+                                !showOnIcons && showOnRail -> NotificationDotMode.BOTH
+                                !showOnIcons && !showOnRail -> NotificationDotMode.APP_ICON
+                                showOnIcons && showOnRail -> NotificationDotMode.CATEGORY_BAR
+                                else -> NotificationDotMode.NONE
+                            }
+                            onSelectDotMode(newMode)
+                        },
+                        label = { Text("App Icons") },
+                        leadingIcon = if (showOnIcons) {
+                            { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                        } else null,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+
+                    FilterChip(
+                        selected = showOnRail,
+                        onClick = {
+                            val newMode = when {
+                                !showOnRail && showOnIcons -> NotificationDotMode.BOTH
+                                !showOnRail && !showOnIcons -> NotificationDotMode.CATEGORY_BAR
+                                showOnRail && showOnIcons -> NotificationDotMode.APP_ICON
+                                else -> NotificationDotMode.NONE
+                            }
+                            onSelectDotMode(newMode)
+                        },
+                        label = { Text("Category Rail") },
+                        leadingIcon = if (showOnRail) {
+                            { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                        } else null,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    text = "Choose where you want to see notification counts. Changes apply instantly.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done", fontWeight = FontWeight.Bold) }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppLabelSettingsDialog(
+    labelMode: AppLabelMode,
+    onDismiss: () -> Unit,
+    onSelectLabelMode: (AppLabelMode) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.FontDownload, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("App Names")
+            }
+        },
+        text = {
+            Column {
+                Text(
+                    "Control the visibility of application labels across different areas of the launcher.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Display names on:",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // CHIP GROUP FOR MODERN SELECTION
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val showOnHome = labelMode == AppLabelMode.HOME_ONLY || labelMode == AppLabelMode.BOTH
+                            val showOnDrawer = labelMode == AppLabelMode.DRAWER_ONLY || labelMode == AppLabelMode.BOTH
+
+                            FilterChip(
+                                selected = showOnHome,
+                                onClick = {
+                                    val newMode = when {
+                                        !showOnHome && showOnDrawer -> AppLabelMode.BOTH
+                                        !showOnHome && !showOnDrawer -> AppLabelMode.HOME_ONLY
+                                        showOnHome && showOnDrawer -> AppLabelMode.DRAWER_ONLY
+                                        else -> AppLabelMode.NONE
+                                    }
+                                    onSelectLabelMode(newMode)
+                                },
+                                label = { Text("Home Screen") },
+                                leadingIcon = if (showOnHome) {
+                                    { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                                } else null,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+
+                            FilterChip(
+                                selected = showOnDrawer,
+                                onClick = {
+                                    val newMode = when {
+                                        !showOnDrawer && showOnHome -> AppLabelMode.BOTH
+                                        !showOnDrawer && !showOnHome -> AppLabelMode.DRAWER_ONLY
+                                        showOnDrawer && showOnHome -> AppLabelMode.HOME_ONLY
+                                        else -> AppLabelMode.NONE
+                                    }
+                                    onSelectLabelMode(newMode)
+                                },
+                                label = { Text("App Drawer") },
+                                leadingIcon = if (showOnDrawer) {
+                                    { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                                } else null,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Text(
+                    text = "Toggling these will instantly hide or show labels on your icons. You can mix and match for a cleaner workspace.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done", fontWeight = FontWeight.Bold) }
+        }
+    )
+}
 
 @Composable
 fun AboutDialog(onDismiss: () -> Unit) {
@@ -318,39 +578,37 @@ fun SelectionDialog(title: String, options: List<DialogOption>, onDismiss: () ->
 }
 
 @Composable
+private fun SettingsGroup(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        SectionHeader(title)
+        Spacer(modifier = Modifier.height(4.dp))
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+            shape = RoundedCornerShape(24.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(content = content)
+        }
+    }
+}
+
+@Composable
 private fun SectionHeader(title: String) {
     Text(
         text = title,
-        style = MaterialTheme.typography.labelSmall,
+        style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
     )
 }
 
 @Composable
 private fun ValueLabel(text: String) {
     Text(text = text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-}
-
-@Composable
-private fun Divider() {
-    HorizontalDivider(
-        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-        thickness = 0.5.dp,
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-    )
-}
-
-@Composable
-private fun ProBadge() {
-    Text(
-        text = "PRO",
-        style = MaterialTheme.typography.labelSmall,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.tertiary,
-        modifier = Modifier.background(MaterialTheme.colorScheme.tertiaryContainer, CircleShape).padding(horizontal = 8.dp, vertical = 2.dp)
-    )
 }
 
 @Composable
@@ -377,10 +635,8 @@ fun ToggleSettingsItem(icon: ImageVector, title: String, checked: Boolean, onChe
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp)
-            .clip(RoundedCornerShape(16.dp))
             .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 16.dp, vertical = 10.dp), // Adjusted horizontal padding to account for outer padding
+            .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(icon, null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -389,7 +645,7 @@ fun ToggleSettingsItem(icon: ImageVector, title: String, checked: Boolean, onChe
         Switch(
             checked = checked, 
             onCheckedChange = onCheckedChange,
-            modifier = Modifier.scale(0.85f) // Scale down the switch slightly to feel less "bulky"
+            modifier = Modifier.scale(0.8f)
         )
     }
 }
@@ -399,10 +655,8 @@ fun SettingsItem(icon: ImageVector, title: String, onClick: (() -> Unit)? = null
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp)
-            .clip(RoundedCornerShape(16.dp))
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 20.dp, vertical = 16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(icon, null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -1,18 +1,22 @@
 package com.samidevstudio.pxllauncherneo.ui.settings
 
+import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.samidevstudio.pxllauncherneo.data.repository.*
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val preferencesRepository: UserPreferencesRepository
+    private val preferencesRepository: UserPreferencesRepository,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context
 ) : ViewModel() {
 
     val userPreferences: StateFlow<UserPreferences> = preferencesRepository.userPreferencesFlow
@@ -21,6 +25,14 @@ class SettingsViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = UserPreferences(categoryBarType = CategoryBarType.RIGHT)
         )
+
+    private val _isNotificationServiceEnabled = MutableStateFlow(false)
+    val isNotificationServiceEnabled = _isNotificationServiceEnabled.asStateFlow()
+
+    fun checkNotificationPermission() {
+        val enabledPackages = NotificationManagerCompat.getEnabledListenerPackages(context)
+        _isNotificationServiceEnabled.value = enabledPackages.contains(context.packageName)
+    }
 
     fun setCategoryBarType(type: CategoryBarType) {
         viewModelScope.launch { preferencesRepository.updateCategoryBarType(type) }
@@ -34,8 +46,8 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { preferencesRepository.updateGridSize(size) }
     }
 
-    fun setShowIconLabels(show: Boolean) {
-        viewModelScope.launch { preferencesRepository.updateShowIconLabels(show) }
+    fun setAppLabelMode(mode: AppLabelMode) {
+        viewModelScope.launch { preferencesRepository.updateAppLabelMode(mode) }
     }
 
     fun setSearchProvider(provider: SearchProvider) {
