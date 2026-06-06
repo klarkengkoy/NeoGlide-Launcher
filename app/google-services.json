@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "597932171292",
+    "project_id": "pxllauncher-0d829d71",
+    "storage_bucket": "pxllauncher-0d829d71.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:597932171292:android:2ad5c4225f252ee6d53fd9",
+        "android_client_info": {
+          "package_name": "com.samidevstudio.pxllauncherneo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC9T7JUYosuo_XgA2wpAiZjaTjCrzNGhq4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

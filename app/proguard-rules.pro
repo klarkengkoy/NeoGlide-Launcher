@@ -16,6 +16,18 @@
 # debugging stack traces.
 #-keepattributes SourceFile,LineNumberTable
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Hilt
+-keep class * { @dagger.hilt.android.internal.lifecycle.HiltViewModelMap *; }
+-keep class * { @dagger.hilt.internal.aggregatedroot.AggregatedRoot *; }
+
+
+# Room
+-keep class * extends androidx.room.RoomDatabase
+-keep class * extends androidx.room.Entity
+-keep class * extends androidx.room.Dao
+
+# Retrofit/Serialization
+-keepattributes Signature, InnerClasses, EnclosingMethod
+-keepclassmembers class * {
+    @kotlinx.serialization.Serializable *;
+}
