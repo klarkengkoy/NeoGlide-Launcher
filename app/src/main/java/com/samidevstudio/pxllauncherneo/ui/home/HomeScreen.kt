@@ -171,7 +171,7 @@ fun HomeScreen(
                 .fillMaxSize()
                 .graphicsLayer { alpha = homeAlpha },
             containerColor = Color.Transparent,
-            contentWindowInsets = WindowInsets(0, 0, 0, 0)
+            contentWindowInsets = WindowInsets.safeDrawing
         ) { padding ->
             Box(
                 modifier = Modifier
@@ -205,16 +205,17 @@ fun HomeScreen(
                         }
                 ) {
                     val unitWidth = maxWidth / 4f
-                    val topOffset = 64.dp
-                    val bottomPadding = 24.dp // Minimal padding to keep handles reachable near bottom edge
+                    val topOffset = 0.dp // Use padding from Scaffold
+                    val bottomPadding = 0.dp // Use padding from Scaffold
                     val topOffsetPx = with(density) { topOffset.toPx() }
                     
                     // Adaptive Grid: Calculate nearest row count and stretch to fill height minus bottom padding
-                    val availableHeight = maxHeight - topOffset - bottomPadding
+                    val availableHeight = maxHeight
                     val maxRows = (availableHeight / 96.dp).let { 
                         if (it % 1 > 0.7f) it.toInt() + 1 else it.toInt()
                     }.coerceAtLeast(1)
                     val unitHeight = availableHeight / maxRows
+
 
                     // GRID OVERLAY
                     if (editingWidgetId != -1) {

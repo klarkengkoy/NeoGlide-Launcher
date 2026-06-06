@@ -86,10 +86,8 @@ fun PxlLauncherTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val window = (view.context as Activity).window
-            // Since we use enableEdgeToEdge(), we just need to ensure icons are visible
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
-            WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !darkTheme
+            // Since we use ComponentActivity.enableEdgeToEdge(), 
+            // the system handles appearance and contrast automatically.
         }
     }
 

@@ -305,8 +305,10 @@ fun DrawerScreen(
                     .fillMaxSize()
                     .windowInsetsPadding(WindowInsets.statusBars)
                     .windowInsetsPadding(WindowInsets.navigationBars)
+                    .imePadding()
                     .padding(top = 16.dp),
             ) {
+
                 headerContent()
                 Spacer(modifier = Modifier.height(8.dp))
 
