@@ -130,19 +130,6 @@ fun SettingsSheet(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
-            Text(
-                text = "Launcher Settings",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-            )
-
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                thickness = 0.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-            )
-
             LazyColumn(modifier = Modifier.fillMaxWidth()) {
                 item {
                     Row(
@@ -237,6 +224,11 @@ fun SettingsSheet(
                         SettingsItem(Icons.Default.WorkspacePremium, "Premium features", onClick = { }, trailing = { Icon(Icons.Default.WorkspacePremium, null, tint = MaterialTheme.colorScheme.tertiary) })
                         SettingsItem(Icons.Default.VerifiedUser, "Security and privacy", onClick = { })
                         SettingsItem(Icons.Default.Build, "Troubleshooting", onClick = { activeDialog = "trouble" })
+                        SettingsItem(
+                            icon = Icons.Default.BugReport,
+                            title = "Trigger Test Crash",
+                            onClick = { throw RuntimeException("Test Crash") }
+                        )
                         SettingsItem(Icons.Default.RateReview, "Support us with a review", onClick = { })
                         SettingsItem(
                             icon = Icons.Default.Info,
