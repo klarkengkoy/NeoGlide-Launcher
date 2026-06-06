@@ -289,20 +289,27 @@ class AppRepository @Inject constructor(
 
         knownCategories[app.packageName]?.let { return it }
 
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            when (app.category) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val category = when (app.category) {
                 ApplicationInfo.CATEGORY_GAME -> AppCategory.GAMES
                 ApplicationInfo.CATEGORY_AUDIO, ApplicationInfo.CATEGORY_VIDEO, ApplicationInfo.CATEGORY_IMAGE -> AppCategory.MEDIA
                 ApplicationInfo.CATEGORY_SOCIAL -> AppCategory.SOCIAL
                 ApplicationInfo.CATEGORY_NEWS -> AppCategory.SOCIAL
                 ApplicationInfo.CATEGORY_MAPS -> AppCategory.UTILITIES
                 ApplicationInfo.CATEGORY_PRODUCTIVITY -> AppCategory.UTILITIES
-                else -> AppCategory.OTHER
+                else -> null
             }
-        } else {
-            AppCategory.OTHER
+            if (category != null) return category
         }
+        
+        // Fallback for system apps if not caught by metadata or known list
+        if ((app.flags and ApplicationInfo.FLAG_SYSTEM) != 0) {
+            return AppCategory.SYSTEM
+        }
+
+        return AppCategory.OTHER
     }
+
 
     private fun AppEntity.toDomainModel(): AppModel {
         return AppModel(
