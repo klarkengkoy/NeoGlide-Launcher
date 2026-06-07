@@ -9,6 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -18,6 +19,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -246,50 +248,6 @@ fun HomeScreen(
                         }
                     }
 
-                    // Dock Widget (Placed here to be covered by the scrim)
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .padding(bottom = 48.dp)
-                            .zIndex(0f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-                        ) {
-                            dockApps.forEach { app ->
-                                AppItem(
-                                    app = app,
-                                    sharedTransitionScope = sharedTransitionScope,
-                                    animatedVisibilityScope = animatedVisibilityScope,
-                                    useMonochrome = preferences.useMonochromeIcons,
-                                    iconPackPackageName = preferences.iconPackPackageName,
-                                    isHidden = app.packageName in preferences.hiddenPackages,
-                                    hasNotification = (preferences.notificationDotMode == NotificationDotMode.APP_ICON || 
-                                                     preferences.notificationDotMode == NotificationDotMode.BOTH) &&
-                                                     app.packageName in activeNotifications.keys,
-                                    notificationCount = activeNotifications[app.packageName] ?: 0,
-                                    showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
-                                    sharedElementKeyPrefix = "dock",
-                                    getShortcuts = { viewModel.getShortcuts(it) },
-                                    onShortcutClick = { viewModel.launchShortcut(it) },
-                                    onHideToggle = { 
-                                        if (app.packageName in preferences.hiddenPackages) {
-                                            viewModel.unhideApp(app.packageName)
-                                        } else {
-                                            viewModel.hideApp(app.packageName)
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                ) { options ->
-                                    viewModel.launchApp(app.packageName, options)
-                                }
-                            }
-                        }
-                    }
-
                     // TOUCH BLOCKER (Scrim) - placed below the active widget but above everything else in the grid (including Dock)
                     if (editingWidgetId != -1) {
                         Box(
@@ -305,159 +263,199 @@ fun HomeScreen(
                         )
                     }
 
-                    val homeApps by viewModel.homeItems.collectAsStateWithLifecycle()
-                    
-                    homeApps.forEach { item ->
-                        if (item is HomeItem.App) {
-                            val app = item.appModel
-                            Box(
-                                modifier = Modifier
-                                    .offset(
-                                        x = unitWidth * item.column,
-                                        y = topOffset + (unitHeight * item.row)
-                                    )
-                                    .size(unitWidth, unitHeight)
-                            ) {
-                                AppItem(
-                                    app = app,
-                                    sharedTransitionScope = sharedTransitionScope,
-                                    animatedVisibilityScope = animatedVisibilityScope,
-                                    useMonochrome = preferences.useMonochromeIcons,
-                                    iconPackPackageName = preferences.iconPackPackageName,
-                                    isHidden = app.packageName in preferences.hiddenPackages,
-                                    hasNotification = (preferences.notificationDotMode == NotificationDotMode.APP_ICON || 
-                                                     preferences.notificationDotMode == NotificationDotMode.BOTH) &&
-                                                     app.packageName in activeNotifications.keys,
-                                    notificationCount = activeNotifications[app.packageName] ?: 0,
-                                    showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
-                                    sharedElementKeyPrefix = "home",
-                                    getShortcuts = { viewModel.getShortcuts(it) },
-                                    onShortcutClick = { viewModel.launchShortcut(it) },
-                                    onHideToggle = { 
-                                        if (app.packageName in preferences.hiddenPackages) {
-                                            viewModel.unhideApp(app.packageName)
+                    // No longer rendering static Dock here, it's now in homeItems
+
+                    val homeItems by viewModel.homeItems.collectAsStateWithLifecycle()
+                    homeItems.forEach { item ->
+                        when (item) {
+                            is HomeItem.App -> {
+                                val app = item.appModel
+                                Box(
+                                    modifier = Modifier
+                                        .offset(
+                                            x = unitWidth * item.column,
+                                            y = topOffset + (unitHeight * item.row)
+                                        )
+                                        .size(unitWidth, unitHeight)
+                                ) {
+                                    AppItem(
+                                        app = app,
+                                        sharedTransitionScope = sharedTransitionScope,
+                                        animatedVisibilityScope = animatedVisibilityScope,
+                                        useMonochrome = preferences.useMonochromeIcons,
+                                        iconPackPackageName = preferences.iconPackPackageName,
+                                        isHidden = app.packageName in preferences.hiddenPackages,
+                                        hasNotification = (preferences.notificationDotMode == NotificationDotMode.APP_ICON || 
+                                                         preferences.notificationDotMode == NotificationDotMode.BOTH) &&
+                                                         app.packageName in activeNotifications.keys,
+                                        notificationCount = activeNotifications[app.packageName] ?: 0,
+                                        showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
+                                        sharedElementKeyPrefix = "home",
+                                        getShortcuts = { viewModel.getShortcuts(it) },
+                                        onShortcutClick = { viewModel.launchShortcut(it) },
+                                        onHideToggle = { 
+                                            if (app.packageName in preferences.hiddenPackages) {
+                                                viewModel.unhideApp(app.packageName)
+                                            } else {
+                                                viewModel.hideApp(app.packageName)
+                                            }
+                                        }
+                                    ) { options ->
+                                        viewModel.launchApp(app.packageName, options)
+                                    }
+                                }
+                            }
+                            is HomeItem.Widget -> {
+                                val isCurrentEditing = editingWidgetId == item.id
+                                val dockApps by viewModel.dockApps.collectAsStateWithLifecycle()
+
+                                PxlWidgetHost(
+                                    widgetId = item.id,
+                                    appWidgetHost = viewModel.appWidgetHost,
+                                    appWidgetManager = viewModel.appWidgetManager,
+                                    // Adaptive Snap: handle special placeholder rows
+                                    row = when {
+                                        item.row >= 99.5f -> (maxRows - 1.5f).coerceAtLeast(0f)
+                                        item.row >= 99f -> (maxRows - 1f).coerceAtLeast(0f)
+                                        else -> item.row.coerceIn(0f, (maxRows - item.spanY).coerceAtLeast(0f))
+                                    },
+                                    column = item.column.coerceIn(0f, (4f - item.spanX).coerceAtLeast(0f)),
+                                    spanX = item.spanX,
+                                    spanY = item.spanY,
+                                    unitWidth = unitWidth,
+                                    unitHeight = unitHeight,
+                                    isEditing = isCurrentEditing,
+                                    modifier = Modifier
+                                        .offset(y = topOffset)
+                                        .zIndex(if (isCurrentEditing) 1f else 0f),
+                                    onDragStart = { showWidgetMenu = false },
+                                    onLongClick = { 
+                                        if (!preferences.lockLayout) {
+                                            editingWidgetId = item.id
                                         } else {
-                                            viewModel.hideApp(app.packageName)
+                                            Toast.makeText(context, "Layout is locked", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    onRemove = {
+                                        viewModel.removeWidget(item.id)
+                                        editingWidgetId = -1
+                                    },
+                                    onResize = { newRow, newCol, newSpanX, newSpanY ->
+                                        if (item.isCustom) {
+                                            // Handle fixed-dimension widget (Internal Widgets like Dock)
+                                            val widthChanged = newSpanX != item.spanX
+                                            val heightChanged = newSpanY != item.spanY
+                                            if (widthChanged || heightChanged) {
+                                                val message = when {
+                                                    widthChanged && heightChanged -> "This widget has a fixed size"
+                                                    widthChanged -> "This widget has a fixed width"
+                                                    else -> "This widget has a fixed height"
+                                                }
+                                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                                // Revert to original position if resizing was attempted
+                                                viewModel.updateWidgetBounds(item.id, item.row, item.column, item.spanX, item.spanY)
+                                            } else {
+                                                // Allow normal movement
+                                                viewModel.updateWidgetBounds(item.id, newRow.coerceAtLeast(0f), newCol, newSpanX, newSpanY)
+                                            }
+                                        } else {
+                                            viewModel.updateWidgetBounds(
+                                                item.id,
+                                                newRow.coerceIn(0f, (maxRows - newSpanY).coerceAtLeast(0f)),
+                                                newCol.coerceIn(0f, (4f - newSpanX).coerceAtLeast(0f)),
+                                                newSpanX,
+                                                newSpanY
+                                            )
                                         }
                                     }
-                                ) { options ->
-                                    viewModel.launchApp(app.packageName, options)
+                                ) {
+                                    val currentMaxRows = maxRows
+                                    val targetRow = when {
+                                        item.row >= 99.5f -> (currentMaxRows - 1.5f).coerceAtLeast(0f)
+                                        item.row >= 99f -> (currentMaxRows - 1f).coerceAtLeast(0f)
+                                        else -> null
+                                    }
+
+                                    if (targetRow != null) {
+                                        LaunchedEffect(item.id, targetRow) {
+                                            viewModel.updateWidgetBounds(item.id, targetRow, item.column, item.spanX, item.spanY)
+                                        }
+                                    }
+
+                                    if (item.isCustom) {
+                                        // RENDER INTERNAL WIDGET CONTENT
+                                        val widget = item.widgetEntity
+                                        if (widget.providerClass == "dock") {
+                                            // RENDER DOCK CONTENT
+                                            Box(
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                // Visual Background
+                                                Surface(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    shape = RoundedCornerShape(24.dp),
+                                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                                ) {}
+
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                                                ) {
+                                                    dockApps.forEach { app ->
+                                                        AppItem(
+                                                            app = app,
+                                                            sharedTransitionScope = sharedTransitionScope,
+                                                            animatedVisibilityScope = animatedVisibilityScope,
+                                                            useMonochrome = preferences.useMonochromeIcons,
+                                                            iconPackPackageName = preferences.iconPackPackageName,
+                                                            isHidden = app.packageName in preferences.hiddenPackages,
+                                                            hasNotification = (preferences.notificationDotMode == NotificationDotMode.APP_ICON || 
+                                                                             preferences.notificationDotMode == NotificationDotMode.BOTH) &&
+                                                                             app.packageName in activeNotifications.keys,
+                                                            notificationCount = activeNotifications[app.packageName] ?: 0,
+                                                            showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
+                                                            sharedElementKeyPrefix = "dock",
+                                                            getShortcuts = { viewModel.getShortcuts(it) },
+                                                            onShortcutClick = { viewModel.launchShortcut(it) },
+                                                            onHideToggle = { 
+                                                                if (app.packageName in preferences.hiddenPackages) {
+                                                                    viewModel.unhideApp(app.packageName)
+                                                                } else {
+                                                                    viewModel.hideApp(app.packageName)
+                                                                }
+                                                            },
+                                                            modifier = Modifier.weight(1f)
+                                                        ) { options ->
+                                                            viewModel.launchApp(app.packageName, options)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
 
-                    widgets.forEach { widget ->
-                        val isCurrentEditing = editingWidgetId == widget.widgetId
-                        PxlWidgetHost(
-                            widgetId = widget.widgetId,
-                            appWidgetHost = viewModel.appWidgetHost,
-                            appWidgetManager = viewModel.appWidgetManager,
-                            row = widget.row,
-                            column = widget.column,
-                            spanX = widget.spanX,
-                            spanY = widget.spanY,
-                            unitWidth = unitWidth,
-                            unitHeight = unitHeight,
-                            isEditing = isCurrentEditing,
-                            modifier = Modifier
-                                .offset(y = topOffset)
-                                .zIndex(if (isCurrentEditing) 1f else 0f), // Lift active widget above scrim
-                            onDragStart = { showWidgetMenu = false },
-                            onLongClick = {
-                                if (!preferences.lockLayout) {
-                                    editingWidgetId = widget.widgetId
-                                    
-                                    val widgetLeft = (unitWidth * widget.column) + 4.dp
-                                    val widgetTop = topOffset + (unitHeight * widget.row) + 4.dp
-                                    val widgetWidth = (unitWidth * widget.spanX) - 8.dp
-                                    val widgetHeight = (unitHeight * widget.spanY) - 8.dp
-                                    val widgetBottom = widgetTop + widgetHeight
-                                    val widgetRight = widgetLeft + widgetWidth
-                                    
-                                    // Estimated menu size (Our Dynamic Popup is now compact)
-                                    val menuH = 100.dp 
-                                    val menuW = 150.dp
-                                    val gap = 12.dp
-                                    
-                                    var finalX = widgetLeft
-                                    var finalY = widgetBottom + gap
-                                    
-                                    // gridW/H are derived from maxWidth/maxHeight which are Dp in BoxWithConstraints
-                                    val gridW = maxWidth
-                                    val gridH = maxHeight
-                                    
-                                    if (widgetBottom + menuH + gap > gridH) {
-                                        if (widgetTop > menuH + gap) {
-                                            finalY = widgetTop - menuH - gap
-                                        } else {
-                                            finalY = widgetTop
-                                            if (widgetRight + menuW + gap <= gridW) {
-                                                finalX = widgetRight + gap
-                                            } else if (widgetLeft > menuW + gap) {
-                                                finalX = widgetLeft - menuW - gap
-                                            } else {
-                                                finalX = (gridW - menuW) / 2f
-                                                finalY = (gridH - menuH) / 2f
+                    // Remove the separate widgets loop as they are now handled in homeItems
+
+                                    HomeContextMenu(
+                                        expanded = showContextMenu,
+                                        onDismissRequest = { showContextMenu = false },
+                                        offset = contextMenuOffset,
+                                        onOpenWidgets = {
+                                            val appWidgetId = viewModel.allocateWidgetId()
+                                            val intent = android.content.Intent(AppWidgetManager.ACTION_APPWIDGET_PICK).apply {
+                                                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                                             }
-                                        }
-                                    }
-                                    
-                                    contextMenuOffset = DpOffset(x = finalX, y = finalY)
-                                    showWidgetMenu = true
-                                } else {
-                                    Toast.makeText(context, "Layout is locked", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            onResize = { newRow, newCol, newSpanX, newSpanY ->
-                                // Constrain widgets to the visible maxRows
-                                viewModel.updateWidgetBounds(
-                                    widget.widgetId,
-                                    newRow.coerceIn(0f, (maxRows - newSpanY).coerceAtLeast(0f)),
-                                    newCol.coerceIn(0f, (4f - newSpanX).coerceAtLeast(0f)),
-                                    newSpanX,
-                                    newSpanY
-                                )
-                            }
-                        )
-                    }
+                                            widgetPickLauncher.launch(intent)
+                                        },
+                                        onOpenLauncherSettings = { showSettings = true }
+                                    )
 
-                    HomeContextMenu(
-                        expanded = showContextMenu,
-                        onDismissRequest = { showContextMenu = false },
-                        offset = contextMenuOffset,
-                        onOpenWidgets = {
-                            val appWidgetId = viewModel.allocateWidgetId()
-                            val intent = android.content.Intent(AppWidgetManager.ACTION_APPWIDGET_PICK).apply {
-                                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-                            }
-                            widgetPickLauncher.launch(intent)
-                        },
-                        onOpenLauncherSettings = { showSettings = true }
-                    )
-
-                    WidgetContextMenu(
-                        expanded = showWidgetMenu,
-                        onDismissRequest = { showWidgetMenu = false },
-                        onRemove = {
-                            if (editingWidgetId != -1) {
-                                viewModel.removeWidget(editingWidgetId)
-                                editingWidgetId = -1
-                            }
-                            showWidgetMenu = false
-                        },
-                        onOpenApp = {
-                            if (editingWidgetId != -1) {
-                                val info = viewModel.appWidgetManager.getAppWidgetInfo(editingWidgetId)
-                                info?.provider?.packageName?.let { pkg ->
-                                    viewModel.launchApp(pkg)
-                                }
-                                editingWidgetId = -1
-                            }
-                            showWidgetMenu = false
-                        },
-                        offset = contextMenuOffset
-                    )
+                    // Remove WidgetContextMenu as it's redundant with the 'X' button
                 }
             }
         }

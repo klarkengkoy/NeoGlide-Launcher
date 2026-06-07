@@ -4,7 +4,6 @@ import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.samidevstudio.pxllauncherneo.data.local.entity.HomeAppEntity
 import com.samidevstudio.pxllauncherneo.data.local.entity.WidgetEntity
 import com.samidevstudio.pxllauncherneo.data.repository.AppRepository
 import com.samidevstudio.pxllauncherneo.data.repository.HomeRepository
@@ -31,7 +30,7 @@ sealed class HomeItem {
         override val row: Float,
         override val column: Float,
         override val spanX: Float = 1f,
-        override val spanY: Float = 1f
+        override val spanY: Float = 1f,
     ) : HomeItem()
 
     data class Widget(
@@ -40,7 +39,8 @@ sealed class HomeItem {
         override val row: Float,
         override val column: Float,
         override val spanX: Float,
-        override val spanY: Float
+        override val spanY: Float,
+        val isCustom: Boolean = false // New flag for internal widgets like Dock
     ) : HomeItem()
 }
 
@@ -54,11 +54,34 @@ class HomeViewModel @Inject constructor(
     val appWidgetHost: AppWidgetHost
 ) : ViewModel() {
 
-    private val _shouldShowDefaultPrompt = MutableStateFlow(false)
+    private val _shouldShowDefaultPrompt = MutableStateFlow(value = false)
     val shouldShowDefaultPrompt = _shouldShowDefaultPrompt.asStateFlow()
 
     init {
         viewModelScope.launch {
+            // 1. Provision the internal Dock widget into the standard database strictly on FIRST INSTALL
+            val prefs = userPreferencesRepository.userPreferencesFlow.first()
+            if (prefs.isFirstInstallRun) {
+                // Double check DB to prevent accidental duplicates
+                val existing = widgetRepository.allWidgets.first()
+                if (existing.none { it.providerPackage == "internal" && it.providerClass == "dock" }) {
+                    // Provision internal Dock (Floating placeholder: 99.5f)
+                    val dockId = widgetRepository.allocateWidgetId()
+                    widgetRepository.addWidget(WidgetEntity(
+                        widgetId = dockId,
+                        providerPackage = "internal",
+                        providerClass = "dock",
+                        label = "Dock",
+                        row = 99.5f,
+                        column = 0f,
+                        spanX = 4f,
+                        spanY = 1f
+                    ))
+                }
+                userPreferencesRepository.setFirstInstallRun(false)
+            }
+
+            // 2. Refresh apps after provisioning
             appRepository.refreshApps()
         }
     }
@@ -72,8 +95,7 @@ class HomeViewModel @Inject constructor(
         homeRepository.allWidgets
     ) { apps, homeApps, widgets ->
         val appItems = homeApps.mapNotNull { homeApp ->
-            val appModel = apps.find { it.packageName == homeApp.packageName }
-            if (appModel != null) {
+            apps.find { it.packageName == homeApp.packageName }?.let { appModel ->
                 HomeItem.App(
                     id = homeApp.id,
                     appModel = appModel,
@@ -82,7 +104,7 @@ class HomeViewModel @Inject constructor(
                     spanX = homeApp.spanX,
                     spanY = homeApp.spanY
                 )
-            } else null
+            }
         }
         val widgetItems = widgets.map { widget ->
             HomeItem.Widget(
@@ -91,9 +113,11 @@ class HomeViewModel @Inject constructor(
                 row = widget.row,
                 column = widget.column,
                 spanX = widget.spanX,
-                spanY = widget.spanY
+                spanY = widget.spanY,
+                isCustom = widget.providerPackage == "internal"
             )
         }
+        
         appItems + widgetItems
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -101,9 +125,10 @@ class HomeViewModel @Inject constructor(
         appRepository.allApps,
         appRepository.allApps.map { appRepository.getDefaultDockApps() }
     ) { apps, defaultDockPkgs ->
-        val dockPkgs = defaultDockPkgs
-        apps.filter { it.packageName in dockPkgs }
-            .sortedBy { dockPkgs.indexOf(it.packageName) }
+        apps.asSequence()
+            .filter { it.packageName in defaultDockPkgs }
+            .sortedBy { defaultDockPkgs.indexOf(it.packageName) }
+            .toList()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val widgets: StateFlow<List<WidgetEntity>> = widgetRepository.allWidgets
@@ -180,6 +205,10 @@ class HomeViewModel @Inject constructor(
 
     fun allocateWidgetId(): Int {
         return appWidgetHost.allocateAppWidgetId()
+    }
+
+    fun onDragStart() {
+        // Handle drag start global state if needed
     }
 
     fun updateWidgetBounds(widgetId: Int, row: Float, col: Float, spanX: Float, spanY: Float) {
