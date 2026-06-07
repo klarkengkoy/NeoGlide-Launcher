@@ -32,6 +32,7 @@ fun SettingsSheet(
     onDismiss: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val preferences by viewModel.userPreferences.collectAsStateWithLifecycle()
     val isNotifEnabled by viewModel.isNotificationServiceEnabled.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
@@ -173,7 +174,9 @@ fun SettingsSheet(
                         SettingsItem(
                             icon = Icons.Default.VisibilityOff,
                             title = "Hidden apps",
-                            onClick = { /* TODO */ }
+                            onClick = { 
+                                android.widget.Toast.makeText(context, "Hidden apps management coming soon", android.widget.Toast.LENGTH_SHORT).show()
+                            }
                         )
                     }
                 }
@@ -224,11 +227,6 @@ fun SettingsSheet(
                         SettingsItem(Icons.Default.WorkspacePremium, "Premium features", onClick = { }, trailing = { Icon(Icons.Default.WorkspacePremium, null, tint = MaterialTheme.colorScheme.tertiary) })
                         SettingsItem(Icons.Default.VerifiedUser, "Security and privacy", onClick = { })
                         SettingsItem(Icons.Default.Build, "Troubleshooting", onClick = { activeDialog = "trouble" })
-                        SettingsItem(
-                            icon = Icons.Default.BugReport,
-                            title = "Trigger Test Crash",
-                            onClick = { throw RuntimeException("Test Crash") }
-                        )
                         SettingsItem(Icons.Default.RateReview, "Support us with a review", onClick = { })
                         SettingsItem(
                             icon = Icons.Default.Info,

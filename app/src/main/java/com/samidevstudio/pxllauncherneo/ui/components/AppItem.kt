@@ -44,6 +44,7 @@ fun AppItem(
     notificationCount: Int = 0,
     sharedElementKeyPrefix: String = "drawer",
     showLabel: Boolean = true,
+    isLongClickEnabled: Boolean = true, // New parameter to disable long-press
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: () -> Unit = {},
@@ -122,7 +123,7 @@ fun AppItem(
                             }
                             onClick(bundle)
                         },
-                        onLongClick = { showMenu = true }
+                        onLongClick = if (isLongClickEnabled) { { showMenu = true } } else null
                     )
                     .padding(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
