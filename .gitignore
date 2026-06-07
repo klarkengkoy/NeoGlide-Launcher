@@ -10,6 +10,7 @@
 
 # AI Tools & Agents
 .agent/
+.agents/
 .artifacts/
 .aiexclude
 
@@ -22,3 +23,6 @@ cache-state.xml
 
 # Kotlin
 .kotlin/
+
+# Self-exclude .gitignore from being tracked
+.gitignore
