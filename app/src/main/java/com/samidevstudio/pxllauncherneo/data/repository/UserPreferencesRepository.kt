@@ -53,7 +53,8 @@ data class UserPreferences(
     val doubleTapToSleep: Boolean = false,
     val swipeDownForNotifications: Boolean = true,
     val isBottomAnchored: Boolean = true,
-    val iconPackPackageName: String? = null
+    val iconPackPackageName: String? = null,
+    val isFirstInstallRun: Boolean = true
 )
 
 @Singleton
@@ -76,6 +77,7 @@ class UserPreferencesRepository @Inject constructor(
         val SWIPE_DOWN_FOR_NOTIFICATIONS = booleanPreferencesKey("swipe_down_for_notifications")
         val IS_BOTTOM_ANCHORED = booleanPreferencesKey("is_bottom_anchored")
         val ICON_PACK_PACKAGE_NAME = stringPreferencesKey("icon_pack_package_name")
+        val IS_FIRST_INSTALL_RUN = booleanPreferencesKey("is_first_install_run")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data
@@ -124,7 +126,8 @@ class UserPreferencesRepository @Inject constructor(
                 doubleTapToSleep = preferences[PreferencesKeys.DOUBLE_TAP_TO_SLEEP] ?: false,
                 swipeDownForNotifications = preferences[PreferencesKeys.SWIPE_DOWN_FOR_NOTIFICATIONS] ?: true,
                 isBottomAnchored = preferences[PreferencesKeys.IS_BOTTOM_ANCHORED] ?: true,
-                iconPackPackageName = preferences[PreferencesKeys.ICON_PACK_PACKAGE_NAME]
+                iconPackPackageName = preferences[PreferencesKeys.ICON_PACK_PACKAGE_NAME],
+                isFirstInstallRun = preferences[PreferencesKeys.IS_FIRST_INSTALL_RUN] ?: true
             )
         }
 
@@ -202,5 +205,9 @@ class UserPreferencesRepository @Inject constructor(
                 preferences[PreferencesKeys.ICON_PACK_PACKAGE_NAME] = packageName
             }
         }
+    }
+
+    suspend fun setFirstInstallRun(isFirst: Boolean) {
+        context.dataStore.edit { preferences -> preferences[PreferencesKeys.IS_FIRST_INSTALL_RUN] = isFirst }
     }
 }
