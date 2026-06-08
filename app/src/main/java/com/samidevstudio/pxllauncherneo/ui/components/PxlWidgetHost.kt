@@ -2,9 +2,11 @@ package com.samidevstudio.pxllauncherneo.ui.components
 
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.size
@@ -55,10 +57,10 @@ fun PxlWidgetHost(
     unitHeight: Dp,
     isEditing: Boolean,
     modifier: Modifier = Modifier,
-    onLongClick: (DpOffset) -> Unit = {},
     onDragStart: () -> Unit = {},
+    onResizeStart: () -> Unit = {},
+    onInteractionUpdate: (Float, Float, Float, Float) -> Unit = { _, _, _, _ -> },
     onResize: (Float, Float, Float, Float) -> Unit = { _, _, _, _ -> },
-    onRemove: () -> Unit = {}, // New parameter for removal
     content: @Composable (() -> Unit)? = null
 ) {
     val widgetInfo = appWidgetManager.getAppWidgetInfo(widgetId)
@@ -68,7 +70,8 @@ fun PxlWidgetHost(
 
     val currentOnResize by rememberUpdatedState(onResize)
     val currentOnDragStart by rememberUpdatedState(onDragStart)
-    val currentOnLongClick by rememberUpdatedState(onLongClick)
+    val currentOnResizeStart by rememberUpdatedState(onResizeStart)
+    val currentOnInteractionUpdate by rememberUpdatedState(onInteractionUpdate)
     val currentIsEditing by rememberUpdatedState(isEditing)
     val currentRow by rememberUpdatedState(row)
     val currentCol by rememberUpdatedState(column)
@@ -80,6 +83,11 @@ fun PxlWidgetHost(
     var dragDeltaY by remember { mutableFloatStateOf(0f) }
 
     var initialSnapshot by remember { mutableStateOf<WidgetBounds?>(null) }
+
+    val elevation by animateDpAsState(
+        targetValue = if (activeHandle != Handle.NONE) 16.dp else if (isEditing) 8.dp else 0.dp,
+        label = "widgetElevation"
+    )
 
     val visualRect = remember(row, column, spanX, spanY, dragDeltaX, dragDeltaY, activeHandle, initialSnapshot) {
         val base = initialSnapshot ?: WidgetBounds(row, column, spanX, spanY)
@@ -119,6 +127,16 @@ fun PxlWidgetHost(
         floatArrayOf(r, c, sx, sy)
     }
 
+    LaunchedEffect(visualRect, activeHandle) {
+        if (activeHandle != Handle.NONE) {
+            val finalRow = ((visualRect[0]) * 2).roundToInt() / 2f
+            val finalCol = ((visualRect[1]) * 2).roundToInt() / 2f
+            val finalSpanX = (visualRect[2] * 2).roundToInt() / 2f
+            val finalSpanY = (visualRect[3] * 2).roundToInt() / 2f
+            currentOnInteractionUpdate(finalRow, finalCol, finalSpanX, finalSpanY)
+        }
+    }
+
     Box(
         modifier = modifier
             .offset(
@@ -133,41 +151,53 @@ fun PxlWidgetHost(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(4.dp)
+                .shadow(
+                    elevation = elevation,
+                    shape = RoundedCornerShape(28.dp),
+                    spotColor = Color.Black.copy(alpha = 0.5f)
+                )
                 .then(
                     if (isEditing) {
-                        Modifier
-                            .shadow(
-                                elevation = 8.dp,
-                                shape = RoundedCornerShape(28.dp),
-                                spotColor = Color.Black.copy(alpha = 0.5f)
-                            )
-                            .border(2.dp, Color.White, RoundedCornerShape(28.dp))
+                        Modifier.border(2.dp, Color.White, RoundedCornerShape(28.dp))
                     } else Modifier
                 )
                 .pointerInput(widgetId) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                            val down = event.changes.find { it.changedToDown() }
-
-                            if (down != null && !currentIsEditing) {
-                                val result = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
-                                    while (true) {
-                                        val nextEvent = awaitPointerEvent(pass = PointerEventPass.Initial)
-                                        if (nextEvent.changes.any { it.changedToUp() }) break
-                                    }
-                                }
-                                if (result == null) {
-                                    currentOnLongClick(DpOffset(with(density) { down.position.x.toDp() }, with(density) { down.position.y.toDp() }))
-                                    var currentEvent = event
-                                    while (currentEvent.changes.any { it.pressed }) {
-                                        currentEvent.changes.forEach { it.consume() }
-                                        currentEvent = awaitPointerEvent(pass = PointerEventPass.Initial)
-                                    }
-                                }
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = {
+                            if (!currentIsEditing) {
+                                currentOnDragStart()
                             }
+                            activeHandle = Handle.MOVE
+                            initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
+                        },
+                        onDragEnd = {
+                            val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
+                            val finalRow = ((base.row + dragDeltaY / unitHeightPx) * 2).roundToInt() / 2f
+                            val finalCol = ((base.col + dragDeltaX / unitWidthPx) * 2).roundToInt() / 2f
+
+                            currentOnResize(
+                                finalRow.coerceAtLeast(0f),
+                                finalCol.coerceAtLeast(0f).coerceAtMost(4f - base.spanX),
+                                base.spanX,
+                                base.spanY
+                            )
+                            activeHandle = Handle.NONE
+                            dragDeltaX = 0f
+                            dragDeltaY = 0f
+                            initialSnapshot = null
+                        },
+                        onDragCancel = {
+                            activeHandle = Handle.NONE
+                            dragDeltaX = 0f
+                            dragDeltaY = 0f
+                            initialSnapshot = null
+                        },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            dragDeltaX += dragAmount.x
+                            dragDeltaY += dragAmount.y
                         }
-                    }
+                    )
                 }
         ) {
             if (widgetInfo != null) {
@@ -239,7 +269,11 @@ fun PxlWidgetHost(
                         currentOnResize(adjustedRow, base.col, base.spanX, clampedSpanY)
                         activeHandle = Handle.NONE; dragDeltaY = 0f; initialSnapshot = null
                     } else {
-                        if (activeHandle == Handle.NONE) { currentOnDragStart(); activeHandle = h; initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY) }
+                        if (activeHandle == Handle.NONE) { 
+                            currentOnResizeStart()
+                            activeHandle = h
+                            initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
+                        }
                         dragDeltaY += d.y
                     }
                 }
@@ -252,7 +286,11 @@ fun PxlWidgetHost(
                         currentOnResize(base.row, base.col, base.spanX, finalSpanY.coerceAtLeast(0.5f))
                         activeHandle = Handle.NONE; dragDeltaY = 0f; initialSnapshot = null
                     } else {
-                        if (activeHandle == Handle.NONE) { currentOnDragStart(); activeHandle = h; initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY) }
+                        if (activeHandle == Handle.NONE) {
+                            currentOnResizeStart()
+                            activeHandle = h
+                            initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
+                        }
                         dragDeltaY += d.y
                     }
                 }
@@ -267,7 +305,11 @@ fun PxlWidgetHost(
                         currentOnResize(base.row, adjustedCol, clampedSpanX, base.spanY)
                         activeHandle = Handle.NONE; dragDeltaX = 0f; initialSnapshot = null
                     } else {
-                        if (activeHandle == Handle.NONE) { currentOnDragStart(); activeHandle = h; initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY) }
+                        if (activeHandle == Handle.NONE) {
+                            currentOnResizeStart()
+                            activeHandle = h
+                            initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
+                        }
                         dragDeltaX += d.x
                     }
                 }
@@ -280,31 +322,13 @@ fun PxlWidgetHost(
                         currentOnResize(base.row, base.col, finalSpanX.coerceAtLeast(0.5f), base.spanY)
                         activeHandle = Handle.NONE; dragDeltaX = 0f; initialSnapshot = null
                     } else {
-                        if (activeHandle == Handle.NONE) { currentOnDragStart(); activeHandle = h; initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY) }
+                        if (activeHandle == Handle.NONE) {
+                            currentOnResizeStart()
+                            activeHandle = h
+                            initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
+                        }
                         dragDeltaX += d.x
                     }
-                }
-            }
-        }
-
-        if (isEditing) {
-            Surface(
-                onClick = onRemove,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .size(26.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surface,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Remove",
-                        modifier = Modifier
-                            .size(25.dp)
-                            .border(1.dp, Color.White, CircleShape),
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
                 }
             }
         }

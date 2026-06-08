@@ -44,10 +44,11 @@ fun AppItem(
     notificationCount: Int = 0,
     sharedElementKeyPrefix: String = "drawer",
     showLabel: Boolean = true,
-    isLongClickEnabled: Boolean = true, // New parameter to disable long-press
+    isLongClickEnabled: Boolean = true,
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: () -> Unit = {},
+    onLongClick: (() -> Unit)? = null, // Changed to nullable
     onClick: (android.os.Bundle?) -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -123,7 +124,15 @@ fun AppItem(
                             }
                             onClick(bundle)
                         },
-                        onLongClick = if (isLongClickEnabled) { { showMenu = true } } else null
+                        onLongClick = if (isLongClickEnabled) { 
+                            { 
+                                if (onLongClick != null) {
+                                    onLongClick()
+                                } else {
+                                    showMenu = true
+                                }
+                            } 
+                        } else null
                     )
                     .padding(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -178,16 +187,18 @@ fun AppItem(
                         }
                     }
                     
-                    AppContextMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false },
-                        packageName = app.packageName,
-                        label = app.label,
-                        shortcuts = shortcuts,
-                        isHidden = isHidden,
-                        onShortcutClick = onShortcutClick,
-                        onHideToggle = onHideToggle
-                    )
+                    if (onLongClick == null) {
+                        AppContextMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false },
+                            packageName = app.packageName,
+                            label = app.label,
+                            shortcuts = shortcuts,
+                            isHidden = isHidden,
+                            onShortcutClick = onShortcutClick,
+                            onHideToggle = onHideToggle
+                        )
+                    }
                 }
                 if (showLabel) {
                     Spacer(modifier = Modifier.height(4.dp))
@@ -219,6 +230,7 @@ fun SearchAppItem(
     notificationCount: Int = 0,
     sharedElementKeyPrefix: String = "search",
     showLabel: Boolean = true,
+    onLongClick: (() -> Unit)? = null,
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: () -> Unit = {},
@@ -268,7 +280,13 @@ fun SearchAppItem(
                             }
                             onClick(bundle)
                         },
-                        onLongClick = { showMenu = true }
+                        onLongClick = { 
+                            if (onLongClick != null) {
+                                onLongClick()
+                            } else {
+                                showMenu = true
+                            }
+                        }
                     )
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -329,16 +347,18 @@ fun SearchAppItem(
                         }
                     }
                     
-                    AppContextMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false },
-                        packageName = app.packageName,
-                        label = app.label,
-                        shortcuts = shortcuts,
-                        isHidden = isHidden,
-                        onShortcutClick = onShortcutClick,
-                        onHideToggle = onHideToggle
-                    )
+                    if (onLongClick == null) {
+                        AppContextMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false },
+                            packageName = app.packageName,
+                            label = app.label,
+                            shortcuts = shortcuts,
+                            isHidden = isHidden,
+                            onShortcutClick = onShortcutClick,
+                            onHideToggle = onHideToggle
+                        )
+                    }
                 }
                 if (showLabel) {
                     Spacer(modifier = Modifier.width(16.dp))
