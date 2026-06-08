@@ -5,6 +5,7 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
@@ -21,6 +22,7 @@ fun HomeContextMenu(
     onDismissRequest: () -> Unit,
     offset: DpOffset = DpOffset(0.dp, 0.dp),
     onOpenWidgets: () -> Unit,
+    onAddApp: () -> Unit,
     onOpenLauncherSettings: () -> Unit
 ) {
     val context = LocalContext.current
@@ -31,6 +33,14 @@ fun HomeContextMenu(
         offset = offset,
         shape = RoundedCornerShape(24.dp)
     ) {
+        DropdownMenuItem(
+            text = { Text("Add application") },
+            onClick = {
+                onDismissRequest()
+                onAddApp()
+            },
+            leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) }
+        )
         DropdownMenuItem(
             text = { Text("Widgets") },
             onClick = {

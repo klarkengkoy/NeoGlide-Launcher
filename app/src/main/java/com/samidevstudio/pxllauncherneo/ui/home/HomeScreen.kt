@@ -3,6 +3,7 @@ package com.samidevstudio.pxllauncherneo.ui.home
 import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.widget.Toast
+import kotlin.math.roundToInt
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
@@ -11,6 +12,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
@@ -31,6 +33,7 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel as hiltViewModelV2
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
+import kotlinx.coroutines.launch
 import com.samidevstudio.pxllauncherneo.data.local.entity.WidgetEntity
 import com.samidevstudio.pxllauncherneo.data.repository.AppLabelMode
 import com.samidevstudio.pxllauncherneo.data.repository.NotificationDotMode
@@ -38,6 +41,13 @@ import com.samidevstudio.pxllauncherneo.domain.model.AppModel
 import com.samidevstudio.pxllauncherneo.ui.components.*
 import com.samidevstudio.pxllauncherneo.ui.drawer.DrawerScreen
 import com.samidevstudio.pxllauncherneo.ui.settings.SettingsSheet
+
+data class RectBounds(
+    val row: Float,
+    val col: Float,
+    val spanX: Float,
+    val spanY: Float
+)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
@@ -62,7 +72,25 @@ fun HomeScreen(
     var showWidgetMenu by remember { mutableStateOf(false) }
     var contextMenuOffset by remember { mutableStateOf(DpOffset.Zero) }
     var editingWidgetId by remember { mutableIntStateOf(-1) }
+    var showAppPicker by remember { mutableStateOf(false) }
+    var pendingAddAppRow by remember { mutableFloatStateOf(0f) }
+    var pendingAddAppCol by remember { mutableFloatStateOf(0f) }
+    
+    // TRACK ORIGINAL POSITION FOR DRAG-FIRST LOGIC
+    var originalRow by remember { mutableFloatStateOf(-1f) }
+    var originalCol by remember { mutableFloatStateOf(-1f) }
+    
+    var showAppMenuPackage by remember { mutableStateOf<String?>(null) }
+    var appMenuShortcuts by remember { mutableStateOf<List<com.samidevstudio.pxllauncherneo.domain.model.AppShortcut>>(emptyList()) }
+    var appMenuLabel by remember { mutableStateOf("") }
+    
+    // DRAG STATE FOR ICON REPOSITIONING
+    var draggingItemId by remember { mutableIntStateOf(-1) }
+    var dragOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    var dragTargetBounds by remember { mutableStateOf<RectBounds?>(null) }
+    
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val coroutineScope = rememberCoroutineScope()
 
     val widgetConfigLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -129,9 +157,19 @@ fun HomeScreen(
         viewModel.checkDefaultLauncher()
     }
 
-    BackHandler(enabled = showDrawer || showSettings || showContextMenu || showWidgetMenu || editingWidgetId != -1) {
+    LaunchedEffect(Unit) {
+        viewModel.uiEvent.collect { event ->
+            when (event) {
+                is UiEvent.ShowToast -> Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    BackHandler(enabled = showDrawer || showSettings || showContextMenu || showWidgetMenu || editingWidgetId != -1 || showAppMenuPackage != null) {
         if (showWidgetMenu) {
             showWidgetMenu = false
+        } else if (showAppMenuPackage != null) {
+            showAppMenuPackage = null
         } else if (editingWidgetId != -1) {
             editingWidgetId = -1
         } else if (showSettings) {
@@ -158,7 +196,7 @@ fun HomeScreen(
     ) {
         // FULL SCREEN FROSTED GLASS
         AnimatedVisibility(
-            visible = editingWidgetId != -1,
+            visible = editingWidgetId != -1 || showAppMenuPackage != null || draggingItemId != -1,
             enter = fadeIn(),
             exit = fadeOut()
         ) {
@@ -189,6 +227,7 @@ fun HomeScreen(
                                 onTap = {
                                     editingWidgetId = -1
                                     showWidgetMenu = false
+                                    showAppMenuPackage = null
                                     focusManager.clearFocus()
                                 },
                                 onLongPress = { offset ->
@@ -220,7 +259,7 @@ fun HomeScreen(
 
 
                     // GRID OVERLAY
-                    if (editingWidgetId != -1) {
+                    if (editingWidgetId != -1 || showAppMenuPackage != null || draggingItemId != -1) {
                         val isDark = isSystemInDarkTheme()
                         androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
                             val mainGridColor = (if (isDark) Color.White else Color.Black).copy(alpha = 0.3f)
@@ -265,18 +304,117 @@ fun HomeScreen(
 
                     // No longer rendering static Dock here, it's now in homeItems
 
+                    // GHOST TARGET VISUAL
+                    if (draggingItemId != -1 || (editingWidgetId != -1 && dragTargetBounds != null)) {
+                        dragTargetBounds?.let { bounds ->
+                            Box(
+                                modifier = Modifier
+                                    .offset(
+                                        x = unitWidth * bounds.col,
+                                        y = topOffset + (unitHeight * bounds.row)
+                                    )
+                                    .size(unitWidth * bounds.spanX, unitHeight * bounds.spanY)
+                                    .padding(8.dp)
+                                    .background((if (isSystemInDarkTheme()) Color.White else Color.Black).copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                            )
+                        }
+                    }
+
                     val homeItems by viewModel.homeItems.collectAsStateWithLifecycle()
                     homeItems.forEach { item ->
                         when (item) {
                             is HomeItem.App -> {
                                 val app = item.appModel
+                                val isDragging = draggingItemId == item.id
+                                val unitWidthPx = with(density) { unitWidth.toPx() }
+                                val unitHeightPx = with(density) { unitHeight.toPx() }
+                                val topOffsetPx = with(density) { topOffset.toPx() }
+
                                 Box(
                                     modifier = Modifier
-                                        .offset(
-                                            x = unitWidth * item.column,
-                                            y = topOffset + (unitHeight * item.row)
-                                        )
+                                        .offset {
+                                            if (isDragging) {
+                                                androidx.compose.ui.unit.IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt())
+                                            } else {
+                                                androidx.compose.ui.unit.IntOffset(
+                                                    (unitWidth * item.column).toPx().roundToInt(),
+                                                    (topOffset + (unitHeight * item.row)).toPx().roundToInt()
+                                                )
+                                            }
+                                        }
                                         .size(unitWidth, unitHeight)
+                                        .zIndex(if (isDragging) 100f else 0f)
+                                        .graphicsLayer {
+                                            if (isDragging) {
+                                                scaleX = 1.2f
+                                                scaleY = 1.2f
+                                                alpha = 0.9f
+                                                shadowElevation = 16.dp.toPx()
+                                                shape = RoundedCornerShape(16.dp)
+                                            }
+                                        }
+                                        .pointerInput(item.id, item.row, item.column) {
+                                            if (!preferences.lockLayout) {
+                                                detectDragGesturesAfterLongPress(
+                                                    onDragStart = { offset ->
+                                                        draggingItemId = item.id
+                                                        showAppMenuPackage = null // Hide menu on drag start
+                                                        originalRow = item.row
+                                                        originalCol = item.column
+                                                        
+                                                        // Calculate initial dragOffset based on current position
+                                                        val startX = unitWidthPx * item.column
+                                                        val startY = topOffsetPx + (unitHeightPx * item.row)
+                                                        dragOffset = androidx.compose.ui.geometry.Offset(startX, startY)
+                                                        dragTargetBounds = RectBounds(item.row, item.column, 1f, 1f)
+                                                    },
+                                                    onDrag = { change, dragAmount ->
+                                                        change.consume()
+                                                        dragOffset += dragAmount
+                                                        
+                                                        // Calculate nearest grid cell with 0.5f snapping
+                                                        val targetRow = (((dragOffset.y + unitHeightPx / 2f - topOffsetPx) / unitHeightPx) * 2).toInt() / 2f
+                                                            .coerceIn(0f, maxRows.toFloat() - 1f)
+                                                        val targetCol = (((dragOffset.x + unitWidthPx / 2f) / unitWidthPx) * 2).toInt() / 2f
+                                                            .coerceIn(0f, 3f)
+                                                        dragTargetBounds = RectBounds(targetRow, targetCol, 1f, 1f)
+                                                    },
+                                                    onDragEnd = {
+                                                        dragTargetBounds?.let { bounds ->
+                                                            if (bounds.row == originalRow && bounds.col == originalCol) {
+                                                                // Trigger Menu (dropped on same spot)
+                                                                appMenuLabel = app.label
+                                                                val iconLeft = (unitWidth * item.column)
+                                                                val iconTop = topOffset + (unitHeight * item.row)
+                                                                val iconHeight = unitHeight
+                                                                
+                                                                val menuH = 150.dp
+                                                                val gap = 8.dp
+                                                                
+                                                                var finalY = iconTop + iconHeight + gap
+                                                                if (finalY + menuH > availableHeight) {
+                                                                    finalY = iconTop - menuH - gap
+                                                                }
+                                                                
+                                                                contextMenuOffset = DpOffset(x = iconLeft, y = finalY)
+                                                                coroutineScope.launch {
+                                                                    appMenuShortcuts = viewModel.getShortcuts(app.packageName)
+                                                                    showAppMenuPackage = app.packageName
+                                                                }
+                                                            } else {
+                                                                viewModel.updateItemPosition(item, bounds.row, bounds.col)
+                                                            }
+                                                        }
+                                                        draggingItemId = -1
+                                                        dragTargetBounds = null
+                                                    },
+                                                    onDragCancel = {
+                                                        draggingItemId = -1
+                                                        dragTargetBounds = null
+                                                    }
+                                                )
+                                            }
+                                        }
                                 ) {
                                     AppItem(
                                         app = app,
@@ -291,6 +429,7 @@ fun HomeScreen(
                                         notificationCount = activeNotifications[app.packageName] ?: 0,
                                         showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
                                         sharedElementKeyPrefix = "home",
+                                        isLongClickEnabled = draggingItemId == -1, // Disable menu during drag
                                         getShortcuts = { viewModel.getShortcuts(it) },
                                         onShortcutClick = { viewModel.launchShortcut(it) },
                                         onHideToggle = { 
@@ -299,9 +438,14 @@ fun HomeScreen(
                                             } else {
                                                 viewModel.hideApp(app.packageName)
                                             }
+                                        },
+                                        onLongClick = {
+                                            // No longer triggering menu immediately
                                         }
                                     ) { options ->
-                                        viewModel.launchApp(app.packageName, options)
+                                        if (draggingItemId == -1) {
+                                            viewModel.launchApp(app.packageName, options)
+                                        }
                                     }
                                 }
                             }
@@ -328,45 +472,89 @@ fun HomeScreen(
                                     modifier = Modifier
                                         .offset(y = topOffset)
                                         .zIndex(if (isCurrentEditing) 1f else 0f),
-                                    onDragStart = { showWidgetMenu = false },
-                                    onLongClick = { 
-                                        if (!preferences.lockLayout) {
-                                            editingWidgetId = item.id
-                                        } else {
-                                            Toast.makeText(context, "Layout is locked", Toast.LENGTH_SHORT).show()
-                                        }
+                                    onDragStart = { 
+                                        showWidgetMenu = false
+                                        editingWidgetId = item.id
+                                        originalRow = item.row
+                                        originalCol = item.column
                                     },
-                                    onRemove = {
-                                        viewModel.removeWidget(item.id)
-                                        editingWidgetId = -1
+                                    onResizeStart = {
+                                        showWidgetMenu = false
+                                    },
+                                    onInteractionUpdate = { r, c, sx, sy ->
+                                        dragTargetBounds = RectBounds(r, c, sx, sy)
                                     },
                                     onResize = { newRow, newCol, newSpanX, newSpanY ->
-                                        if (item.isCustom) {
-                                            // Handle fixed-dimension widget (Internal Widgets like Dock)
-                                            val widthChanged = newSpanX != item.spanX
-                                            val heightChanged = newSpanY != item.spanY
-                                            if (widthChanged || heightChanged) {
-                                                val message = when {
-                                                    widthChanged && heightChanged -> "This widget has a fixed size"
-                                                    widthChanged -> "This widget has a fixed width"
-                                                    else -> "This widget has a fixed height"
+                                        // Handle drag-end/release logic for menu vs move
+                                        if (newRow == originalRow && newCol == originalCol) {
+                                            // Trigger Menu (dropped on same spot)
+                                            val widgetLeft = (unitWidth * item.column) + 4.dp
+                                            val widgetTop = topOffset + (unitHeight * item.row) + 4.dp
+                                            val widgetWidth = (unitWidth * item.spanX) - 8.dp
+                                            val widgetHeight = (unitHeight * item.spanY) - 8.dp
+                                            val widgetBottom = widgetTop + widgetHeight
+                                            val widgetRight = widgetLeft + widgetWidth
+
+                                            val menuH = 100.dp
+                                            val menuW = 150.dp
+                                            val gap = 12.dp
+
+                                            var finalX = widgetLeft
+                                            var finalY = widgetBottom + gap
+
+                                            val gridW = maxWidth
+                                            val gridH = maxHeight
+
+                                            if (widgetBottom + menuH + gap > gridH) {
+                                                if (widgetTop > menuH + gap) {
+                                                    finalY = widgetTop - menuH - gap
+                                                } else {
+                                                    finalY = widgetTop
+                                                    if (widgetRight + menuW + gap <= gridW) {
+                                                        finalX = widgetRight + gap
+                                                    } else if (widgetLeft > menuW + gap) {
+                                                        finalX = widgetLeft - menuW - gap
+                                                    } else {
+                                                        finalX = (gridW - menuW) / 2f
+                                                        finalY = (gridH - menuH) / 2f
+                                                    }
                                                 }
-                                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                                                // Revert to original position if resizing was attempted
-                                                viewModel.updateWidgetBounds(item.id, item.row, item.column, item.spanX, item.spanY)
-                                            } else {
-                                                // Allow normal movement
-                                                viewModel.updateWidgetBounds(item.id, newRow.coerceAtLeast(0f), newCol, newSpanX, newSpanY)
                                             }
+
+                                            contextMenuOffset = DpOffset(x = finalX, y = finalY)
+                                            showWidgetMenu = true
+                                            // RETAIN editingWidgetId as requested
+                                            editingWidgetId = item.id
                                         } else {
-                                            viewModel.updateWidgetBounds(
-                                                item.id,
-                                                newRow.coerceIn(0f, (maxRows - newSpanY).coerceAtLeast(0f)),
-                                                newCol.coerceIn(0f, (4f - newSpanX).coerceAtLeast(0f)),
-                                                newSpanX,
-                                                newSpanY
-                                            )
+                                            // Normal move
+                                            if (item.isCustom) {
+                                                // Handle fixed-dimension widget (Internal Widgets like Dock)
+                                                val widthChanged = newSpanX != item.spanX
+                                                val heightChanged = newSpanY != item.spanY
+                                                if (widthChanged || heightChanged) {
+                                                    val message = when {
+                                                        widthChanged && heightChanged -> "This widget has a fixed size"
+                                                        widthChanged -> "This widget has a fixed width"
+                                                        else -> "This widget has a fixed height"
+                                                    }
+                                                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                                    viewModel.updateWidgetBounds(item.id, item.row, item.column, item.spanX, item.spanY)
+                                                } else {
+                                                    viewModel.updateWidgetBounds(item.id, newRow.coerceAtLeast(0f), newCol, newSpanX, newSpanY)
+                                                }
+                                            } else {
+                                                viewModel.updateWidgetBounds(
+                                                    item.id,
+                                                    newRow.coerceIn(0f, (maxRows - newSpanY).coerceAtLeast(0f)),
+                                                    newCol.coerceIn(0f, (4f - newSpanX).coerceAtLeast(0f)),
+                                                    newSpanX,
+                                                    newSpanY
+                                                )
+                                            }
+                                            // RETAIN editingWidgetId as requested
+                                            editingWidgetId = item.id
                                         }
+                                        dragTargetBounds = null
                                     }
                                 ) {
                                     val currentMaxRows = maxRows
@@ -452,10 +640,57 @@ fun HomeScreen(
                                             }
                                             widgetPickLauncher.launch(intent)
                                         },
+                                        onAddApp = {
+                                            // Convert the contextMenuOffset (which is in Dp) to grid coordinates
+                                            val xPx = with(density) { contextMenuOffset.x.toPx() }
+                                            val yPx = with(density) { (contextMenuOffset.y - topOffset).toPx() }
+                                            
+                                            val unitWidthPx = with(density) { unitWidth.toPx() }
+                                            val unitHeightPx = with(density) { unitHeight.toPx() }
+                                            
+                                            pendingAddAppCol = (xPx / unitWidthPx).toInt().toFloat().coerceIn(0f, 3f)
+                                            pendingAddAppRow = (yPx / unitHeightPx).toInt().toFloat().coerceIn(0f, maxRows.toFloat() - 1f)
+                                            
+                                            showAppPicker = true
+                                        },
                                         onOpenLauncherSettings = { showSettings = true }
                                     )
 
-                    // Remove WidgetContextMenu as it's redundant with the 'X' button
+                                    showAppMenuPackage?.let { pkg ->
+                                        AppContextMenu(
+                                            expanded = true,
+                                            onDismissRequest = { showAppMenuPackage = null },
+                                            packageName = pkg,
+                                            label = appMenuLabel,
+                                            shortcuts = appMenuShortcuts,
+                                            offset = contextMenuOffset,
+                                            onShortcutClick = { viewModel.launchShortcut(it) },
+                                            onHideToggle = { viewModel.hideApp(pkg) }
+                                        )
+                                    }
+
+                                    WidgetContextMenu(
+                                        expanded = showWidgetMenu,
+                                        onDismissRequest = { showWidgetMenu = false },
+                                        onRemove = {
+                                            if (editingWidgetId != -1) {
+                                                viewModel.removeWidget(editingWidgetId)
+                                                editingWidgetId = -1
+                                            }
+                                            showWidgetMenu = false
+                                        },
+                                        onOpenApp = {
+                                            if (editingWidgetId != -1) {
+                                                val info = viewModel.appWidgetManager.getAppWidgetInfo(editingWidgetId)
+                                                info?.provider?.packageName?.let { pkg ->
+                                                    viewModel.launchApp(pkg)
+                                                }
+                                                editingWidgetId = -1
+                                            }
+                                            showWidgetMenu = false
+                                        },
+                                        offset = contextMenuOffset
+                                    )
                 }
             }
         }
@@ -497,6 +732,18 @@ fun HomeScreen(
                     }
                 )
             }
+        }
+
+        if (showAppPicker) {
+            val allApps by viewModel.allApps.collectAsStateWithLifecycle()
+            AppPickerDialog(
+                apps = allApps,
+                onAppSelected = { app ->
+                    viewModel.addHomeApp(app.packageName, pendingAddAppRow, pendingAddAppCol)
+                    showAppPicker = false
+                },
+                onDismissRequest = { showAppPicker = false }
+            )
         }
     }
 }

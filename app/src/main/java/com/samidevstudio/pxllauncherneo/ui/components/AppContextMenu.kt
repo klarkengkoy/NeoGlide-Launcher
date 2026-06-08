@@ -3,7 +3,7 @@ package com.samidevstudio.pxllauncherneo.ui.components
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -15,7 +15,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import coil.compose.AsyncImage
 import com.samidevstudio.pxllauncherneo.domain.model.AppShortcut
 
@@ -27,80 +31,100 @@ fun AppContextMenu(
     label: String,
     shortcuts: List<AppShortcut> = emptyList(),
     isHidden: Boolean = false,
+    offset: DpOffset = DpOffset(0.dp, 0.dp),
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: () -> Unit = {}
 ) {
-    val context = LocalContext.current
-
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismissRequest,
-        shape = RoundedCornerShape(24.dp)
-    ) {
-        DropdownMenuItem(
-            text = { Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) },
-            onClick = {},
-            enabled = false
-        )
-        
-        if (shortcuts.isNotEmpty()) {
-            HorizontalDivider()
-            shortcuts.forEach { shortcut ->
-                DropdownMenuItem(
-                    text = { Text(shortcut.label) },
-                    onClick = {
-                        onDismissRequest()
-                        onShortcutClick(shortcut)
-                    },
-                    leadingIcon = {
-                        if (shortcut.icon != null) {
-                            AsyncImage(
-                                model = shortcut.icon,
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        } else {
-                            Icon(Icons.Default.Link, contentDescription = null)
-                        }
-                    }
-                )
-            }
+    if (expanded) {
+        val context = LocalContext.current
+        val density = LocalDensity.current
+        val offsetPx = with(density) {
+            androidx.compose.ui.unit.IntOffset(
+                offset.x.roundToPx(),
+                offset.y.roundToPx()
+            )
         }
 
-        HorizontalDivider()
-        
-        DropdownMenuItem(
-            text = { Text(if (isHidden) "Unhide App" else "Hide App") },
-            onClick = {
-                onDismissRequest()
-                onHideToggle()
-            },
-            leadingIcon = { Icon(Icons.Default.VisibilityOff, contentDescription = null) }
-        )
+        Popup(
+            offset = offsetPx,
+            onDismissRequest = onDismissRequest,
+            properties = PopupProperties(focusable = true)
+        ) {
+            Surface(
+                modifier = Modifier.width(IntrinsicSize.Max),
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 3.dp,
+                shadowElevation = 8.dp
+            ) {
+                Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                    DropdownMenuItem(
+                        text = { Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) },
+                        onClick = {},
+                        enabled = false
+                    )
+                    
+                    if (shortcuts.isNotEmpty()) {
+                        HorizontalDivider()
+                        shortcuts.forEach { shortcut ->
+                            DropdownMenuItem(
+                                text = { Text(shortcut.label) },
+                                onClick = {
+                                    onDismissRequest()
+                                    onShortcutClick(shortcut)
+                                },
+                                leadingIcon = {
+                                    if (shortcut.icon != null) {
+                                        AsyncImage(
+                                            model = shortcut.icon,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    } else {
+                                        Icon(Icons.Default.Link, contentDescription = null)
+                                    }
+                                }
+                            )
+                        }
+                    }
 
-        DropdownMenuItem(
-            text = { Text("App Info") },
-            onClick = {
-                onDismissRequest()
-                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = Uri.fromParts("package", packageName, null)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    HorizontalDivider()
+                    
+                    DropdownMenuItem(
+                        text = { Text(if (isHidden) "Unhide App" else "Hide App") },
+                        onClick = {
+                            onDismissRequest()
+                            onHideToggle()
+                        },
+                        leadingIcon = { Icon(Icons.Default.VisibilityOff, contentDescription = null) }
+                    )
+
+                    DropdownMenuItem(
+                        text = { Text("App Info") },
+                        onClick = {
+                            onDismissRequest()
+                            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = Uri.fromParts("package", packageName, null)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        },
+                        leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Uninstall", color = MaterialTheme.colorScheme.error) },
+                        onClick = {
+                            onDismissRequest()
+                            val intent = Intent(Intent.ACTION_DELETE).apply {
+                                data = Uri.fromParts("package", packageName, null)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        },
+                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                    )
                 }
-                context.startActivity(intent)
-            },
-            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) }
-        )
-        DropdownMenuItem(
-            text = { Text("Uninstall", color = MaterialTheme.colorScheme.error) },
-            onClick = {
-                onDismissRequest()
-                val intent = Intent(Intent.ACTION_DELETE).apply {
-                    data = Uri.fromParts("package", packageName, null)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(intent)
-            },
-            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-        )
+            }
+        }
     }
 }

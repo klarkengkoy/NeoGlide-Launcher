@@ -44,6 +44,10 @@ sealed class HomeItem {
     ) : HomeItem()
 }
 
+sealed class UiEvent {
+    data class ShowToast(val message: String) : UiEvent()
+}
+
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val appRepository: AppRepository,
@@ -53,6 +57,9 @@ class HomeViewModel @Inject constructor(
     val appWidgetManager: AppWidgetManager,
     val appWidgetHost: AppWidgetHost
 ) : ViewModel() {
+
+    private val _uiEvent = MutableSharedFlow<UiEvent>()
+    val uiEvent = _uiEvent.asSharedFlow()
 
     private val _shouldShowDefaultPrompt = MutableStateFlow(value = false)
     val shouldShowDefaultPrompt = _shouldShowDefaultPrompt.asStateFlow()
@@ -78,7 +85,7 @@ class HomeViewModel @Inject constructor(
                         spanY = 1f
                     ))
                 }
-                userPreferencesRepository.setFirstInstallRun(false)
+                userPreferencesRepository.setFirstInstallRun(isFirst = false)
             }
 
             // 2. Refresh apps after provisioning
@@ -134,37 +141,41 @@ class HomeViewModel @Inject constructor(
     val widgets: StateFlow<List<WidgetEntity>> = widgetRepository.allWidgets
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val allApps: StateFlow<List<AppModel>> = appRepository.allApps
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     fun updateItemPosition(item: HomeItem, newRow: Float, newCol: Float) {
         viewModelScope.launch {
-            // Check for collisions and rearrange
-            rearrangeItems(item, newRow, newCol)
+            // Check for collisions
+            val canMove = rearrangeItems(item, newRow, newCol)
             
-            when (item) {
-                is HomeItem.App -> homeRepository.updateHomeAppPosition(item.id, newRow, newCol)
-                is HomeItem.Widget -> homeRepository.updateWidgetBounds(item.id, newRow, newCol, item.spanX, item.spanY)
+            if (canMove) {
+                when (item) {
+                    is HomeItem.App -> homeRepository.updateHomeAppPosition(item.id, newRow, newCol)
+                    is HomeItem.Widget -> homeRepository.updateWidgetBounds(item.id, newRow, newCol, item.spanX, item.spanY)
+                }
+            } else {
+                _uiEvent.emit(UiEvent.ShowToast("Space already occupied"))
             }
         }
     }
 
-    private suspend fun rearrangeItems(draggedItem: HomeItem, newRow: Float, newCol: Float) {
+    private fun rearrangeItems(draggedItem: HomeItem, newRow: Float, newCol: Float): Boolean {
         val currentItems = homeItems.value
         val draggedRect = android.graphics.RectF(newCol, newRow, newCol + draggedItem.spanX, newRow + draggedItem.spanY)
         
         currentItems.forEach { item ->
+            // Skip the item itself (but check ID and type to be safe)
             if (item.id == draggedItem.id && ((item is HomeItem.App && draggedItem is HomeItem.App) || (item is HomeItem.Widget && draggedItem is HomeItem.Widget))) return@forEach
             
             val itemRect = android.graphics.RectF(item.column, item.row, item.column + item.spanX, item.row + item.spanY)
             
             if (android.graphics.RectF.intersects(draggedRect, itemRect)) {
-                // Collision detected! Push the item down for now.
-                // Simple implementation: move item to the next available row
-                val pushToRow = newRow + draggedItem.spanY
-                when (item) {
-                    is HomeItem.App -> homeRepository.updateHomeAppPosition(item.id, pushToRow, item.column)
-                    is HomeItem.Widget -> homeRepository.updateWidgetBounds(item.id, pushToRow, item.column, item.spanX, item.spanY)
-                }
+                // Universal collision: no displacement allowed
+                return false
             }
         }
+        return true
     }
 
     fun launchApp(packageName: String, options: android.os.Bundle? = null) {
@@ -203,17 +214,33 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    fun addHomeApp(packageName: String, row: Float, col: Float) {
+        viewModelScope.launch {
+            homeRepository.addHomeApp(com.samidevstudio.pxllauncherneo.data.local.entity.HomeAppEntity(
+                packageName = packageName,
+                row = row,
+                column = col
+            ))
+        }
+    }
+
     fun allocateWidgetId(): Int {
         return appWidgetHost.allocateAppWidgetId()
     }
 
-    fun onDragStart() {
-        // Handle drag start global state if needed
-    }
+    // Removed unused onDragStart
 
     fun updateWidgetBounds(widgetId: Int, row: Float, col: Float, spanX: Float, spanY: Float) {
         viewModelScope.launch {
-            widgetRepository.updateWidgetBounds(widgetId, row, col, spanX, spanY)
+            val currentWidget = homeItems.value.find { it.id == widgetId && it is HomeItem.Widget } as? HomeItem.Widget ?: return@launch
+            val tempWidget = currentWidget.copy(row = row, column = col, spanX = spanX, spanY = spanY)
+            
+            val canMove = rearrangeItems(tempWidget, row, col)
+            if (canMove) {
+                widgetRepository.updateWidgetBounds(widgetId, row, col, spanX, spanY)
+            } else {
+                _uiEvent.emit(UiEvent.ShowToast("Space already occupied"))
+            }
         }
     }
 
