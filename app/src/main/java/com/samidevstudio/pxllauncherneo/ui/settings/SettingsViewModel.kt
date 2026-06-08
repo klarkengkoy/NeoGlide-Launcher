@@ -16,8 +16,16 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val preferencesRepository: UserPreferencesRepository,
+    private val appRepository: AppRepository,
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context
 ) : ViewModel() {
+
+    val allApps: StateFlow<List<com.samidevstudio.pxllauncherneo.domain.model.AppModel>> = appRepository.allApps
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
     val userPreferences: StateFlow<UserPreferences> = preferencesRepository.userPreferencesFlow
         .stateIn(

@@ -117,6 +117,10 @@ fun SettingsSheet(
             onDismiss = { activeDialog = null },
             onSelectLabelMode = { viewModel.setAppLabelMode(it) }
         )
+        "hidden_apps" -> HiddenAppsDialog(
+            onDismiss = { activeDialog = null },
+            viewModel = viewModel
+        )
     }
     
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -174,9 +178,7 @@ fun SettingsSheet(
                         SettingsItem(
                             icon = Icons.Default.VisibilityOff,
                             title = "Hidden apps",
-                            onClick = { 
-                                android.widget.Toast.makeText(context, "Hidden apps management coming soon", android.widget.Toast.LENGTH_SHORT).show()
-                            }
+                            onClick = { activeDialog = "hidden_apps" }
                         )
                     }
                 }
@@ -489,6 +491,94 @@ fun AppLabelSettingsDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done", fontWeight = FontWeight.Bold) }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HiddenAppsDialog(
+    onDismiss: () -> Unit,
+    viewModel: SettingsViewModel
+) {
+    val preferences by viewModel.userPreferences.collectAsStateWithLifecycle()
+    val allApps by viewModel.allApps.collectAsStateWithLifecycle()
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filteredApps = remember(allApps, searchQuery) {
+        allApps.filter { it.label.contains(searchQuery, ignoreCase = true) }
+            .sortedBy { it.label }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.VisibilityOff, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Hidden Apps")
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search apps...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                    )
+                )
+            }
+        },
+        text = {
+            Box(modifier = Modifier.heightIn(max = 400.dp)) {
+                LazyColumn {
+                    items(
+                        count = filteredApps.size,
+                        key = { index -> filteredApps[index].packageName }
+                    ) { index ->
+                        val app = filteredApps[index]
+                        val isHidden = preferences.hiddenPackages.contains(app.packageName)
+                        
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { 
+                                    if (isHidden) viewModel.unhideApp(app.packageName) 
+                                    else viewModel.hideApp(app.packageName)
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            com.samidevstudio.pxllauncherneo.ui.components.AppIcon(
+                                packageName = app.packageName,
+                                contentDescription = null,
+                                modifier = Modifier.size(32.dp)
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = app.label,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Checkbox(
+                                checked = isHidden,
+                                onCheckedChange = { 
+                                    if (it) viewModel.hideApp(app.packageName) 
+                                    else viewModel.unhideApp(app.packageName)
+                                }
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
