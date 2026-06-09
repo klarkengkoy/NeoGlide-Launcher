@@ -20,4 +20,7 @@ interface HomeAppDao {
 
     @Query("DELETE FROM home_apps WHERE packageName = :packageName")
     suspend fun deleteHomeAppByPackageName(packageName: String)
+
+    @Query("DELETE FROM home_apps WHERE id = :id")
+    suspend fun deleteHomeAppById(id: Int)
 }

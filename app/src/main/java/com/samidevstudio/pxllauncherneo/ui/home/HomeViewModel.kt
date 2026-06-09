@@ -42,6 +42,16 @@ sealed class HomeItem {
         override val spanY: Float,
         val isCustom: Boolean = false // New flag for internal widgets like Dock
     ) : HomeItem()
+
+    data class Folder(
+        override val id: Int,
+        val label: String,
+        val apps: List<AppModel>,
+        override val row: Float,
+        override val column: Float,
+        override val spanX: Float = 1f,
+        override val spanY: Float = 1f
+    ) : HomeItem()
 }
 
 sealed class UiEvent {
@@ -66,7 +76,7 @@ class HomeViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            // 1. Provision the internal Dock widget into the standard database strictly on FIRST INSTALL
+            // Provision the internal Dock widget into the standard database strictly on FIRST INSTALL
             val prefs = userPreferencesRepository.userPreferencesFlow.first()
             if (prefs.isFirstInstallRun) {
                 // Double check DB to prevent accidental duplicates
@@ -99,8 +109,9 @@ class HomeViewModel @Inject constructor(
     val homeItems: StateFlow<List<HomeItem>> = combine(
         appRepository.allApps,
         homeRepository.allHomeApps,
-        homeRepository.allWidgets
-    ) { apps, homeApps, widgets ->
+        homeRepository.allWidgets,
+        homeRepository.allFolders
+    ) { apps, homeApps, widgets, folders ->
         val appItems = homeApps.mapNotNull { homeApp ->
             apps.find { it.packageName == homeApp.packageName }?.let { appModel ->
                 HomeItem.App(
@@ -125,7 +136,19 @@ class HomeViewModel @Inject constructor(
             )
         }
         
-        appItems + widgetItems
+        val folderItems = folders.map { folderWithApps ->
+            HomeItem.Folder(
+                id = folderWithApps.folder.id,
+                label = folderWithApps.folder.label,
+                apps = folderWithApps.apps.mapNotNull { folderApp ->
+                    apps.find { it.packageName == folderApp.packageName }
+                },
+                row = folderWithApps.folder.row,
+                column = folderWithApps.folder.column
+            )
+        }
+        
+        appItems + widgetItems + folderItems
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val dockApps: StateFlow<List<AppModel>> = combine(
@@ -144,38 +167,114 @@ class HomeViewModel @Inject constructor(
     val allApps: StateFlow<List<AppModel>> = appRepository.allApps
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val recentlyUsedApps: StateFlow<List<AppModel>> = appRepository.allApps
+        .map { apps ->
+            apps.filter { it.lastUsedTime > 0 }
+                .sortedByDescending { it.lastUsedTime }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val availableAppsForPicker: StateFlow<List<AppModel>> = combine(
+        allApps,
+        homeItems
+    ) { apps, items ->
+        val homePackages = mutableSetOf<String>()
+        items.forEach { item ->
+            when (item) {
+                is HomeItem.App -> homePackages.add(item.appModel.packageName)
+                is HomeItem.Folder -> item.apps.forEach { homePackages.add(it.packageName) }
+                else -> {}
+            }
+        }
+        apps.filter { it.packageName !in homePackages }.sortedBy { it.label }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     fun updateItemPosition(item: HomeItem, newRow: Float, newCol: Float) {
         viewModelScope.launch {
-            // Check for collisions
-            val canMove = rearrangeItems(item, newRow, newCol)
+            // Check for collisions and potential merges
+            val collisionResult = checkCollision(item, newRow, newCol)
             
-            if (canMove) {
-                when (item) {
-                    is HomeItem.App -> homeRepository.updateHomeAppPosition(item.id, newRow, newCol)
-                    is HomeItem.Widget -> homeRepository.updateWidgetBounds(item.id, newRow, newCol, item.spanX, item.spanY)
+            when (collisionResult) {
+                is CollisionResult.None -> {
+                    when (item) {
+                        is HomeItem.App -> homeRepository.updateHomeAppPosition(item.id, newRow, newCol)
+                        is HomeItem.Widget -> homeRepository.updateWidgetBounds(item.id, newRow, newCol, item.spanX, item.spanY)
+                        is HomeItem.Folder -> homeRepository.updateFolderPosition(item.id, newRow, newCol)
+                    }
                 }
-            } else {
-                _uiEvent.emit(UiEvent.ShowToast("Space already occupied"))
+                is CollisionResult.MergeApps -> {
+                    if (item is HomeItem.App) {
+                        homeRepository.createFolderFromApps(
+                            appA = com.samidevstudio.pxllauncherneo.data.local.entity.HomeAppEntity(
+                                id = item.id,
+                                packageName = item.appModel.packageName,
+                                row = item.row,
+                                column = item.column
+                            ),
+                            appB = com.samidevstudio.pxllauncherneo.data.local.entity.HomeAppEntity(
+                                id = collisionResult.targetApp.id,
+                                packageName = collisionResult.targetApp.appModel.packageName,
+                                row = collisionResult.targetApp.row,
+                                column = collisionResult.targetApp.column
+                            )
+                        )
+                        _uiEvent.emit(UiEvent.ShowToast("Folder Created"))
+                    } else {
+                        _uiEvent.emit(UiEvent.ShowToast("Space already occupied"))
+                    }
+                }
+                is CollisionResult.AddToFolder -> {
+                    if (item is HomeItem.App) {
+                        homeRepository.addAppToFolder(collisionResult.targetFolder.id, item.appModel.packageName)
+                        homeRepository.removeHomeAppById(item.id)
+                        _uiEvent.emit(UiEvent.ShowToast("Added to ${collisionResult.targetFolder.label}"))
+                    } else {
+                        _uiEvent.emit(UiEvent.ShowToast("Space already occupied"))
+                    }
+                }
+                is CollisionResult.Blocked -> {
+                    _uiEvent.emit(UiEvent.ShowToast("Space already occupied"))
+                }
             }
         }
     }
 
-    private fun rearrangeItems(draggedItem: HomeItem, newRow: Float, newCol: Float): Boolean {
+    private sealed class CollisionResult {
+        object None : CollisionResult()
+        object Blocked : CollisionResult()
+        data class MergeApps(val targetApp: HomeItem.App) : CollisionResult()
+        data class AddToFolder(val targetFolder: HomeItem.Folder) : CollisionResult()
+    }
+
+    private fun checkCollision(draggedItem: HomeItem, newRow: Float, newCol: Float): CollisionResult {
         val currentItems = homeItems.value
         val draggedRect = android.graphics.RectF(newCol, newRow, newCol + draggedItem.spanX, newRow + draggedItem.spanY)
         
         currentItems.forEach { item ->
-            // Skip the item itself (but check ID and type to be safe)
-            if (item.id == draggedItem.id && ((item is HomeItem.App && draggedItem is HomeItem.App) || (item is HomeItem.Widget && draggedItem is HomeItem.Widget))) return@forEach
+            // Skip self
+            if (item.id == draggedItem.id && item::class == draggedItem::class) return@forEach
             
             val itemRect = android.graphics.RectF(item.column, item.row, item.column + item.spanX, item.row + item.spanY)
             
             if (android.graphics.RectF.intersects(draggedRect, itemRect)) {
-                // Universal collision: no displacement allowed
-                return false
+                // Potential merge if both are apps and overlap is significant (e.g. centers are close)
+                if (draggedItem is HomeItem.App) {
+                    if (item is HomeItem.App) {
+                        val distSq = (newRow - item.row) * (newRow - item.row) + (newCol - item.column) * (newCol - item.column)
+                        if (distSq < 0.25f) { // roughly 0.5 unit distance
+                            return CollisionResult.MergeApps(item)
+                        }
+                    } else if (item is HomeItem.Folder) {
+                        val distSq = (newRow - item.row) * (newRow - item.row) + (newCol - item.column) * (newCol - item.column)
+                        if (distSq < 0.25f) {
+                            return CollisionResult.AddToFolder(item)
+                        }
+                    }
+                }
+                return CollisionResult.Blocked
             }
         }
-        return true
+        return CollisionResult.None
     }
 
     fun launchApp(packageName: String, options: android.os.Bundle? = null) {
@@ -193,6 +292,16 @@ class HomeViewModel @Inject constructor(
     fun hideApp(packageName: String) {
         viewModelScope.launch {
             userPreferencesRepository.hideApp(packageName)
+            homeRepository.removeHomeApp(packageName)
+            // Need to dissolve any folders that might have become empty or single-item
+            val folders = homeRepository.allFolders.first()
+            val foldersWithApp = folders.filter { it.apps.any { app -> app.packageName == packageName } }
+            
+            homeRepository.removeAppFromFolders(packageName)
+            
+            foldersWithApp.forEach { 
+                homeRepository.dissolveFolderIfNeeded(it.folder.id)
+            }
         }
     }
 
@@ -211,6 +320,12 @@ class HomeViewModel @Inject constructor(
     fun removeWidget(widgetId: Int) {
         viewModelScope.launch {
             widgetRepository.removeWidget(widgetId)
+        }
+    }
+
+    fun removeHomeApp(id: Int) {
+        viewModelScope.launch {
+            homeRepository.removeHomeAppById(id)
         }
     }
 
@@ -235,8 +350,8 @@ class HomeViewModel @Inject constructor(
             val currentWidget = homeItems.value.find { it.id == widgetId && it is HomeItem.Widget } as? HomeItem.Widget ?: return@launch
             val tempWidget = currentWidget.copy(row = row, column = col, spanX = spanX, spanY = spanY)
             
-            val canMove = rearrangeItems(tempWidget, row, col)
-            if (canMove) {
+            val collisionResult = checkCollision(tempWidget, row, col)
+            if (collisionResult is CollisionResult.None) {
                 widgetRepository.updateWidgetBounds(widgetId, row, col, spanX, spanY)
             } else {
                 _uiEvent.emit(UiEvent.ShowToast("Space already occupied"))
@@ -266,6 +381,37 @@ class HomeViewModel @Inject constructor(
         _shouldShowDefaultPrompt.value = false
         viewModelScope.launch {
             userPreferencesRepository.updateLastDefaultPromptTime(System.currentTimeMillis())
+        }
+    }
+
+    fun updateFolderLabel(folderId: Int, label: String) {
+        viewModelScope.launch {
+            homeRepository.updateFolderLabel(folderId, label)
+        }
+    }
+
+    fun removeFolder(folderId: Int) {
+        viewModelScope.launch {
+            homeRepository.removeFolder(folderId)
+        }
+    }
+
+    fun removeAppFromFolder(folderId: Int, packageName: String, targetRow: Float, targetCol: Float) {
+        viewModelScope.launch {
+            // Check collision at target position
+            val tempApp = HomeItem.App(
+                id = -1,
+                appModel = allApps.value.find { it.packageName == packageName } ?: return@launch,
+                row = targetRow,
+                column = targetCol
+            )
+            
+            val collisionResult = checkCollision(tempApp, targetRow, targetCol)
+            if (collisionResult is CollisionResult.None) {
+                homeRepository.removeAppFromFolder(folderId, packageName, targetRow, targetCol)
+            } else {
+                _uiEvent.emit(UiEvent.ShowToast("Space already occupied"))
+            }
         }
     }
 }
