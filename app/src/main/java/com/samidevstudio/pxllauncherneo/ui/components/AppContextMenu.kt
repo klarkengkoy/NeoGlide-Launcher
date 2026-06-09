@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -33,7 +34,8 @@ fun AppContextMenu(
     isHidden: Boolean = false,
     offset: DpOffset = DpOffset(0.dp, 0.dp),
     onShortcutClick: (AppShortcut) -> Unit = {},
-    onHideToggle: () -> Unit = {}
+    onHideToggle: () -> Unit = {},
+    onRemove: (() -> Unit)? = null
 ) {
     if (expanded) {
         val context = LocalContext.current
@@ -57,12 +59,18 @@ fun AppContextMenu(
                 tonalElevation = 3.dp,
                 shadowElevation = 8.dp
             ) {
-                Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                    DropdownMenuItem(
-                        text = { Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) },
-                        onClick = {},
-                        enabled = false
-                    )
+                Column(modifier = Modifier.padding(vertical = 8.dp).width(IntrinsicSize.Max)) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clip(RoundedCornerShape(12.dp))
+                    ) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        )
+                    }
                     
                     if (shortcuts.isNotEmpty()) {
                         HorizontalDivider()
@@ -91,10 +99,10 @@ fun AppContextMenu(
                     HorizontalDivider()
                     
                     DropdownMenuItem(
-                        text = { Text(if (isHidden) "Unhide App" else "Hide App") },
+                        text = { Text("Hide App") },
                         onClick = {
-                            onDismissRequest()
                             onHideToggle()
+                            onDismissRequest()
                         },
                         leadingIcon = { Icon(Icons.Default.VisibilityOff, contentDescription = null) }
                     )
@@ -111,12 +119,24 @@ fun AppContextMenu(
                         },
                         leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) }
                     )
+
+                    if (onRemove != null) {
+                        DropdownMenuItem(
+                            text = { Text("Remove from Home") },
+                            onClick = {
+                                onRemove()
+                                onDismissRequest()
+                            },
+                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = "Remove") }
+                        )
+                    }
+
                     DropdownMenuItem(
                         text = { Text("Uninstall", color = MaterialTheme.colorScheme.error) },
                         onClick = {
                             onDismissRequest()
                             val intent = Intent(Intent.ACTION_DELETE).apply {
-                                data = Uri.fromParts("package", packageName, null)
+                                data = Uri.parse("package:$packageName")
                                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                             }
                             context.startActivity(intent)

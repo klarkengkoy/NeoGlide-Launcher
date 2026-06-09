@@ -27,7 +27,7 @@ fun AppIcon(
     contentDescription: String?,
     modifier: Modifier = Modifier,
     useMonochrome: Boolean = false,
-    iconPackPackageName: String? = null
+    iconPackPackageName: String? = null,
 ) {
     val context = LocalContext.current
     val colorScheme = MaterialTheme.colorScheme
@@ -71,11 +71,11 @@ fun AppIcon(
         AsyncImage(
             model = ImageRequest.Builder(context)
                 .data(iconData)
-                .crossfade(true)
+                .crossfade(enable = true)
                 .build(),
             contentDescription = contentDescription,
             contentScale = ContentScale.Fit,
-            modifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && iconData is AdaptiveIconDrawable) {
+            modifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && (iconData is AdaptiveIconDrawable)) {
                 Modifier.fillMaxSize()
             } else {
                 // Scaling for monochrome layer or legacy icons
