@@ -1,7 +1,7 @@
 package com.samidevstudio.pxllauncherneo
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -25,7 +25,7 @@ import javax.inject.Inject
 import com.samidevstudio.pxllauncherneo.data.repository.WidgetRepository
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     @Inject lateinit var widgetRepository: WidgetRepository
 

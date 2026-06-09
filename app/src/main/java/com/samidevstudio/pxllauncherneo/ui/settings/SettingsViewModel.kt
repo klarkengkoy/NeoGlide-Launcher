@@ -17,7 +17,8 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val preferencesRepository: UserPreferencesRepository,
     private val appRepository: AppRepository,
-    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context
+    private val homeRepository: HomeRepository,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
 ) : ViewModel() {
 
     val allApps: StateFlow<List<com.samidevstudio.pxllauncherneo.domain.model.AppModel>> = appRepository.allApps
@@ -34,8 +35,19 @@ class SettingsViewModel @Inject constructor(
             initialValue = UserPreferences(categoryBarType = CategoryBarType.RIGHT)
         )
 
-    private val _isNotificationServiceEnabled = MutableStateFlow(false)
+    private val _isNotificationServiceEnabled = MutableStateFlow(value = false)
     val isNotificationServiceEnabled = _isNotificationServiceEnabled.asStateFlow()
+
+    private val _isUserAuthenticatedForHiddenApps = MutableStateFlow(false)
+    val isUserAuthenticatedForHiddenApps = _isUserAuthenticatedForHiddenApps.asStateFlow()
+
+    fun setUserAuthenticatedForHiddenApps(authenticated: Boolean) {
+        _isUserAuthenticatedForHiddenApps.value = authenticated
+    }
+
+    fun launchApp(packageName: String) {
+        appRepository.launchApp(packageName)
+    }
 
     fun checkNotificationPermission() {
         val enabledPackages = NotificationManagerCompat.getEnabledListenerPackages(context)
@@ -75,7 +87,11 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun hideApp(packageName: String) {
-        viewModelScope.launch { preferencesRepository.hideApp(packageName) }
+        viewModelScope.launch { 
+            preferencesRepository.hideApp(packageName)
+            homeRepository.removeHomeApp(packageName)
+            homeRepository.removeAppFromFolders(packageName)
+        }
     }
 
     fun unhideApp(packageName: String) {
@@ -106,7 +122,11 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { preferencesRepository.updateIconPack(packageName) }
     }
 
-    fun clearIconCache() { }
+    fun clearIconCache() {
+        // TODO: Implement icon cache clearing logic
+    }
 
-    fun resetLayout() { }
+    fun resetLayout() {
+        // TODO: Implement layout reset logic
+    }
 }

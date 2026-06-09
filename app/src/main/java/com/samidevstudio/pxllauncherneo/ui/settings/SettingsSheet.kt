@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,11 +20,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.samidevstudio.pxllauncherneo.data.repository.*
+import com.samidevstudio.pxllauncherneo.ui.components.AppIcon
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -32,15 +36,60 @@ fun SettingsSheet(
     onDismiss: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val preferences by viewModel.userPreferences.collectAsStateWithLifecycle()
     val isNotifEnabled by viewModel.isNotificationServiceEnabled.collectAsStateWithLifecycle()
+    val isAuthForHidden by viewModel.isUserAuthenticatedForHiddenApps.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+
+    // Reset authentication when the settings sheet is closed
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.setUserAuthenticatedForHiddenApps(false)
+        }
+    }
 
     var activeDialog by remember { mutableStateOf<String?>(null) }
 
+    val showHiddenAppsWithAuth = {
+        if (isAuthForHidden) {
+            activeDialog = "hidden_apps"
+        } else {
+            BiometricHelper.showBiometricPrompt(
+                activity = context as FragmentActivity,
+                onSuccess = {
+                    viewModel.setUserAuthenticatedForHiddenApps(true)
+                    activeDialog = "hidden_apps"
+                },
+                onNoSecurityEnrolled = {
+                    activeDialog = "security_warning"
+                }
+            )
+        }
+    }
+
     // DIALOG DISPATCHER
     when (activeDialog) {
+        "security_warning" -> AlertDialog(
+            onDismissRequest = { activeDialog = null },
+            title = { Text("Unprotected Vault") },
+            text = { Text("Your device has no lock set. Anyone can access this vault. Are you sure you want to continue without security?") },
+            confirmButton = {
+                TextButton(onClick = { 
+                    viewModel.setUserAuthenticatedForHiddenApps(true)
+                    activeDialog = "hidden_apps" 
+                }) { Text("Continue") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    try {
+                        val intent = android.content.Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS)
+                        context.startActivity(intent)
+                    } catch (_: Exception) {}
+                    activeDialog = null
+                }) { Text("Set up Lock") }
+            }
+        )
         "category" -> SelectionDialog(
             title = "Category bar",
             options = listOf(
@@ -178,7 +227,7 @@ fun SettingsSheet(
                         SettingsItem(
                             icon = Icons.Default.VisibilityOff,
                             title = "Hidden apps",
-                            onClick = { activeDialog = "hidden_apps" }
+                            onClick = { showHiddenAppsWithAuth() }
                         )
                     }
                 }
@@ -508,74 +557,147 @@ fun HiddenAppsDialog(
     val preferences by viewModel.userPreferences.collectAsStateWithLifecycle()
     val allApps by viewModel.allApps.collectAsStateWithLifecycle()
     var searchQuery by remember { mutableStateOf("") }
+    var sortMode by remember { mutableStateOf(com.samidevstudio.pxllauncherneo.ui.components.PickerSortMode.ALPHABETICAL) }
 
-    val filteredApps = remember(allApps, searchQuery) {
-        allApps.filter { it.label.contains(searchQuery, ignoreCase = true) }
-            .sortedBy { it.label }
+    val filteredApps = remember(allApps, searchQuery, sortMode, preferences.hiddenPackages) {
+        val baseList = allApps.filter { it.label.contains(searchQuery, ignoreCase = true) }
+        
+        when (sortMode) {
+            com.samidevstudio.pxllauncherneo.ui.components.PickerSortMode.ALPHABETICAL -> {
+                baseList.sortedBy { it.label }
+            }
+            com.samidevstudio.pxllauncherneo.ui.components.PickerSortMode.RECENT -> {
+                baseList.sortedByDescending { it.lastUsedTime }
+            }
+            else -> baseList.sortedBy { it.label }
+        }
+    }
+
+    val (hiddenInFiltered, unhiddenInFiltered) = remember(filteredApps, preferences.hiddenPackages) {
+        filteredApps.partition { it.packageName in preferences.hiddenPackages }
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Column {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.VisibilityOff, null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text("Hidden Apps")
-                }
+                Text(
+                    text = "Manage Hidden Apps",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search apps...") },
+                    placeholder = { Text("Search apps to hide...") },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    shape = RoundedCornerShape(16.dp),
+                    leadingIcon = { Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.primary) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        unfocusedBorderColor = Color.Transparent,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary
                     )
                 )
+
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(
+                        com.samidevstudio.pxllauncherneo.ui.components.PickerSortMode.ALPHABETICAL,
+                        com.samidevstudio.pxllauncherneo.ui.components.PickerSortMode.RECENT
+                    ).forEach { mode ->
+                        FilterChip(
+                            selected = sortMode == mode,
+                            onClick = { sortMode = mode },
+                            label = { Text(mode.label) },
+                            leadingIcon = if (sortMode == mode) {
+                                { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                            } else null,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                }
             }
         },
         text = {
-            Box(modifier = Modifier.heightIn(max = 400.dp)) {
-                LazyColumn {
-                    items(
-                        count = filteredApps.size,
-                        key = { index -> filteredApps[index].packageName }
-                    ) { index ->
-                        val app = filteredApps[index]
-                        val isHidden = preferences.hiddenPackages.contains(app.packageName)
-                        
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { 
-                                    if (isHidden) viewModel.unhideApp(app.packageName) 
-                                    else viewModel.hideApp(app.packageName)
-                                }
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            com.samidevstudio.pxllauncherneo.ui.components.AppIcon(
-                                packageName = app.packageName,
-                                contentDescription = null,
-                                modifier = Modifier.size(32.dp)
-                            )
-                            Spacer(modifier = Modifier.width(16.dp))
+            Box(modifier = Modifier.heightIn(max = 450.dp)) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 8.dp)
+                ) {
+                    if (hiddenInFiltered.isNotEmpty()) {
+                        item(key = "header_hidden") {
                             Text(
-                                text = app.label,
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodyLarge
+                                text = "Hidden Apps",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 8.dp, start = 8.dp)
                             )
-                            Checkbox(
-                                checked = isHidden,
-                                onCheckedChange = { 
-                                    if (it) viewModel.hideApp(app.packageName) 
-                                    else viewModel.unhideApp(app.packageName)
-                                }
+                        }
+                        items(
+                            items = hiddenInFiltered,
+                            key = { "hidden_${it.packageName}" }
+                        ) { app ->
+                            HiddenAppPickerItem(
+                                app = app,
+                                isHidden = true,
+                                onToggle = { viewModel.unhideApp(app.packageName) }
                             )
+                        }
+                        
+                        if (unhiddenInFiltered.isNotEmpty()) {
+                            item {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(vertical = 12.dp, horizontal = 8.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                                )
+                            }
+                        }
+                    }
+
+                    if (unhiddenInFiltered.isNotEmpty()) {
+                        item(key = "header_available") {
+                            Text(
+                                text = "Available Apps",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 8.dp, start = 8.dp)
+                            )
+                        }
+                        items(
+                            items = unhiddenInFiltered,
+                            key = { "available_${it.packageName}" }
+                        ) { app ->
+                            HiddenAppPickerItem(
+                                app = app,
+                                isHidden = false,
+                                onToggle = { viewModel.hideApp(app.packageName) }
+                            )
+                        }
+                    }
+
+                    if (hiddenInFiltered.isEmpty() && unhiddenInFiltered.isEmpty()) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "No apps found",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
@@ -585,6 +707,55 @@ fun HiddenAppsDialog(
             TextButton(onClick = onDismiss) { Text("Done", fontWeight = FontWeight.Bold) }
         }
     )
+}
+
+@Composable
+private fun HiddenAppPickerItem(
+    app: com.samidevstudio.pxllauncherneo.domain.model.AppModel,
+    isHidden: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Surface(
+        onClick = { onToggle(!isHidden) },
+        shape = RoundedCornerShape(12.dp),
+        color = if (isHidden) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f) else Color.Transparent,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp, horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        if (isHidden) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        RoundedCornerShape(10.dp)
+                    )
+                    .padding(6.dp)
+            ) {
+                AppIcon(
+                    packageName = app.packageName,
+                    contentDescription = null
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                text = app.label,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (isHidden) FontWeight.Bold else FontWeight.Normal,
+                color = if (isHidden) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+            )
+            Checkbox(
+                checked = isHidden,
+                onCheckedChange = onToggle
+            )
+        }
+    }
 }
 
 @Composable
