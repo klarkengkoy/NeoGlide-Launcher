@@ -39,4 +39,9 @@ object DatabaseModule {
     fun provideHomeAppDao(database: PxlDatabase): com.samidevstudio.pxllauncherneo.data.local.dao.HomeAppDao {
         return database.homeAppDao()
     }
+
+    @Provides
+    fun provideFolderDao(database: PxlDatabase): com.samidevstudio.pxllauncherneo.data.local.dao.FolderDao {
+        return database.folderDao()
+    }
 }
