@@ -97,6 +97,7 @@ dependencies {
 
     // Image Loading
     implementation(libs.coil.compose)
+    implementation(libs.androidx.biometric)
 
     // DataStore
     implementation(libs.androidx.datastore.preferences)
