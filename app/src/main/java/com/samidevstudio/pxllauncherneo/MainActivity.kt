@@ -57,9 +57,7 @@ class MainActivity : FragmentActivity() {
                         entry<HomeRoute> {
                             HomeScreen(
                                 sharedTransitionScope = this@SharedTransitionLayout,
-                            ) { packageName ->
-                                navigator.navigate(AppDetailRoute(packageName))
-                            }
+                            )
                         }
                         entry<AppDetailRoute> { key ->
                             AppDetailScreen(

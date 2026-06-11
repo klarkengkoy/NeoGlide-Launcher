@@ -135,11 +135,23 @@ fun AppContextMenu(
                         text = { Text("Uninstall", color = MaterialTheme.colorScheme.error) },
                         onClick = {
                             onDismissRequest()
-                            val intent = Intent(Intent.ACTION_DELETE).apply {
-                                data = Uri.parse("package:$packageName")
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            try {
+                                val packageUri = Uri.fromParts("package", packageName, null)
+                                val intent = Intent(Intent.ACTION_DELETE, packageUri).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                try {
+                                    val intent = Intent(Intent.ACTION_UNINSTALL_PACKAGE).apply {
+                                        data = Uri.parse("package:$packageName")
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e2: Exception) {
+                                    android.widget.Toast.makeText(context, "Could not uninstall app", android.widget.Toast.LENGTH_SHORT).show()
+                                }
                             }
-                            context.startActivity(intent)
                         },
                         leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
                     )

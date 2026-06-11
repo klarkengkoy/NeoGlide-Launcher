@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
-import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -45,7 +44,7 @@ fun SettingsSheet(
     // Reset authentication when the settings sheet is closed
     DisposableEffect(Unit) {
         onDispose {
-            viewModel.setUserAuthenticatedForHiddenApps(false)
+            viewModel.setUserAuthenticatedForHiddenApps(authenticated = false)
         }
     }
 
@@ -298,6 +297,7 @@ private fun String.formatLabel(): String = this.replace("_", " ")
     .lowercase(Locale.getDefault())
     .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
 
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotificationSettingsDialog(
@@ -306,7 +306,7 @@ fun NotificationSettingsDialog(
     onDismiss: () -> Unit,
     onSelectDotMode: (NotificationDotMode) -> Unit
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
 
     AlertDialog(
         onDismissRequest = onDismiss,

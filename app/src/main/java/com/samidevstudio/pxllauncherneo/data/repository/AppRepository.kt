@@ -23,6 +23,7 @@ import javax.inject.Singleton
 class AppRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val appDao: AppDao,
+    private val homeRepository: HomeRepository,
 ) {
     private val packageManager: PackageManager = context.packageManager
 
@@ -67,6 +68,7 @@ class AppRepository @Inject constructor(
         existingApps.keys.forEach { pkg ->
             if (pkg !in newPackageNames) {
                 appDao.deleteAppByPackageName(pkg)
+                homeRepository.cleanupPackage(pkg)
             }
         }
         appDao.insertApps(appEntities)
@@ -86,14 +88,17 @@ class AppRepository @Inject constructor(
                 ))
             } else {
                 appDao.deleteAppByPackageName(packageName)
+                homeRepository.cleanupPackage(packageName)
             }
         } catch (_: PackageManager.NameNotFoundException) {
             appDao.deleteAppByPackageName(packageName)
+            homeRepository.cleanupPackage(packageName)
         }
     }
 
     suspend fun removePackage(packageName: String) = withContext(Dispatchers.IO) {
         appDao.deleteAppByPackageName(packageName)
+        homeRepository.cleanupPackage(packageName)
     }
 
     suspend fun updateAppCategory(packageName: String, category: AppCategory) = withContext(Dispatchers.IO) {
