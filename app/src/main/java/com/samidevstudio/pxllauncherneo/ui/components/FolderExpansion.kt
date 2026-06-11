@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.samidevstudio.pxllauncherneo.domain.model.AppModel
 import com.samidevstudio.pxllauncherneo.domain.model.AppShortcut
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -58,12 +59,15 @@ fun FolderExpansion(
 ) {
     var currentLabel by remember(label) { mutableStateOf(label) }
     var draggingApp by remember { mutableStateOf<AppModel?>(null) }
+    var isDraggedOut by remember { mutableStateOf(false) }
     var dragOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    var rootCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
     val density = LocalDensity.current
 
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .onGloballyPositioned { rootCoords = it }
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
@@ -134,39 +138,52 @@ fun FolderExpansion(
                                         detectDragGesturesAfterLongPress(
                                             onDragStart = { offset ->
                                                 draggingApp = app
-                                                initialDragOffset = itemCoords?.localToWindow(offset) ?: androidx.compose.ui.geometry.Offset.Zero
+                                                // Standardize dragOffset to TOP-LEFT of the icon
+                                                val touchWindow = itemCoords?.localToWindow(offset) ?: androidx.compose.ui.geometry.Offset.Zero
+                                                val iconSizePx = with(density) { 80.dp.toPx() }
+                                                initialDragOffset = touchWindow - androidx.compose.ui.geometry.Offset(iconSizePx / 2, iconSizePx / 2)
                                                 dragOffset = initialDragOffset
                                                 onAppDragStart(app, initialDragOffset)
                                             },
                                             onDrag = { change, amount ->
-                                            change.consume()
-                                            dragOffset += amount
-                                            onAppDrag(amount)
-                                            
-                                            // Introduce a slop/threshold before collapsing the folder
-                                            val movement = (dragOffset - initialDragOffset).getDistance()
-                                            val slop = with(density) { 10.dp.toPx() }
-                                            
-                                            if (movement > slop) {
-                                                // Collapse only after meaningful movement
-                                                onAppDragOut(app, itemCoords?.localToWindow(change.position) ?: dragOffset, amount)
-                                                draggingApp = null
-                                            }
-                                        },
+                                                change.consume()
+                                                dragOffset += amount
+                                                onAppDrag(amount)
+
+                                                // Introduce a slop/threshold before collapsing the folder
+                                                // Check movement of the touch point (center of icon)
+                                                val iconSizePx = with(density) { 80.dp.toPx() }
+                                                val currentTouch = dragOffset + androidx.compose.ui.geometry.Offset(iconSizePx / 2, iconSizePx / 2)
+                                                val initialTouch = initialDragOffset + androidx.compose.ui.geometry.Offset(iconSizePx / 2, iconSizePx / 2)
+                                                val movement = (currentTouch - initialTouch).getDistance()
+                                                val slop = with(density) { 24.dp.toPx() }
+
+                                                if (movement > slop && draggingApp != null && !isDraggedOut) {
+                                                    // Collapse only after meaningful movement
+                                                    isDraggedOut = true
+                                                    // CRITICAL: Pass the current standardized dragOffset (Top-Left), not the touch position
+                                                    onAppDragOut(app, dragOffset, amount)
+                                                }
+                                            },
                                             onDragEnd = {
-                                            // Trigger Menu if dropped on same spot (minimal movement)
-                                            val movement = (dragOffset - initialDragOffset).getDistance()
-                                            val slop = with(density) { 10.dp.toPx() }
-                                            if (movement < slop) {
-                                                showMenu = true
-                                            }
-                                            // Ensure we tell the Home screen that the drag has ended
-                                            onAppDragEnd()
-                                            draggingApp = null
-                                        },
-                                            onDragCancel = { 
+                                                // Trigger Menu if dropped on same spot (minimal movement)
+                                                val iconSizePx = with(density) { 80.dp.toPx() }
+                                                val currentTouch = dragOffset + androidx.compose.ui.geometry.Offset(iconSizePx / 2, iconSizePx / 2)
+                                                val initialTouch = initialDragOffset + androidx.compose.ui.geometry.Offset(iconSizePx / 2, iconSizePx / 2)
+                                                val movement = (currentTouch - initialTouch).getDistance()
+                                                val slop = with(density) { 10.dp.toPx() }
+                                                if (movement < slop && !isDraggedOut) {
+                                                    showMenu = true
+                                                }
+                                                // Ensure we tell the Home screen that the drag has ended
+                                                onAppDragEnd()
+                                                draggingApp = null
+                                                isDraggedOut = false
+                                            },
+                                            onDragCancel = {
                                                 onAppDragCancel()
-                                                draggingApp = null 
+                                                draggingApp = null
+                                                isDraggedOut = false
                                             }
                                         )
                                     }
@@ -198,40 +215,43 @@ fun FolderExpansion(
                         }
                     }
                 }
+            }
+        }
 
-                // Floating Drag Icon
-                draggingApp?.let { app ->
-                    Box(
-                        modifier = Modifier
-                            .offset {
-                                val windowOffset = dragOffset
-                                // Offset by half icon size to center under finger
-                                val iconSizePx = with(density) { 80.dp.toPx() }
-                                androidx.compose.ui.unit.IntOffset(
-                                    (windowOffset.x - iconSizePx / 2).toInt(),
-                                    (windowOffset.y - iconSizePx / 2).toInt()
-                                )
-                            }
-                            .size(80.dp) // Approximate size for drag feedback
-                            .graphicsLayer {
-                                scaleX = 1.2f
-                                scaleY = 1.2f
-                                shadowElevation = with(density) { 16.dp.toPx() }
-                                shape = RoundedCornerShape(16.dp)
-                                clip = true
-                            }
-                    ) {
-                        AppItem(
-                            app = app,
-                            sharedTransitionScope = sharedTransitionScope,
-                            animatedVisibilityScope = animatedVisibilityScope,
-                            useMonochrome = useMonochrome,
-                            iconPackPackageName = iconPackPackageName,
-                            showLabel = false,
-                            isLongClickEnabled = false,
-                            onClick = {}
-                        )
-                    }
+        // Floating Drag Icon
+        if (!isDraggedOut) {
+            draggingApp?.let { app ->
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .offset {
+                            // Convert window-relative dragOffset (top-left) to local coordinates of root Box
+                            val localTopLeft = rootCoords?.windowToLocal(dragOffset) ?: dragOffset
+
+                            androidx.compose.ui.unit.IntOffset(
+                                localTopLeft.x.roundToInt(),
+                                localTopLeft.y.roundToInt()
+                            )
+                        }
+                        .size(80.dp) // Approximate size for drag feedback
+                        .graphicsLayer {
+                            scaleX = 1.2f
+                            scaleY = 1.2f
+                            shadowElevation = with(density) { 16.dp.toPx() }
+                            shape = RoundedCornerShape(16.dp)
+                            clip = true
+                        }
+                ) {
+                    AppItem(
+                        app = app,
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        useMonochrome = useMonochrome,
+                        iconPackPackageName = iconPackPackageName,
+                        showLabel = false,
+                        isLongClickEnabled = false,
+                        onClick = {}
+                    )
                 }
             }
         }

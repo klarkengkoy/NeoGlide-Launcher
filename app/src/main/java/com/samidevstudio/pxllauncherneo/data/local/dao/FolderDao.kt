@@ -20,6 +20,10 @@ interface FolderDao {
     @Query("SELECT * FROM folders")
     fun getAllFoldersWithApps(): Flow<List<FolderWithApps>>
 
+    @Transaction
+    @Query("SELECT * FROM folders WHERE id = :id")
+    suspend fun getFolderWithAppsById(id: Int): FolderWithApps?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertFolder(folder: FolderEntity): Long
 
@@ -46,6 +50,9 @@ interface FolderDao {
 
     @Query("DELETE FROM folder_apps WHERE packageName = :packageName")
     suspend fun removeAppFromAllFolders(packageName: String)
+
+    @Query("SELECT DISTINCT folderId FROM folder_apps WHERE packageName = :packageName")
+    suspend fun getFoldersContainingApp(packageName: String): List<Int>
 
     @Query("DELETE FROM folders WHERE id = :folderId")
     suspend fun deleteFolderById(folderId: Int)

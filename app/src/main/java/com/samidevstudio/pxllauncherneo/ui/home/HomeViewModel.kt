@@ -40,7 +40,7 @@ sealed class HomeItem {
         override val column: Float,
         override val spanX: Float,
         override val spanY: Float,
-        val isCustom: Boolean = false // New flag for internal widgets like Dock
+        val isCustom: Boolean = false, // New flag for internal widgets like Dock
     ) : HomeItem()
 
     data class Folder(
@@ -81,19 +81,21 @@ class HomeViewModel @Inject constructor(
             if (prefs.isFirstInstallRun) {
                 // Double check DB to prevent accidental duplicates
                 val existing = widgetRepository.allWidgets.first()
-                if (existing.none { it.providerPackage == "internal" && it.providerClass == "dock" }) {
+                if (existing.none { (it.providerPackage == "internal") && (it.providerClass == "dock") }) {
                     // Provision internal Dock (Floating placeholder: 99.5f)
                     val dockId = widgetRepository.allocateWidgetId()
-                    widgetRepository.addWidget(WidgetEntity(
-                        widgetId = dockId,
-                        providerPackage = "internal",
-                        providerClass = "dock",
-                        label = "Dock",
-                        row = 99.5f,
-                        column = 0f,
-                        spanX = 4f,
-                        spanY = 1f
-                    ))
+                    widgetRepository.addWidget(
+                        WidgetEntity(
+                            widgetId = dockId,
+                            providerPackage = "internal",
+                            providerClass = "dock",
+                            label = "Dock",
+                            row = 99.5f,
+                            column = 0f,
+                            spanX = 4f,
+                            spanY = 1f
+                        )
+                    )
                 }
                 userPreferencesRepository.setFirstInstallRun(isFirst = false)
             }
@@ -112,6 +114,12 @@ class HomeViewModel @Inject constructor(
         homeRepository.allWidgets,
         homeRepository.allFolders
     ) { apps, homeApps, widgets, folders ->
+        // Avoid emitting items if apps list is empty but we expect to have home items
+        // This prevents folders appearing empty for a split second on rerun
+        if (apps.isEmpty() && (homeApps.isNotEmpty() || folders.isNotEmpty())) {
+            return@combine emptyList()
+        }
+
         val appItems = homeApps.mapNotNull { homeApp ->
             apps.find { it.packageName == homeApp.packageName }?.let { appModel ->
                 HomeItem.App(
@@ -169,8 +177,10 @@ class HomeViewModel @Inject constructor(
 
     val recentlyUsedApps: StateFlow<List<AppModel>> = appRepository.allApps
         .map { apps ->
-            apps.filter { it.lastUsedTime > 0 }
+            apps.asSequence()
+                .filter { it.lastUsedTime > 0 }
                 .sortedByDescending { it.lastUsedTime }
+                .toList()
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -192,9 +202,7 @@ class HomeViewModel @Inject constructor(
     fun updateItemPosition(item: HomeItem, newRow: Float, newCol: Float) {
         viewModelScope.launch {
             // Check for collisions and potential merges
-            val collisionResult = checkCollision(item, newRow, newCol)
-            
-            when (collisionResult) {
+            when (val collisionResult = checkCollision(item, newRow, newCol, ignoreItemId = item.id, ignoreItemClass = item::class)) {
                 is CollisionResult.None -> {
                     when (item) {
                         is HomeItem.App -> homeRepository.updateHomeAppPosition(item.id, newRow, newCol)
@@ -246,13 +254,19 @@ class HomeViewModel @Inject constructor(
         data class AddToFolder(val targetFolder: HomeItem.Folder) : CollisionResult()
     }
 
-    private fun checkCollision(draggedItem: HomeItem, newRow: Float, newCol: Float): CollisionResult {
+    private fun checkCollision(
+        draggedItem: HomeItem, 
+        newRow: Float, 
+        newCol: Float,
+        ignoreItemId: Int = -1,
+        ignoreItemClass: kotlin.reflect.KClass<out HomeItem>? = null
+    ): CollisionResult {
         val currentItems = homeItems.value
         val draggedRect = android.graphics.RectF(newCol, newRow, newCol + draggedItem.spanX, newRow + draggedItem.spanY)
         
         currentItems.forEach { item ->
-            // Skip self
-            if (item.id == draggedItem.id && item::class == draggedItem::class) return@forEach
+            // Skip self or ignored item
+            if (item.id == ignoreItemId && item::class == ignoreItemClass) return@forEach
             
             val itemRect = android.graphics.RectF(item.column, item.row, item.column + item.spanX, item.row + item.spanY)
             
@@ -292,16 +306,7 @@ class HomeViewModel @Inject constructor(
     fun hideApp(packageName: String) {
         viewModelScope.launch {
             userPreferencesRepository.hideApp(packageName)
-            homeRepository.removeHomeApp(packageName)
-            // Need to dissolve any folders that might have become empty or single-item
-            val folders = homeRepository.allFolders.first()
-            val foldersWithApp = folders.filter { it.apps.any { app -> app.packageName == packageName } }
-            
-            homeRepository.removeAppFromFolders(packageName)
-            
-            foldersWithApp.forEach { 
-                homeRepository.dissolveFolderIfNeeded(it.folder.id)
-            }
+            homeRepository.cleanupPackage(packageName)
         }
     }
 
@@ -398,15 +403,34 @@ class HomeViewModel @Inject constructor(
 
     fun removeAppFromFolder(folderId: Int, packageName: String, targetRow: Float, targetCol: Float) {
         viewModelScope.launch {
-            // Check collision at target position
+            // Find AppModel across all current apps to ensure we have valid data on rerun
+            val appModel = allApps.value.find { it.packageName == packageName } ?: run {
+                android.util.Log.e("HomeViewModel", "removeAppFromFolder FAILED: AppModel not found for $packageName. allApps size: ${allApps.value.size}")
+                // If it's not in allApps, try the database directly as a fallback
+                appRepository.allApps.first().find { it.packageName == packageName }
+            } ?: run {
+                android.util.Log.e("HomeViewModel", "removeAppFromFolder CRITICAL: App not found in database for $packageName")
+                return@launch
+            }
+
             val tempApp = HomeItem.App(
                 id = -1,
-                appModel = allApps.value.find { it.packageName == packageName } ?: return@launch,
+                appModel = appModel,
                 row = targetRow,
                 column = targetCol
             )
             
-            val collisionResult = checkCollision(tempApp, targetRow, targetCol)
+            // Ignore the folder we are coming from during collision check
+            val collisionResult = checkCollision(
+                tempApp, 
+                targetRow, 
+                targetCol, 
+                ignoreItemId = folderId, 
+                ignoreItemClass = HomeItem.Folder::class
+            )
+            
+            android.util.Log.d("HomeViewModel", "removeAppFromFolder: pkg=$packageName, target=($targetRow, $targetCol), collision=$collisionResult")
+
             if (collisionResult is CollisionResult.None) {
                 homeRepository.removeAppFromFolder(folderId, packageName, targetRow, targetCol)
             } else {

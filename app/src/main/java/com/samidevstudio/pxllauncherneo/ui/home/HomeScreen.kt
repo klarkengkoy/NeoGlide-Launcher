@@ -15,7 +15,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -59,11 +58,9 @@ fun HomeScreen(
     settingsViewModel: com.samidevstudio.pxllauncherneo.ui.settings.SettingsViewModel = hiltViewModelV2(),
     sharedTransitionScope: SharedTransitionScope,
     drawerViewModel: com.samidevstudio.pxllauncherneo.ui.drawer.DrawerViewModel = hiltViewModelV2(),
-    onNavigateToDetail: (String) -> Unit = {},
 ) {
-    val dockApps by viewModel.dockApps.collectAsStateWithLifecycle()
-    val widgets by viewModel.widgets.collectAsStateWithLifecycle()
     val activeNotifications by viewModel.activeNotifications.collectAsStateWithLifecycle()
+    val recentlyUsedApps by viewModel.recentlyUsedApps.collectAsStateWithLifecycle()
     val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
     val shouldShowDefaultPrompt by viewModel.shouldShowDefaultPrompt.collectAsStateWithLifecycle()
     val density = LocalDensity.current
@@ -85,21 +82,22 @@ fun HomeScreen(
     var expandedFolderId by remember { mutableIntStateOf(-1) }
     var draggingAppFromFolder by remember { mutableStateOf<AppModel?>(null) }
     var sourceFolderId by remember { mutableIntStateOf(-1) }
-    
+    var isInvisibleByDrag by remember { mutableStateOf(false) }
+
     // TRACK ORIGINAL POSITION FOR DRAG-FIRST LOGIC
     var originalRow by remember { mutableFloatStateOf(-1f) }
     var originalCol by remember { mutableFloatStateOf(-1f) }
-    
+
     var showAppMenuPackage by remember { mutableStateOf<String?>(null) }
     var showAppMenuId by remember { mutableIntStateOf(-1) }
     var appMenuShortcuts by remember { mutableStateOf<List<com.samidevstudio.pxllauncherneo.domain.model.AppShortcut>>(emptyList()) }
     var appMenuLabel by remember { mutableStateOf("") }
-    
+
     // DRAG STATE FOR ICON REPOSITIONING
     var draggingItemId by remember { mutableIntStateOf(-1) }
     var dragOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var dragTargetBounds by remember { mutableStateOf<RectBounds?>(null) }
-    
+
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
     val homeItems by viewModel.homeItems.collectAsStateWithLifecycle()
@@ -157,7 +155,7 @@ fun HomeScreen(
             }
         }
     }
-    
+
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
     val homeAlpha by animateFloatAsState(
         targetValue = if (showDrawer) 0f else 1f,
@@ -208,34 +206,6 @@ fun HomeScreen(
                     if (dragAmount < -20) {
                         showDrawer = true
                     }
-                }
-            }
-            .pointerInput(draggingItemId, draggingAppFromFolder) {
-                if (draggingItemId != -1 || draggingAppFromFolder != null) {
-                    detectDragGestures(
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            dragOffset += dragAmount
-                        },
-                        onDragEnd = {
-                            val appFromFolder = draggingAppFromFolder
-                            if (appFromFolder != null) {
-                                dragTargetBounds?.let { bounds ->
-                                    viewModel.removeAppFromFolder(sourceFolderId, appFromFolder.packageName, bounds.row, bounds.col)
-                                }
-                                draggingAppFromFolder = null
-                                sourceFolderId = -1
-                                draggingItemId = -1
-                            }
-                            dragTargetBounds = null
-                        },
-                        onDragCancel = {
-                            draggingAppFromFolder = null
-                            sourceFolderId = -1
-                            draggingItemId = -1
-                            dragTargetBounds = null
-                        }
-                    )
                 }
             }
     ) {
@@ -290,46 +260,15 @@ fun HomeScreen(
                                 }
                             )
                         }
-                        .pointerInput(draggingItemId, draggingAppFromFolder) {
-                            if (draggingItemId != -1 || draggingAppFromFolder != null) {
-                                detectDragGestures(
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
-                                        dragOffset += dragAmount
-                                        
-                                        // Re-calculate these inside pointerInput if needed or capture them
-                                        // But they depend on BoxWithConstraints scope
-                                    },
-                                    onDragEnd = {
-                                        val appFromFolder = draggingAppFromFolder
-                                        if (appFromFolder != null) {
-                                            dragTargetBounds?.let { bounds ->
-                                                viewModel.removeAppFromFolder(sourceFolderId, appFromFolder.packageName, bounds.row, bounds.col)
-                                            }
-                                            draggingAppFromFolder = null
-                                            sourceFolderId = -1
-                                            draggingItemId = -1
-                                        }
-                                        dragTargetBounds = null
-                                    },
-                                    onDragCancel = {
-                                        draggingAppFromFolder = null
-                                        sourceFolderId = -1
-                                        draggingItemId = -1
-                                        dragTargetBounds = null
-                                    }
-                                )
-                            }
-                        }
                 ) {
                     val unitWidth = maxWidth / 4f
                     val topOffset = 0.dp // Use padding from Scaffold
                     val bottomPadding = 0.dp // Use padding from Scaffold
                     val topOffsetPx = with(density) { topOffset.toPx() }
-                    
+
                     // Adaptive Grid: Calculate nearest row count and stretch to fill height minus bottom padding
                     val availableHeight = maxHeight
-                    val maxRows = (availableHeight / 96.dp).let { 
+                    val maxRows = (availableHeight / 96.dp).let {
                         if (it % 1 > 0.7f) it.toInt() + 1 else it.toInt()
                     }.coerceAtLeast(1)
                     val unitHeight = availableHeight / maxRows
@@ -337,13 +276,23 @@ fun HomeScreen(
                     val unitHeightPx = with(density) { unitHeight.toPx() }
 
                     // DRAG LOGIC REFINEMENT: Update bounds in response to dragOffset changes
+                    fun calculateTargetBounds(offset: androidx.compose.ui.geometry.Offset): RectBounds {
+                        val iconSizePx = with(density) { 80.dp.toPx() }
+                        // Offset is standardized as the TOP-LEFT of the dragging 80dp icon
+                        val centerX = offset.x + iconSizePx / 2
+                        val centerY = offset.y + iconSizePx / 2
+
+                        // Find the grid cell index (0.5 steps) that contains the center point
+                        val targetRow = (((centerY - topOffsetPx) / unitHeightPx) * 2).toInt() / 2f
+                            .coerceIn(0f, maxRows.toFloat() - 1f)
+                        val targetCol = ((centerX / unitWidthPx) * 2).toInt() / 2f
+                            .coerceIn(0f, 3f)
+                        return RectBounds(targetRow, targetCol, 1f, 1f)
+                    }
+
                     LaunchedEffect(dragOffset, draggingItemId, draggingAppFromFolder) {
                         if (draggingItemId != -1 || draggingAppFromFolder != null) {
-                            val targetRow = (((dragOffset.y - topOffsetPx) / unitHeightPx) * 2).roundToInt() / 2f
-                                .coerceIn(0f, maxRows.toFloat() - 1f)
-                            val targetCol = (((dragOffset.x) / unitWidthPx) * 2).roundToInt() / 2f
-                                .coerceIn(0f, 3f)
-                            dragTargetBounds = RectBounds(targetRow, targetCol, 1f, 1f)
+                            dragTargetBounds = calculateTargetBounds(dragOffset)
                         }
                     }
 
@@ -354,7 +303,7 @@ fun HomeScreen(
                                 .offset {
                                     androidx.compose.ui.unit.IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt())
                                 }
-                                .size(unitWidth, unitHeight)
+                                .size(80.dp) // Render with 80dp to match FolderExpansion
                                 .zIndex(100f)
                                 .graphicsLayer {
                                     scaleX = 1.2f
@@ -370,7 +319,7 @@ fun HomeScreen(
                                 animatedVisibilityScope = animatedVisibilityScope,
                                 useMonochrome = preferences.useMonochromeIcons,
                                 iconPackPackageName = preferences.iconPackPackageName,
-                                showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
+                                showLabel = false, // Keep label hidden during drag out
                                 sharedElementKeyPrefix = "dragging-folder",
                                 isLongClickEnabled = false,
                                 onClick = {}
@@ -385,7 +334,7 @@ fun HomeScreen(
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val mainGridColor = (if (isDark) Color.White else Color.Black).copy(alpha = 0.3f)
                             val subGridColor = (if (isDark) Color.White else Color.Black).copy(alpha = 0.1f)
-                            
+
                             // Draw exactly maxRows lines, starting from topOffset
                             for (i in 0..maxRows) {
                                 val y = topOffsetPx + (i * unitHeight.toPx())
@@ -395,7 +344,7 @@ fun HomeScreen(
                                     drawLine(subGridColor, androidx.compose.ui.geometry.Offset(0f, midY), androidx.compose.ui.geometry.Offset(size.width, midY), strokeWidth = 1f)
                                 }
                             }
-                            
+
                             val gridBottomY = topOffsetPx + (maxRows * unitHeight.toPx())
                             for (i in 0..4) {
                                 val x = i * unitWidth.toPx()
@@ -415,8 +364,8 @@ fun HomeScreen(
                                 .fillMaxSize()
                                 .zIndex(0.5f)
                                 .pointerInput(Unit) {
-                                    detectTapGestures(onTap = { 
-                                        editingWidgetId = -1 
+                                    detectTapGestures(onTap = {
+                                        editingWidgetId = -1
                                         showWidgetMenu = false
                                     })
                                 }
@@ -481,7 +430,7 @@ fun HomeScreen(
                                                         showAppMenuPackage = null // Hide menu on drag start
                                                         originalRow = item.row
                                                         originalCol = item.column
-                                                        
+
                                                         // Calculate initial dragOffset based on current position
                                                         val startX = unitWidthPx * item.column
                                                         val startY = topOffsetPx + (unitHeightPx * item.row)
@@ -491,7 +440,7 @@ fun HomeScreen(
                                                     onDrag = { change, dragAmount ->
                                                         change.consume()
                                                         dragOffset += dragAmount
-                                                        
+
                                                         // Calculate nearest grid cell with 0.5f snapping
                                                         // FIX: Remove the + unitSize/2f offset that caused a 0.5 grid jump
                                                         val targetRow = (((dragOffset.y - topOffsetPx) / unitHeightPx) * 2).roundToInt() / 2f
@@ -508,16 +457,15 @@ fun HomeScreen(
                                                                 showAppMenuId = item.id
                                                                 val iconLeft = (unitWidth * item.column)
                                                                 val iconTop = topOffset + (unitHeight * item.row)
-                                                                val iconHeight = unitHeight
-                                                                
+
                                                                 val menuH = 150.dp
                                                                 val gap = 8.dp
-                                                                
-                                                                var finalY = iconTop + iconHeight + gap
+
+                                                                var finalY = iconTop + unitHeight + gap
                                                                 if (finalY + menuH > availableHeight) {
                                                                     finalY = iconTop - menuH - gap
                                                                 }
-                                                                
+
                                                                 contextMenuOffset = DpOffset(x = iconLeft, y = finalY)
                                                                 coroutineScope.launch {
                                                                     appMenuShortcuts = viewModel.getShortcuts(app.packageName)
@@ -545,16 +493,16 @@ fun HomeScreen(
                                         useMonochrome = preferences.useMonochromeIcons,
                                         iconPackPackageName = preferences.iconPackPackageName,
                                         isHidden = app.packageName in preferences.hiddenPackages,
-                                        hasNotification = (preferences.notificationDotMode == NotificationDotMode.APP_ICON || 
-                                                         preferences.notificationDotMode == NotificationDotMode.BOTH) &&
-                                                         app.packageName in activeNotifications.keys,
+                                        hasNotification = (preferences.notificationDotMode == NotificationDotMode.APP_ICON ||
+                                                preferences.notificationDotMode == NotificationDotMode.BOTH) &&
+                                                app.packageName in activeNotifications.keys,
                                         notificationCount = activeNotifications[app.packageName] ?: 0,
                                         showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
                                         sharedElementKeyPrefix = "home",
                                         isLongClickEnabled = draggingItemId == -1, // Disable menu during drag
                                         getShortcuts = { viewModel.getShortcuts(it) },
                                         onShortcutClick = { viewModel.launchShortcut(it) },
-                                        onHideToggle = { 
+                                        onHideToggle = {
                                             if (app.packageName in preferences.hiddenPackages) {
                                                 viewModel.unhideApp(app.packageName)
                                             } else {
@@ -607,7 +555,7 @@ fun HomeScreen(
                                                         draggingItemId = item.id
                                                         originalRow = item.row
                                                         originalCol = item.column
-                                                        
+
                                                         val startX = unitWidthPx * item.column
                                                         val startY = topOffsetPx + (unitHeightPx * item.row)
                                                         dragOffset = androidx.compose.ui.geometry.Offset(startX, startY)
@@ -616,7 +564,7 @@ fun HomeScreen(
                                                     onDrag = { change, dragAmount ->
                                                         change.consume()
                                                         dragOffset += dragAmount
-                                                        
+
                                                         val targetRow = (((dragOffset.y - topOffsetPx) / unitHeightPx) * 2).roundToInt() / 2f
                                                             .coerceIn(0f, maxRows.toFloat() - 1f)
                                                         val targetCol = (((dragOffset.x) / unitWidthPx) * 2).roundToInt() / 2f
@@ -632,15 +580,15 @@ fun HomeScreen(
                                                                 val iconLeft = (unitWidth * item.column)
                                                                 val iconTop = topOffset + (unitHeight * item.row)
                                                                 val iconHeight = unitHeight
-                                                                
+
                                                                 val menuH = 100.dp
                                                                 val gap = 8.dp
-                                                                
+
                                                                 var finalY = iconTop + iconHeight + gap
                                                                 if (finalY + menuH > availableHeight) {
                                                                     finalY = iconTop - menuH - gap
                                                                 }
-                                                                
+
                                                                 contextMenuOffset = DpOffset(x = iconLeft, y = finalY)
                                                                 showFolderMenu = true
                                                             } else {
@@ -663,7 +611,7 @@ fun HomeScreen(
                                         apps = item.apps,
                                         useMonochrome = preferences.useMonochromeIcons,
                                         showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
-                                        onClick = { 
+                                        onClick = {
                                             if (draggingItemId == -1) {
                                                 expandedFolderId = item.id
                                             }
@@ -694,7 +642,7 @@ fun HomeScreen(
                                     modifier = Modifier
                                         .offset(y = topOffset)
                                         .zIndex(if (isCurrentEditing) 1f else 0f),
-                                    onDragStart = { 
+                                    onDragStart = {
                                         showWidgetMenu = false
                                         editingWidgetId = item.id
                                         originalRow = item.row
@@ -820,15 +768,15 @@ fun HomeScreen(
                                                             useMonochrome = preferences.useMonochromeIcons,
                                                             iconPackPackageName = preferences.iconPackPackageName,
                                                             isHidden = app.packageName in preferences.hiddenPackages,
-                                                            hasNotification = (preferences.notificationDotMode == NotificationDotMode.APP_ICON || 
-                                                                             preferences.notificationDotMode == NotificationDotMode.BOTH) &&
-                                                                             app.packageName in activeNotifications.keys,
+                                                            hasNotification = (preferences.notificationDotMode == NotificationDotMode.APP_ICON ||
+                                                                    preferences.notificationDotMode == NotificationDotMode.BOTH) &&
+                                                                    app.packageName in activeNotifications.keys,
                                                             notificationCount = activeNotifications[app.packageName] ?: 0,
                                                             showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
                                                             sharedElementKeyPrefix = "dock",
                                                             getShortcuts = { viewModel.getShortcuts(it) },
                                                             onShortcutClick = { viewModel.launchShortcut(it) },
-                                                            onHideToggle = { 
+                                                            onHideToggle = {
                                                                 if (app.packageName in preferences.hiddenPackages) {
                                                                     viewModel.unhideApp(app.packageName)
                                                                 } else {
@@ -851,106 +799,173 @@ fun HomeScreen(
 
                     // Remove the separate widgets loop as they are now handled in homeItems
 
-                                    HomeContextMenu(
-                                        expanded = showContextMenu,
-                                        onDismissRequest = { showContextMenu = false },
-                                        offset = contextMenuOffset,
-                                        onOpenWidgets = {
-                                            val appWidgetId = viewModel.allocateWidgetId()
-                                            val intent = android.content.Intent(AppWidgetManager.ACTION_APPWIDGET_PICK).apply {
-                                                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
-                                            }
-                                            widgetPickLauncher.launch(intent)
-                                        },
-                                        onAddApp = {
-                                            // Convert the contextMenuOffset (which is in Dp) to grid coordinates
-                                            val xPx = with(density) { contextMenuOffset.x.toPx() }
-                                            val yPx = with(density) { (contextMenuOffset.y - topOffset).toPx() }
-                                            
-                                            val unitWidthPx = with(density) { unitWidth.toPx() }
-                                            val unitHeightPx = with(density) { unitHeight.toPx() }
-                                            
-                                            pendingAddAppCol = (xPx / unitWidthPx).toInt().toFloat().coerceIn(0f, 3f)
-                                            pendingAddAppRow = (yPx / unitHeightPx).toInt().toFloat().coerceIn(0f, maxRows.toFloat() - 1f)
-                                            
-                                            showAppPicker = true
-                                        },
-                                        onOpenLauncherSettings = { showSettings = true }
-                                    )
+                    HomeContextMenu(
+                        expanded = showContextMenu,
+                        onDismissRequest = { showContextMenu = false },
+                        offset = contextMenuOffset,
+                        onOpenWidgets = {
+                            val appWidgetId = viewModel.allocateWidgetId()
+                            val intent = android.content.Intent(AppWidgetManager.ACTION_APPWIDGET_PICK).apply {
+                                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                            }
+                            widgetPickLauncher.launch(intent)
+                        },
+                        onAddApp = {
+                            // Convert the contextMenuOffset (which is in Dp) to grid coordinates
+                            val xPx = with(density) { contextMenuOffset.x.toPx() }
+                            val yPx = with(density) { (contextMenuOffset.y - topOffset).toPx() }
 
-                                    showAppMenuPackage?.let { pkg ->
-                                        AppContextMenu(
-                                            expanded = true,
-                                            onDismissRequest = { 
-                                                showAppMenuPackage = null
-                                                showAppMenuId = -1
-                                            },
-                                            packageName = pkg,
-                                            label = appMenuLabel,
-                                            shortcuts = appMenuShortcuts,
-                                            offset = contextMenuOffset,
-                                            onShortcutClick = { viewModel.launchShortcut(it) },
-                                            onHideToggle = { 
-                                                viewModel.hideApp(pkg)
-                                                if (showAppMenuId != -1) {
-                                                    viewModel.removeHomeApp(showAppMenuId)
-                                                }
-                                            },
-                                            onRemove = if (showAppMenuId != -1) {
-                                                { viewModel.removeHomeApp(showAppMenuId) }
-                                            } else null
-                                        )
-                                    }
+                            val unitWidthPx = with(density) { unitWidth.toPx() }
+                            val unitHeightPx = with(density) { unitHeight.toPx() }
 
-                                    WidgetContextMenu(
-                                        expanded = showWidgetMenu,
-                                        onDismissRequest = { showWidgetMenu = false },
-                                        onRemove = {
-                                            if (editingWidgetId != -1) {
-                                                viewModel.removeWidget(editingWidgetId)
-                                                editingWidgetId = -1
-                                            }
-                                            showWidgetMenu = false
-                                        },
-                                        onOpenApp = {
-                                            if (editingWidgetId != -1) {
-                                                val info = viewModel.appWidgetManager.getAppWidgetInfo(editingWidgetId)
-                                                info?.provider?.packageName?.let { pkg ->
-                                                    viewModel.launchApp(pkg)
-                                                }
-                                                editingWidgetId = -1
-                                            }
-                                            showWidgetMenu = false
-                                        },
-                                        offset = contextMenuOffset
-                                    )
+                            pendingAddAppCol = (xPx / unitWidthPx).toInt().toFloat().coerceIn(0f, 3f)
+                            pendingAddAppRow = (yPx / unitHeightPx).toInt().toFloat().coerceIn(0f, maxRows.toFloat() - 1f)
 
-                                    FolderContextMenu(
-                                        expanded = showFolderMenu,
-                                        onDismissRequest = { 
-                                            showFolderMenu = false
-                                            showFolderMenuId = -1
-                                        },
-                                        label = showFolderMenuLabel,
-                                        offset = contextMenuOffset,
-                                        onEditName = {
-                                            if (showFolderMenuId != -1) {
-                                                expandedFolderId = showFolderMenuId
-                                            }
-                                        },
-                                        onRemove = {
-                                            if (showFolderMenuId != -1) {
-                                                viewModel.removeFolder(showFolderMenuId)
-                                            }
+                            showAppPicker = true
+                        },
+                        onOpenLauncherSettings = { showSettings = true }
+                    )
+
+                    showAppMenuPackage?.let { pkg ->
+                        AppContextMenu(
+                            expanded = true,
+                            onDismissRequest = {
+                                showAppMenuPackage = null
+                                showAppMenuId = -1
+                            },
+                            packageName = pkg,
+                            label = appMenuLabel,
+                            shortcuts = appMenuShortcuts,
+                            offset = contextMenuOffset,
+                            onShortcutClick = { viewModel.launchShortcut(it) },
+                            onHideToggle = {
+                                viewModel.hideApp(pkg)
+                                if (showAppMenuId != -1) {
+                                    viewModel.removeHomeApp(showAppMenuId)
+                                }
+                            },
+                            onRemove = if (showAppMenuId != -1) {
+                                { viewModel.removeHomeApp(showAppMenuId) }
+                            } else null
+                        )
+                    }
+
+                    WidgetContextMenu(
+                        expanded = showWidgetMenu,
+                        onDismissRequest = { showWidgetMenu = false },
+                        onRemove = {
+                            if (editingWidgetId != -1) {
+                                viewModel.removeWidget(editingWidgetId)
+                                editingWidgetId = -1
+                            }
+                            showWidgetMenu = false
+                        },
+                        onOpenApp = {
+                            if (editingWidgetId != -1) {
+                                val info = viewModel.appWidgetManager.getAppWidgetInfo(editingWidgetId)
+                                info?.provider?.packageName?.let { pkg ->
+                                    viewModel.launchApp(pkg)
+                                }
+                                editingWidgetId = -1
+                            }
+                            showWidgetMenu = false
+                        },
+                        offset = contextMenuOffset
+                    )
+
+                    FolderContextMenu(
+                        expanded = showFolderMenu,
+                        onDismissRequest = {
+                            showFolderMenu = false
+                            showFolderMenuId = -1
+                        },
+                        label = showFolderMenuLabel,
+                        offset = contextMenuOffset,
+                        onEditName = {
+                            if (showFolderMenuId != -1) {
+                                expandedFolderId = showFolderMenuId
+                            }
+                        },
+                        onRemove = {
+                            if (showFolderMenuId != -1) {
+                                viewModel.removeFolder(showFolderMenuId)
+                            }
+                        }
+                    )
+
+                    val expandedFolder = remember(homeItems, expandedFolderId) {
+                        homeItems.find { it.id == expandedFolderId && it is HomeItem.Folder } as? HomeItem.Folder
+                    }
+
+                    if (expandedFolder != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer { alpha = if (isInvisibleByDrag) 0f else 1f }
+                        ) {
+                            FolderExpansion(
+                                folderId = expandedFolder.id,
+                                label = expandedFolder.label,
+                                apps = expandedFolder.apps,
+                                onDismiss = { expandedFolderId = -1 },
+                                onLabelChange = { newLabel -> viewModel.updateFolderLabel(expandedFolder.id, newLabel) },
+                                onAppClick = { pkg, options ->
+                                    viewModel.launchApp(pkg, options)
+                                    expandedFolderId = -1
+                                },
+                                sharedTransitionScope = sharedTransitionScope,
+                                animatedVisibilityScope = animatedVisibilityScope,
+                                useMonochrome = preferences.useMonochromeIcons,
+                                iconPackPackageName = preferences.iconPackPackageName,
+                                getShortcuts = { viewModel.getShortcuts(it) },
+                                onShortcutClick = { viewModel.launchShortcut(it) },
+                                onHideToggle = { pkg ->
+                                    viewModel.hideApp(pkg)
+                                },
+                                onAppDragStart = { app, initialTopLeft ->
+                                    draggingAppFromFolder = app
+                                    sourceFolderId = expandedFolder.id
+
+                                    // initialTopLeft is window-relative Top-Left of the 80dp icon
+                                    val localTopLeft = gridCoords?.windowToLocal(initialTopLeft) ?: initialTopLeft
+                                    dragOffset = localTopLeft
+                                },
+                                onAppDrag = { amount ->
+                                    dragOffset += amount
+                                },
+                                onAppDragOut = { _, _, _ ->
+                                    isInvisibleByDrag = true
+                                },
+                                onAppDragEnd = {
+                                    if (isInvisibleByDrag) {
+                                        val finalBounds = calculateTargetBounds(dragOffset)
+                                        draggingAppFromFolder?.let { app ->
+                                            viewModel.removeAppFromFolder(sourceFolderId, app.packageName, finalBounds.row, finalBounds.col)
                                         }
-                                    )
+                                    }
+                                    draggingAppFromFolder = null
+                                    dragTargetBounds = null
+                                    expandedFolderId = -1
+                                    isInvisibleByDrag = false
+                                },
+                                onAppDragCancel = {
+                                    draggingAppFromFolder = null
+                                    dragTargetBounds = null
+                                    expandedFolderId = -1
+                                    isInvisibleByDrag = false
+                                }
+                            )
+                        }
+                    } else if (expandedFolderId != -1) {
+                        expandedFolderId = -1
+                    }
                 }
             }
         }
 
         if (shouldShowDefaultPrompt) {
             DefaultLauncherDialog(
-                onSetDefault = { 
+                onSetDefault = {
                     viewModel.openDefaultLauncherSettings()
                 },
                 onDismiss = { viewModel.dismissDefaultPrompt() }
@@ -1001,75 +1016,6 @@ fun HomeScreen(
             )
         }
 
-        val expandedFolder = remember(homeItems, expandedFolderId) {
-            homeItems.find { it.id == expandedFolderId && it is HomeItem.Folder } as? HomeItem.Folder
-        }
-
-        if (expandedFolder != null) {
-            var isInvisibleByDrag by remember { mutableStateOf(false) }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { alpha = if (isInvisibleByDrag) 0f else 1f }
-            ) {
-                FolderExpansion(
-                    folderId = expandedFolder.id,
-                    label = expandedFolder.label,
-                    apps = expandedFolder.apps,
-                    onDismiss = { expandedFolderId = -1 },
-                    onLabelChange = { newLabel -> viewModel.updateFolderLabel(expandedFolder.id, newLabel) },
-                    onAppClick = { pkg, options ->
-                        viewModel.launchApp(pkg, options)
-                        expandedFolderId = -1
-                    },
-                    sharedTransitionScope = sharedTransitionScope,
-                    animatedVisibilityScope = animatedVisibilityScope,
-                    useMonochrome = preferences.useMonochromeIcons,
-                    iconPackPackageName = preferences.iconPackPackageName,
-                    getShortcuts = { viewModel.getShortcuts(it) },
-                    onShortcutClick = { viewModel.launchShortcut(it) },
-                    onHideToggle = { pkg ->
-                        viewModel.hideApp(pkg)
-                    },
-                    onAppDragStart = { app, initialOffset ->
-                        draggingAppFromFolder = app
-                        sourceFolderId = expandedFolder.id
-                        
-                        val localPos = gridCoords?.windowToLocal(initialOffset) ?: initialOffset
-                        val iconSizePx = with(density) { 80.dp.toPx() }
-                        dragOffset = localPos - androidx.compose.ui.geometry.Offset(iconSizePx / 2, iconSizePx / 2)
-                    },
-                    onAppDrag = { amount ->
-                        dragOffset += amount
-                    },
-                    onAppDragOut = { _, _, _ ->
-                        isInvisibleByDrag = true
-                    },
-                    onAppDragEnd = {
-                        if (isInvisibleByDrag) {
-                            dragTargetBounds?.let { bounds ->
-                                draggingAppFromFolder?.let { app ->
-                                    viewModel.removeAppFromFolder(sourceFolderId, app.packageName, bounds.row, bounds.col)
-                                }
-                            }
-                        }
-                        draggingAppFromFolder = null
-                        dragTargetBounds = null
-                        expandedFolderId = -1
-                        isInvisibleByDrag = false
-                    },
-                    onAppDragCancel = {
-                        draggingAppFromFolder = null
-                        dragTargetBounds = null
-                        expandedFolderId = -1
-                        isInvisibleByDrag = false
-                    }
-                )
-            }
-        } else if (expandedFolderId != -1) {
-            expandedFolderId = -1
-        }
     }
 }
 
@@ -1082,8 +1028,8 @@ fun DefaultLauncherDialog(
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(28.dp),
         title = { Text("Set PxlLauncher as default?") },
-        text = { 
-            Text("PxlLauncher is not your default launcher. Set it as default for the best experience. You can always change it back in settings.") 
+        text = {
+            Text("PxlLauncher is not your default launcher. Set it as default for the best experience. You can always change it back in settings.")
         },
         confirmButton = {
             TextButton(onClick = onSetDefault) {

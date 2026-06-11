@@ -99,8 +99,22 @@ class HomeRepository @Inject constructor(
         dissolveFolderIfNeeded(folderId)
     }
 
+    suspend fun cleanupPackage(packageName: String) = withContext(Dispatchers.IO) {
+        // 1. Find folders containing this app before removing
+        val folderIds = folderDao.getFoldersContainingApp(packageName)
+        
+        // 2. Remove app from all folders
+        folderDao.removeAppFromAllFolders(packageName)
+        
+        // 3. Remove from home screen
+        homeAppDao.deleteHomeAppByPackageName(packageName)
+        
+        // 4. Dissolve folders if they now have < 2 apps
+        folderIds.forEach { dissolveFolderIfNeeded(it) }
+    }
+
     suspend fun dissolveFolderIfNeeded(folderId: Int) = withContext(Dispatchers.IO) {
-        val folderWithApps = folderDao.getAllFoldersWithApps().first().find { it.folder.id == folderId } ?: return@withContext
+        val folderWithApps = folderDao.getFolderWithAppsById(folderId) ?: return@withContext
 
         if (folderWithApps.apps.isEmpty()) {
             folderDao.deleteFolderById(folderId)
