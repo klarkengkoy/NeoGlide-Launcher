@@ -114,12 +114,20 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { preferencesRepository.updateSwipeDownForNotifications(enable) }
     }
 
-    fun setIsBottomAnchored(anchored: Boolean) {
-        viewModelScope.launch { preferencesRepository.updateIsBottomAnchored(anchored) }
+    fun setVerticalAnchor(anchor: VerticalAnchor) {
+        viewModelScope.launch { preferencesRepository.updateVerticalAnchor(anchor) }
+    }
+
+    fun setHorizontalAnchor(anchor: HorizontalAnchor) {
+        viewModelScope.launch { preferencesRepository.updateHorizontalAnchor(anchor) }
     }
 
     fun setIconPack(packageName: String?) {
         viewModelScope.launch { preferencesRepository.updateIconPack(packageName) }
+    }
+
+    fun setHapticsEnabled(enabled: Boolean) {
+        viewModelScope.launch { preferencesRepository.updateHapticsEnabled(enabled) }
     }
 
     fun clearIconCache() {

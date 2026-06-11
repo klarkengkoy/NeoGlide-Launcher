@@ -27,6 +27,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.samidevstudio.pxllauncherneo.data.repository.*
 import com.samidevstudio.pxllauncherneo.ui.components.AppIcon
+import com.samidevstudio.pxllauncherneo.ui.utils.HapticEngine
+import com.samidevstudio.pxllauncherneo.ui.utils.rememberHapticFeedback
 import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -37,6 +39,7 @@ fun SettingsSheet(
 ) {
     val context = LocalContext.current
     val preferences by viewModel.userPreferences.collectAsStateWithLifecycle()
+    val hapticFeedback = rememberHapticFeedback(preferences)
     val isNotifEnabled by viewModel.isNotificationServiceEnabled.collectAsStateWithLifecycle()
     val isAuthForHidden by viewModel.isUserAuthenticatedForHiddenApps.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
@@ -49,6 +52,7 @@ fun SettingsSheet(
     }
 
     var activeDialog by remember { mutableStateOf<String?>(null) }
+    var pendingCategoryBarType by remember { mutableStateOf<CategoryBarType?>(null) }
 
     val showHiddenAppsWithAuth = {
         if (isAuthForHidden) {
@@ -91,6 +95,7 @@ fun SettingsSheet(
         )
         "category" -> SelectionDialog(
             title = "Category bar",
+            description = "Change the position or visibility of the category selection rail.",
             options = listOf(
                 DialogOption("Left side", CategoryBarType.LEFT, preferences.categoryBarType == CategoryBarType.LEFT),
                 DialogOption("Right side", CategoryBarType.RIGHT, preferences.categoryBarType == CategoryBarType.RIGHT),
@@ -98,10 +103,42 @@ fun SettingsSheet(
                 DialogOption("Hidden", CategoryBarType.NONE, preferences.categoryBarType == CategoryBarType.NONE)
             ),
             onDismiss = { activeDialog = null },
-            onSelect = { viewModel.setCategoryBarType(it as CategoryBarType) }
+            autoDismiss = false,
+            onSelect = { 
+                val newType = it as CategoryBarType
+                if (newType == CategoryBarType.NONE) {
+                    pendingCategoryBarType = newType
+                    activeDialog = "category_hide_warning"
+                } else {
+                    viewModel.setCategoryBarType(newType)
+                    activeDialog = null
+                }
+            }
+        )
+        "anchor" -> AnchorSettingsDialog(
+            verticalAnchor = preferences.verticalAnchor,
+            horizontalAnchor = preferences.horizontalAnchor,
+            onDismiss = { activeDialog = null },
+            onSelectVertical = { viewModel.setVerticalAnchor(it) },
+            onSelectHorizontal = { viewModel.setHorizontalAnchor(it) }
+        )
+        "category_hide_warning" -> AlertDialog(
+            onDismissRequest = { activeDialog = null },
+            title = { Text("Hide Category Bar?") },
+            text = { Text("Hiding the category bar will group all your apps into a single list. You won't be able to filter by category until you re-enable it.") },
+            confirmButton = {
+                TextButton(onClick = { 
+                    pendingCategoryBarType?.let { viewModel.setCategoryBarType(it) }
+                    activeDialog = null 
+                }) { Text("Hide") }
+            },
+            dismissButton = {
+                TextButton(onClick = { activeDialog = "category" }) { Text("Cancel") }
+            }
         )
         "sorting" -> SelectionDialog(
             title = "Sorting",
+            description = "Change the order in which apps appear in the drawer.",
             options = listOf(
                 DialogOption("Alphabetical (A-Z)", SortingMode.ALPHABETICAL, preferences.sortingMode == SortingMode.ALPHABETICAL),
                 DialogOption("Installation Time", SortingMode.INSTALL_TIME, preferences.sortingMode == SortingMode.INSTALL_TIME),
@@ -113,6 +150,7 @@ fun SettingsSheet(
         )
         "grid" -> SelectionDialog(
             title = "Home screen grid",
+            description = "Customize the number of rows and columns on your home screen.",
             options = listOf(
                 DialogOption("4 x 5 (Standard)", GridSize.GRID_4X5, preferences.gridSize == GridSize.GRID_4X5),
                 DialogOption("5 x 5 (Dense)", GridSize.GRID_5X5, preferences.gridSize == GridSize.GRID_5X5),
@@ -123,6 +161,7 @@ fun SettingsSheet(
         )
         "search" -> SelectionDialog(
             title = "Search provider",
+            description = "Choose which engine to use for web search suggestions.",
             options = listOf(
                 DialogOption("Google", SearchProvider.GOOGLE, preferences.searchProvider == SearchProvider.GOOGLE),
                 DialogOption("DuckDuckGo", SearchProvider.DUCKDUCKGO, preferences.searchProvider == SearchProvider.DUCKDUCKGO),
@@ -211,11 +250,11 @@ fun SettingsSheet(
                                 ValueLabel(label) 
                             }
                         )
-                        ToggleSettingsItem(
+                        SettingsItem(
                             icon = Icons.Default.Anchor,
-                            title = "Bottom-anchored",
-                            checked = preferences.isBottomAnchored,
-                            onCheckedChange = { viewModel.setIsBottomAnchored(it) }
+                            title = "Anchor",
+                            onClick = { activeDialog = "anchor" },
+                            trailing = { ValueLabel("${preferences.verticalAnchor.name.formatLabel()} / ${preferences.horizontalAnchor.name.formatLabel()}") }
                         )
                         SettingsItem(
                             icon = Icons.Default.SortByAlpha,
@@ -243,7 +282,20 @@ fun SettingsSheet(
                             icon = Icons.Default.Lock,
                             title = "Prevent changes",
                             checked = preferences.lockLayout,
+                            onHapticFeedback = hapticFeedback,
                             onCheckedChange = { viewModel.setLockLayout(it) }
+                        )
+                    }
+                }
+
+                item {
+                    SettingsGroup(title = "SYSTEM & FEEDBACK") {
+                        ToggleSettingsItem(
+                            icon = Icons.Default.Vibration,
+                            title = "Haptic feedback",
+                            checked = preferences.hapticsEnabled,
+                            onHapticFeedback = hapticFeedback,
+                            onCheckedChange = { viewModel.setHapticsEnabled(it) }
                         )
                     }
                 }
@@ -263,21 +315,50 @@ fun SettingsSheet(
                         )
                         SettingsItem(
                             icon = Icons.Default.FontDownload,
-                            title = "App names",
+                            title = "App labels",
                             onClick = { activeDialog = "label_settings" }
                         )
-                        SettingsItem(Icons.Default.Wallpaper, "Wallpaper", onClick = { })
-                        SettingsItem(Icons.Default.Palette, "Appearance", onClick = { })
-                        SettingsItem(Icons.Default.Backup, "Backup", onClick = { })
+                        SettingsItem(
+                            icon = Icons.Default.Wallpaper, 
+                            title = "Wallpaper", 
+                            onClick = { }
+                        )
+                        SettingsItem(
+                            icon = Icons.Default.Palette, 
+                            title = "Appearance", 
+                            onClick = { }
+                        )
+                        SettingsItem(
+                            icon = Icons.Default.Backup, 
+                            title = "Backup", 
+                            onClick = { }
+                        )
                     }
                 }
 
                 item {
                     SettingsGroup(title = "OTHER") {
-                        SettingsItem(Icons.Default.WorkspacePremium, "Premium features", onClick = { }, trailing = { Icon(Icons.Default.WorkspacePremium, null, tint = MaterialTheme.colorScheme.tertiary) })
-                        SettingsItem(Icons.Default.VerifiedUser, "Security and privacy", onClick = { })
-                        SettingsItem(Icons.Default.Build, "Troubleshooting", onClick = { activeDialog = "trouble" })
-                        SettingsItem(Icons.Default.RateReview, "Support us with a review", onClick = { })
+                        SettingsItem(
+                            icon = Icons.Default.WorkspacePremium, 
+                            title = "Premium features", 
+                            onClick = { }, 
+                            trailing = { Icon(Icons.Default.WorkspacePremium, null, tint = MaterialTheme.colorScheme.tertiary) }
+                        )
+                        SettingsItem(
+                            icon = Icons.Default.VerifiedUser, 
+                            title = "Security and privacy", 
+                            onClick = { }
+                        )
+                        SettingsItem(
+                            icon = Icons.Default.Build, 
+                            title = "Troubleshooting", 
+                            onClick = { activeDialog = "trouble" }
+                        )
+                        SettingsItem(
+                            icon = Icons.Default.RateReview, 
+                            title = "Review Pxl Launcher", 
+                            onClick = { }
+                        )
                         SettingsItem(
                             icon = Icons.Default.Info,
                             title = "About Pxl Launcher",
@@ -586,6 +667,11 @@ fun HiddenAppsDialog(
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
+                Text(
+                    text = "Manage apps that are hidden from the main drawer view.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
@@ -799,21 +885,131 @@ fun AboutDialog(onDismiss: () -> Unit) {
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AnchorSettingsDialog(
+    verticalAnchor: VerticalAnchor,
+    horizontalAnchor: HorizontalAnchor,
+    onDismiss: () -> Unit,
+    onSelectVertical: (VerticalAnchor) -> Unit,
+    onSelectHorizontal: (HorizontalAnchor) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Anchor, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("Anchor Settings")
+            }
+        },
+        text = {
+            Column {
+                Text(
+                    "Control how your app grid fills the space. Vertical anchoring moves the entire stack, while horizontal anchoring shifts the alignment of the partial row.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    text = "Vertical Anchor:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    VerticalAnchor.entries.forEach { anchor ->
+                        FilterChip(
+                            selected = verticalAnchor == anchor,
+                            onClick = { onSelectVertical(anchor) },
+                            label = { Text(anchor.name.formatLabel()) },
+                            leadingIcon = if (verticalAnchor == anchor) {
+                                { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                            } else null,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    text = "Horizontal Anchor:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    HorizontalAnchor.entries.forEach { anchor ->
+                        FilterChip(
+                            selected = horizontalAnchor == anchor,
+                            onClick = { onSelectHorizontal(anchor) },
+                            label = { Text(anchor.name.formatLabel()) },
+                            leadingIcon = if (horizontalAnchor == anchor) {
+                                { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                            } else null,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done", fontWeight = FontWeight.Bold) }
+        }
+    )
+}
+
 data class DialogOption(val label: String, val value: Any, val isSelected: Boolean)
 
 @Composable
-fun SelectionDialog(title: String, options: List<DialogOption>, onDismiss: () -> Unit, onSelect: (Any) -> Unit) {
+fun SelectionDialog(
+    title: String,
+    description: String? = null,
+    options: List<DialogOption>,
+    onDismiss: () -> Unit,
+    autoDismiss: Boolean = true,
+    onSelect: (Any) -> Unit
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             Column {
+                if (description != null) {
+                    Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+                }
                 options.forEach { option ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .selectable(selected = option.isSelected, onClick = { onSelect(option.value); onDismiss() })
+                            .selectable(
+                                selected = option.isSelected,
+                                onClick = { 
+                                    onSelect(option.value)
+                                    if (autoDismiss) onDismiss()
+                                }
+                            )
                             .padding(vertical = 12.dp, horizontal = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -882,27 +1078,55 @@ fun QuickActionItem(icon: ImageVector, label: String, onClick: () -> Unit) {
 }
 
 @Composable
-fun ToggleSettingsItem(icon: ImageVector, title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+fun ToggleSettingsItem(
+    icon: ImageVector,
+    title: String,
+    checked: Boolean,
+    description: String? = null,
+    onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
+    onCheckedChange: (Boolean) -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
+            .clickable { 
+                onHapticFeedback(HapticEngine.HapticType.TOGGLE)
+                onCheckedChange(!checked) 
+            }
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(icon, null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(modifier = Modifier.width(16.dp))
-        Text(text = title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.bodyLarge)
+            if (description != null) {
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         Switch(
             checked = checked, 
-            onCheckedChange = onCheckedChange,
+            onCheckedChange = {
+                onHapticFeedback(HapticEngine.HapticType.TOGGLE)
+                onCheckedChange(it)
+            },
             modifier = Modifier.scale(0.8f)
         )
     }
 }
 
 @Composable
-fun SettingsItem(icon: ImageVector, title: String, onClick: (() -> Unit)? = null, trailing: @Composable (() -> Unit)? = null) {
+fun SettingsItem(
+    icon: ImageVector, 
+    title: String, 
+    description: String? = null,
+    onClick: (() -> Unit)? = null, 
+    trailing: @Composable (() -> Unit)? = null
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -912,7 +1136,16 @@ fun SettingsItem(icon: ImageVector, title: String, onClick: (() -> Unit)? = null
     ) {
         Icon(icon, null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(modifier = Modifier.width(16.dp))
-        Text(text = title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.bodyLarge)
+            if (description != null) {
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         if (trailing != null) trailing()
         else if (onClick != null) Icon(Icons.Default.ChevronRight, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.outline)
     }
