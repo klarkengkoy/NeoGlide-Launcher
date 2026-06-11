@@ -38,6 +38,14 @@ enum class AppLabelMode {
     HOME_ONLY, DRAWER_ONLY, BOTH, NONE
 }
 
+enum class VerticalAnchor {
+    BOTTOM, TOP
+}
+
+enum class HorizontalAnchor {
+    LEFT, RIGHT
+}
+
 data class UserPreferences(
     val categoryBarType: CategoryBarType,
     val useMonochromeIcons: Boolean = false,
@@ -52,8 +60,10 @@ data class UserPreferences(
     val lockLayout: Boolean = false,
     val doubleTapToSleep: Boolean = false,
     val swipeDownForNotifications: Boolean = true,
-    val isBottomAnchored: Boolean = true,
+    val verticalAnchor: VerticalAnchor = VerticalAnchor.BOTTOM,
+    val horizontalAnchor: HorizontalAnchor = HorizontalAnchor.RIGHT,
     val iconPackPackageName: String? = null,
+    val hapticsEnabled: Boolean = true,
     val isFirstInstallRun: Boolean = true
 )
 
@@ -75,8 +85,10 @@ class UserPreferencesRepository @Inject constructor(
         val LOCK_LAYOUT = booleanPreferencesKey("lock_layout")
         val DOUBLE_TAP_TO_SLEEP = booleanPreferencesKey("double_tap_to_sleep")
         val SWIPE_DOWN_FOR_NOTIFICATIONS = booleanPreferencesKey("swipe_down_for_notifications")
-        val IS_BOTTOM_ANCHORED = booleanPreferencesKey("is_bottom_anchored")
+        val VERTICAL_ANCHOR = stringPreferencesKey("vertical_anchor")
+        val HORIZONTAL_ANCHOR = stringPreferencesKey("horizontal_anchor")
         val ICON_PACK_PACKAGE_NAME = stringPreferencesKey("icon_pack_package_name")
+        val HAPTICS_ENABLED = booleanPreferencesKey("haptics_enabled")
         val IS_FIRST_INSTALL_RUN = booleanPreferencesKey("is_first_install_run")
     }
 
@@ -111,6 +123,26 @@ class UserPreferencesRepository @Inject constructor(
             val dotModeStr = preferences[PreferencesKeys.NOTIFICATION_DOT_MODE] ?: NotificationDotMode.BOTH.name
             val dotMode = try { NotificationDotMode.valueOf(dotModeStr) } catch (_: Exception) { NotificationDotMode.BOTH }
 
+            val verticalAnchorStr = preferences[PreferencesKeys.VERTICAL_ANCHOR] ?: run {
+                // Migration from DRAWER_ANCHOR or SIDE if exists
+                val oldAnchor = preferences[stringPreferencesKey("drawer_anchor")]
+                when {
+                    oldAnchor == "SIDE" -> VerticalAnchor.TOP.name
+                    oldAnchor != null -> oldAnchor
+                    else -> {
+                        val oldIsBottom = preferences[booleanPreferencesKey("is_bottom_anchored")] ?: true
+                        if (oldIsBottom) VerticalAnchor.BOTTOM.name else VerticalAnchor.TOP.name
+                    }
+                }
+            }
+            val verticalAnchor = try { 
+                val value = VerticalAnchor.valueOf(verticalAnchorStr)
+                if (verticalAnchorStr == "SIDE") VerticalAnchor.TOP else value
+            } catch (_: Exception) { VerticalAnchor.BOTTOM }
+
+            val horizontalAnchorStr = preferences[PreferencesKeys.HORIZONTAL_ANCHOR] ?: HorizontalAnchor.RIGHT.name
+            val horizontalAnchor = try { HorizontalAnchor.valueOf(horizontalAnchorStr) } catch (_: Exception) { HorizontalAnchor.RIGHT }
+
             UserPreferences(
                 categoryBarType = categoryBarType,
                 useMonochromeIcons = preferences[PreferencesKeys.USE_MONOCHROME_ICONS] ?: false,
@@ -125,8 +157,10 @@ class UserPreferencesRepository @Inject constructor(
                 lockLayout = preferences[PreferencesKeys.LOCK_LAYOUT] ?: false,
                 doubleTapToSleep = preferences[PreferencesKeys.DOUBLE_TAP_TO_SLEEP] ?: false,
                 swipeDownForNotifications = preferences[PreferencesKeys.SWIPE_DOWN_FOR_NOTIFICATIONS] ?: true,
-                isBottomAnchored = preferences[PreferencesKeys.IS_BOTTOM_ANCHORED] ?: true,
+                verticalAnchor = verticalAnchor,
+                horizontalAnchor = horizontalAnchor,
                 iconPackPackageName = preferences[PreferencesKeys.ICON_PACK_PACKAGE_NAME],
+                hapticsEnabled = preferences[PreferencesKeys.HAPTICS_ENABLED] ?: true,
                 isFirstInstallRun = preferences[PreferencesKeys.IS_FIRST_INSTALL_RUN] ?: true
             )
         }
@@ -193,8 +227,12 @@ class UserPreferencesRepository @Inject constructor(
         context.dataStore.edit { preferences -> preferences[PreferencesKeys.SWIPE_DOWN_FOR_NOTIFICATIONS] = enable }
     }
 
-    suspend fun updateIsBottomAnchored(anchored: Boolean) {
-        context.dataStore.edit { preferences -> preferences[PreferencesKeys.IS_BOTTOM_ANCHORED] = anchored }
+    suspend fun updateVerticalAnchor(anchor: VerticalAnchor) {
+        context.dataStore.edit { preferences -> preferences[PreferencesKeys.VERTICAL_ANCHOR] = anchor.name }
+    }
+
+    suspend fun updateHorizontalAnchor(anchor: HorizontalAnchor) {
+        context.dataStore.edit { preferences -> preferences[PreferencesKeys.HORIZONTAL_ANCHOR] = anchor.name }
     }
 
     suspend fun updateIconPack(packageName: String?) {
@@ -205,6 +243,10 @@ class UserPreferencesRepository @Inject constructor(
                 preferences[PreferencesKeys.ICON_PACK_PACKAGE_NAME] = packageName
             }
         }
+    }
+
+    suspend fun updateHapticsEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences -> preferences[PreferencesKeys.HAPTICS_ENABLED] = enabled }
     }
 
     suspend fun setFirstInstallRun(isFirst: Boolean) {
