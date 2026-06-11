@@ -1,17 +1,17 @@
 # Pxl Launcher Neo
 
-**Pxl Launcher Neo** is a modern, ultra-lightweight Android launcher designed for responsiveness and clean organization. It brings a "Pixel-Plus" experience to Android devices, offering intelligent app categorization without compromising the stock aesthetic or system performance.
+**Pxl Launcher Neo** is a modern, ultra-lightweight Android launcher designed for responsiveness and clean organization. It brings a "Pixel-Plus" experience to Android devices, offering intelligent app categorization and advanced ergonomic anchoring without compromising the stock aesthetic.
 
 ## Key Features
 
-*   **Pixel-Inspired Home Screen**: A clean interface with adaptive icon support and a minimalist layout.
-*   **Smart Categorized Drawer**: Automatically organizes apps into categories (Communication, Social, Games, etc.) while maintaining the familiar A-Z vertical scroll.
-*   **Thumb-Friendly Design**: Bottom-anchored layouts and ergonomic "scrubbing" navigation for easy one-handed use.
-*   **Universal Search**: Integrated local app search with "Top Hit" instant launching.
-*   **Material You Support**: Deep integration with Material 3 dynamic color schemes and themed icons.
-*   **Performance First**: Built with Jetpack Compose and optimized with Baseline Profiles for zero-lag interactions.
+*   **Pixel-First Home Screen**: A clean, Material 3 interface with adaptive icons and true edge-to-edge rendering.
+*   **Semantic Gravity (New)**: Unique anchoring logic that lets you "pile" apps at the bottom or top, with horizontal alignment for partial rows—perfect for one-handed use.
+*   **Smart Categorized Drawer**: Automatically organizes apps into categories while maintaining a familiar A-Z vertical scroll with a stable category rail.
+*   **Secure Vault**: Biometric-protected hidden apps to keep your sensitive applications private.
+*   **Universal Search**: Integrated local app search with "Top Hit" instant launching and recently used suggestions.
+*   **Performance First**: Built with Jetpack Compose and optimized for zero-lag interactions and low battery impact.
 
-## Project Status & Availability
+## Project Status
 
 **Pxl Launcher Neo** is currently a closed-source project. While the source code remains private, we are committed to making the application accessible to the community.
 
@@ -21,16 +21,15 @@
 
 ## Technical Highlights
 
-Although the repository is private, the project is built using modern Android standards:
+The project is built using modern Android standards and a clean architecture:
 *   **Language**: 100% Kotlin
 *   **UI Framework**: Jetpack Compose with Material 3
 *   **Architecture**: MVVM with Clean Architecture
-*   **Performance**: Optimized with Baseline Profiles for zero-lag interactions.
+*   **Persistence**: DataStore for preferences and Room for local metadata.
+*   **Theming**: Full Material You dynamic color support.
 
 ## Project Vision
 
-Pxl Launcher Neo aims to be the fastest way to navigate large app libraries on Android. It prioritizes low resource usage and meaningful organization, filling the gap between minimalist launchers and feature-heavy alternatives.
+Pxl Launcher Neo aims to be the fastest and most ergonomic way to navigate large app libraries on Android. It prioritizes low resource usage and meaningful organization, filling the gap between minimalist launchers and feature-heavy alternatives.
 
 ---
-
-*Developed by SamiDevStudio*
