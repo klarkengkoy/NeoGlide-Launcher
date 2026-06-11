@@ -96,6 +96,20 @@ fun DrawerScreen(
     val context = LocalContext.current
     var selectedCategory by remember { mutableStateOf<AppCategory?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+
+    val categories = remember(categorizedApps) {
+        categorizedApps.keys.sortedWith(
+            compareBy<AppCategory> { it == AppCategory.HIDDEN }
+                .thenBy { it.name }
+        )
+    }
+
+    // Auto-select first category when apps load
+    LaunchedEffect(categories) {
+        if (selectedCategory == null && categories.isNotEmpty()) {
+            selectedCategory = categories.first()
+        }
+    }
     
     val orientation = remember(preferences.categoryBarType) {
         when (preferences.categoryBarType) {
@@ -145,7 +159,7 @@ fun DrawerScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = selectedCategory?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "All Apps",
+                        text = selectedCategory?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold,
@@ -343,13 +357,7 @@ fun DrawerScreen(
                         }
 
                         Box(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-                            val categories = remember(categorizedApps) {
-                                categorizedApps.keys.sortedWith(
-                                    compareBy<AppCategory> { it == AppCategory.HIDDEN }
-                                        .thenBy { it.name }
-                                )
-                            }
-                            val allCategories = remember(categories) { listOf(null) + categories }
+                            val allCategories = categories
                             
                             val isVertical = orientation != CategoryOrientation.HORIZONTAL_BOTTOM
                             val barWidth = if (!showCategoryBar) 0.dp else if (isVertical) 56.dp else 0.dp
@@ -489,11 +497,7 @@ private fun getFilteredApps(
     categorizedApps: Map<AppCategory, List<AppModel>>,
     selectedCategory: AppCategory?
 ): List<AppModel> {
-    return if (selectedCategory == null) {
-        categorizedApps.values.flatten()
-    } else {
-        categorizedApps[selectedCategory] ?: emptyList()
-    }
+    return selectedCategory?.let { categorizedApps[it] } ?: emptyList()
 }
 
 @Composable
