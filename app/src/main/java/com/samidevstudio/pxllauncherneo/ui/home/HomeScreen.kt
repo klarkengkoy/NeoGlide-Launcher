@@ -42,6 +42,8 @@ import com.samidevstudio.pxllauncherneo.domain.model.AppModel
 import com.samidevstudio.pxllauncherneo.ui.components.*
 import com.samidevstudio.pxllauncherneo.ui.drawer.DrawerScreen
 import com.samidevstudio.pxllauncherneo.ui.settings.SettingsSheet
+import com.samidevstudio.pxllauncherneo.ui.utils.HapticEngine
+import com.samidevstudio.pxllauncherneo.ui.utils.rememberHapticFeedback
 
 data class RectBounds(
     val row: Float,
@@ -62,6 +64,7 @@ fun HomeScreen(
     val activeNotifications by viewModel.activeNotifications.collectAsStateWithLifecycle()
     val recentlyUsedApps by viewModel.recentlyUsedApps.collectAsStateWithLifecycle()
     val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
+    val hapticFeedback = rememberHapticFeedback(preferences)
     val shouldShowDefaultPrompt by viewModel.shouldShowDefaultPrompt.collectAsStateWithLifecycle()
     val density = LocalDensity.current
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -249,6 +252,7 @@ fun HomeScreen(
                                 onLongPress = { offset ->
                                     // Disable home screen menu when editing a widget
                                     if (editingWidgetId == -1 && !preferences.lockLayout) {
+                                        hapticFeedback(HapticEngine.HapticType.LONG_PRESS)
                                         contextMenuOffset = DpOffset(
                                             x = with(density) { offset.x.toDp() },
                                             y = with(density) { offset.y.toDp() }
@@ -426,6 +430,7 @@ fun HomeScreen(
                                             if (!preferences.lockLayout) {
                                                 detectDragGesturesAfterLongPress(
                                                     onDragStart = { _ ->
+                                                        hapticFeedback(HapticEngine.HapticType.DRAG_START)
                                                         draggingItemId = item.id
                                                         showAppMenuPackage = null // Hide menu on drag start
                                                         originalRow = item.row
@@ -447,9 +452,15 @@ fun HomeScreen(
                                                             .coerceIn(0f, maxRows.toFloat() - 1f)
                                                         val targetCol = (((dragOffset.x) / unitWidthPx) * 2).roundToInt() / 2f
                                                             .coerceIn(0f, 3f)
+
+                                                        if (targetRow != dragTargetBounds?.row || targetCol != dragTargetBounds?.col) {
+                                                            hapticFeedback(HapticEngine.HapticType.GRID_SNAP)
+                                                        }
+
                                                         dragTargetBounds = RectBounds(targetRow, targetCol, 1f, 1f)
                                                     },
                                                     onDragEnd = {
+                                                        hapticFeedback(HapticEngine.HapticType.DRAG_END)
                                                         dragTargetBounds?.let { bounds ->
                                                             if (bounds.row == originalRow && bounds.col == originalCol) {
                                                                 // Trigger Menu (dropped on same spot)
@@ -552,6 +563,7 @@ fun HomeScreen(
                                             if (!preferences.lockLayout) {
                                                 detectDragGesturesAfterLongPress(
                                                     onDragStart = { _ ->
+                                                        hapticFeedback(HapticEngine.HapticType.DRAG_START)
                                                         draggingItemId = item.id
                                                         originalRow = item.row
                                                         originalCol = item.column
@@ -569,9 +581,15 @@ fun HomeScreen(
                                                             .coerceIn(0f, maxRows.toFloat() - 1f)
                                                         val targetCol = (((dragOffset.x) / unitWidthPx) * 2).roundToInt() / 2f
                                                             .coerceIn(0f, 3f)
+
+                                                        if (targetRow != dragTargetBounds?.row || targetCol != dragTargetBounds?.col) {
+                                                            hapticFeedback(HapticEngine.HapticType.GRID_SNAP)
+                                                        }
+
                                                         dragTargetBounds = RectBounds(targetRow, targetCol, 1f, 1f)
                                                     },
                                                     onDragEnd = {
+                                                        hapticFeedback(HapticEngine.HapticType.DRAG_END)
                                                         dragTargetBounds?.let { bounds ->
                                                             if (bounds.row == originalRow && bounds.col == originalCol) {
                                                                 // Trigger Menu
@@ -611,6 +629,7 @@ fun HomeScreen(
                                         apps = item.apps,
                                         useMonochrome = preferences.useMonochromeIcons,
                                         showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
+                                        onHapticFeedback = hapticFeedback,
                                         onClick = {
                                             if (draggingItemId == -1) {
                                                 expandedFolderId = item.id
@@ -639,6 +658,7 @@ fun HomeScreen(
                                     unitWidth = unitWidth,
                                     unitHeight = unitHeight,
                                     isEditing = isCurrentEditing,
+                                    onHapticFeedback = hapticFeedback,
                                     modifier = Modifier
                                         .offset(y = topOffset)
                                         .zIndex(if (isCurrentEditing) 1f else 0f),
@@ -917,26 +937,35 @@ fun HomeScreen(
                                 animatedVisibilityScope = animatedVisibilityScope,
                                 useMonochrome = preferences.useMonochromeIcons,
                                 iconPackPackageName = preferences.iconPackPackageName,
+                                onHapticFeedback = hapticFeedback,
                                 getShortcuts = { viewModel.getShortcuts(it) },
                                 onShortcutClick = { viewModel.launchShortcut(it) },
                                 onHideToggle = { pkg ->
                                     viewModel.hideApp(pkg)
                                 },
                                 onAppDragStart = { app, initialTopLeft ->
+                                    hapticFeedback(HapticEngine.HapticType.DRAG_START)
                                     draggingAppFromFolder = app
                                     sourceFolderId = expandedFolder.id
 
                                     // initialTopLeft is window-relative Top-Left of the 80dp icon
                                     val localTopLeft = gridCoords?.windowToLocal(initialTopLeft) ?: initialTopLeft
                                     dragOffset = localTopLeft
+                                    dragTargetBounds = calculateTargetBounds(dragOffset)
                                 },
                                 onAppDrag = { amount ->
                                     dragOffset += amount
+                                    val newBounds = calculateTargetBounds(dragOffset)
+                                    if (newBounds.row != dragTargetBounds?.row || newBounds.col != dragTargetBounds?.col) {
+                                        hapticFeedback(HapticEngine.HapticType.GRID_SNAP)
+                                    }
+                                    dragTargetBounds = newBounds
                                 },
                                 onAppDragOut = { _, _, _ ->
                                     isInvisibleByDrag = true
                                 },
                                 onAppDragEnd = {
+                                    hapticFeedback(HapticEngine.HapticType.DRAG_END)
                                     if (isInvisibleByDrag) {
                                         val finalBounds = calculateTargetBounds(dragOffset)
                                         draggingAppFromFolder?.let { app ->

@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.samidevstudio.pxllauncherneo.domain.model.AppModel
 import com.samidevstudio.pxllauncherneo.domain.model.AppShortcut
+import com.samidevstudio.pxllauncherneo.ui.utils.HapticEngine
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalFoundationApi::class)
@@ -51,6 +52,7 @@ fun FolderExpansion(
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: (String) -> Unit = {},
+    onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
     onAppDragStart: (AppModel, androidx.compose.ui.geometry.Offset) -> Unit = { _, _ -> },
     onAppDrag: (androidx.compose.ui.geometry.Offset) -> Unit = {},
     onAppDragOut: (AppModel, androidx.compose.ui.geometry.Offset, androidx.compose.ui.geometry.Offset) -> Unit = { _, _, _ -> },
@@ -137,6 +139,7 @@ fun FolderExpansion(
                                     .pointerInput(app.packageName) {
                                         detectDragGesturesAfterLongPress(
                                             onDragStart = { offset ->
+                                                onHapticFeedback(HapticEngine.HapticType.DRAG_START)
                                                 draggingApp = app
                                                 // Standardize dragOffset to TOP-LEFT of the icon
                                                 val touchWindow = itemCoords?.localToWindow(offset) ?: androidx.compose.ui.geometry.Offset.Zero
@@ -166,6 +169,7 @@ fun FolderExpansion(
                                                 }
                                             },
                                             onDragEnd = {
+                                                onHapticFeedback(HapticEngine.HapticType.DRAG_END)
                                                 // Trigger Menu if dropped on same spot (minimal movement)
                                                 val iconSizePx = with(density) { 80.dp.toPx() }
                                                 val currentTouch = dragOffset + androidx.compose.ui.geometry.Offset(iconSizePx / 2, iconSizePx / 2)

@@ -413,6 +413,17 @@ class HomeViewModel @Inject constructor(
                 return@launch
             }
 
+            // PREVENT dropping back into the same folder
+            val sourceFolder = homeItems.value.find { it.id == folderId && it is HomeItem.Folder }
+            if (sourceFolder != null) {
+                val folderRect = android.graphics.RectF(sourceFolder.column, sourceFolder.row, sourceFolder.column + 1f, sourceFolder.row + 1f)
+                val dropRect = android.graphics.RectF(targetCol, targetRow, targetCol + 1f, targetRow + 1f)
+                if (android.graphics.RectF.intersects(folderRect, dropRect)) {
+                    _uiEvent.emit(UiEvent.ShowToast("Item already in this folder"))
+                    return@launch
+                }
+            }
+
             val tempApp = HomeItem.App(
                 id = -1,
                 appModel = appModel,

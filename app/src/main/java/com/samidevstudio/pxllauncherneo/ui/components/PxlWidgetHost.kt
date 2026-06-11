@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import kotlin.math.roundToInt
+import com.samidevstudio.pxllauncherneo.ui.utils.HapticEngine
 
 enum class Handle { NONE, TOP, BOTTOM, LEFT, RIGHT, MOVE }
 
@@ -57,6 +58,7 @@ fun PxlWidgetHost(
     unitHeight: Dp,
     isEditing: Boolean,
     modifier: Modifier = Modifier,
+    onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
     onDragStart: () -> Unit = {},
     onResizeStart: () -> Unit = {},
     onInteractionUpdate: (Float, Float, Float, Float) -> Unit = { _, _, _, _ -> },
@@ -83,6 +85,11 @@ fun PxlWidgetHost(
     var dragDeltaY by remember { mutableFloatStateOf(0f) }
 
     var initialSnapshot by remember { mutableStateOf<WidgetBounds?>(null) }
+
+    var lastSnappedRow by remember { mutableFloatStateOf(-1f) }
+    var lastSnappedCol by remember { mutableFloatStateOf(-1f) }
+    var lastSnappedSpanX by remember { mutableFloatStateOf(-1f) }
+    var lastSnappedSpanY by remember { mutableFloatStateOf(-1f) }
 
     val elevation by animateDpAsState(
         targetValue = if (activeHandle != Handle.NONE) 16.dp else if (isEditing) 8.dp else 0.dp,
@@ -133,6 +140,16 @@ fun PxlWidgetHost(
             val finalCol = ((visualRect[1]) * 2).roundToInt() / 2f
             val finalSpanX = (visualRect[2] * 2).roundToInt() / 2f
             val finalSpanY = (visualRect[3] * 2).roundToInt() / 2f
+
+            if (finalRow != lastSnappedRow || finalCol != lastSnappedCol ||
+                finalSpanX != lastSnappedSpanX || finalSpanY != lastSnappedSpanY) {
+                onHapticFeedback(HapticEngine.HapticType.GRID_SNAP)
+                lastSnappedRow = finalRow
+                lastSnappedCol = finalCol
+                lastSnappedSpanX = finalSpanX
+                lastSnappedSpanY = finalSpanY
+            }
+
             currentOnInteractionUpdate(finalRow, finalCol, finalSpanX, finalSpanY)
         }
     }
@@ -164,6 +181,7 @@ fun PxlWidgetHost(
                 .pointerInput(widgetId) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = {
+                            onHapticFeedback(HapticEngine.HapticType.DRAG_START)
                             if (!currentIsEditing) {
                                 currentOnDragStart()
                             }
@@ -171,6 +189,7 @@ fun PxlWidgetHost(
                             initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                         },
                         onDragEnd = {
+                            onHapticFeedback(HapticEngine.HapticType.DRAG_END)
                             val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                             val finalRow = ((base.row + dragDeltaY / unitHeightPx) * 2).roundToInt() / 2f
                             val finalCol = ((base.col + dragDeltaX / unitWidthPx) * 2).roundToInt() / 2f

@@ -20,14 +20,18 @@ import com.samidevstudio.pxllauncherneo.ui.navigation.Navigator
 import com.samidevstudio.pxllauncherneo.ui.navigation.rememberNavigationState
 import com.samidevstudio.pxllauncherneo.ui.navigation.toEntries
 import com.samidevstudio.pxllauncherneo.ui.theme.PxlLauncherTheme
+import com.samidevstudio.pxllauncherneo.ui.utils.HapticEngine
+import com.samidevstudio.pxllauncherneo.ui.utils.LocalHapticEngine
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import com.samidevstudio.pxllauncherneo.data.repository.WidgetRepository
+import androidx.compose.runtime.CompositionLocalProvider
 
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
 
     @Inject lateinit var widgetRepository: WidgetRepository
+    @Inject lateinit var hapticEngine: HapticEngine
 
     override fun onStart() {
         super.onStart()
@@ -45,34 +49,36 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            PxlLauncherTheme {
-                val navigationState = rememberNavigationState(
-                    startRoute = HomeRoute,
-                    topLevelRoutes = setOf(HomeRoute),
-                )
-                val navigator = remember { Navigator(navigationState) }
-                
-                SharedTransitionLayout {
-                    val entryProvider = entryProvider<NavKey> {
-                        entry<HomeRoute> {
-                            HomeScreen(
-                                sharedTransitionScope = this@SharedTransitionLayout,
-                            )
-                        }
-                        entry<AppDetailRoute> { key ->
-                            AppDetailScreen(
-                                packageName = key.packageName,
-                                label = "App Name",
-                                sharedTransitionScope = this@SharedTransitionLayout,
-                                animatedVisibilityScope = LocalNavAnimatedContentScope.current,
-                            )
-                        }
-                    }
-
-                    NavDisplay(
-                        entries = navigationState.toEntries(entryProvider),
-                        onBack = { navigator.goBack() },
+            CompositionLocalProvider(LocalHapticEngine provides hapticEngine) {
+                PxlLauncherTheme {
+                    val navigationState = rememberNavigationState(
+                        startRoute = HomeRoute,
+                        topLevelRoutes = setOf(HomeRoute),
                     )
+                    val navigator = remember { Navigator(navigationState) }
+                    
+                    SharedTransitionLayout {
+                        val entryProvider = entryProvider<NavKey> {
+                            entry<HomeRoute> {
+                                HomeScreen(
+                                    sharedTransitionScope = this@SharedTransitionLayout,
+                                )
+                            }
+                            entry<AppDetailRoute> { key ->
+                                AppDetailScreen(
+                                    packageName = key.packageName,
+                                    label = "App Name",
+                                    sharedTransitionScope = this@SharedTransitionLayout,
+                                    animatedVisibilityScope = LocalNavAnimatedContentScope.current,
+                                )
+                            }
+                        }
+
+                        NavDisplay(
+                            entries = navigationState.toEntries(entryProvider),
+                            onBack = { navigator.goBack() },
+                        )
+                    }
                 }
             }
         }

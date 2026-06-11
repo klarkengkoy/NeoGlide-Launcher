@@ -18,6 +18,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.samidevstudio.pxllauncherneo.domain.model.AppModel
+import com.samidevstudio.pxllauncherneo.ui.utils.HapticEngine
 
 @Composable
 fun FolderItem(
@@ -26,12 +27,16 @@ fun FolderItem(
     modifier: Modifier = Modifier,
     useMonochrome: Boolean = false,
     showLabel: Boolean = true,
+    onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
     onClick: () -> Unit = {}
 ) {
     Column(
         modifier = modifier
             .fillMaxSize()
-            .clickable { onClick() }
+            .clickable { 
+                onHapticFeedback(HapticEngine.HapticType.FOLDER_OPEN)
+                onClick() 
+            }
             .padding(4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
