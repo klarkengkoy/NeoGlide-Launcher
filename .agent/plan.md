@@ -1,4 +1,4 @@
-# Project Plan: Pxl Launcher Neo (Pixel-First Lightweight Edition)
+# Project Plan: NeoGlide Launcher (Smart Organizer)
 
 ## Status Legend
 - **Not Started**: Feature defined but no code written.
@@ -10,15 +10,15 @@
 ## Priority Legend
 - `[P0]` **Critical**: High-impact bugs or essential interaction fixes.
 - `[P1]` **High**: Core launcher features (Drag-and-drop, Folders).
-- `[P2]` **Medium**: Advanced customization and structural improvements.
-- `[P3]` **Low**: Visual polish, non-essential gestures, and compliance.
+- `[P2]` **Medium**: Advanced customization and structural improvements (V1).
+- `[P3]` **Low**: Visual polish, non-essential gestures, and post-V1 features.
 
-Pxl Launcher Neo is a modern, ultra-lightweight Android launcher specifically optimized for Google Pixel users.
-It fills the organizational gap in the stock Pixel experience by adding intelligent app categorization and organization without compromising the clean, "stock" Android aesthetic or battery life.
+NeoGlide Launcher is a smart, clean, and lightweight Android launcher optimized for Pixel-style aesthetics and ergonomics.
+It fills the organizational gap in the stock experience by adding intelligent app categorization and "Glide" navigation without compromising battery life.
 
 ## Project Brief
 
-Designed as the definitive "Pixel Launcher Plus," PxlLauncher prioritizes responsiveness, low resource usage, and clean organization. It adds powerful categorization that Google missed, making it the fastest way to navigate large app libraries on Pixel devices.
+Designed as a refined "Pixel Launcher Plus," NeoGlide Launcher prioritizes responsiveness, low resource usage, and clean organization. It adds powerful "Glide" categorization, making it the fastest way to navigate large app libraries.
 
 ## Features and Subfeatures
 
@@ -36,7 +36,8 @@ Designed as the definitive "Pixel Launcher Plus," PxlLauncher prioritizes respon
     - **Completed** | Drop target visuals (Ghost Target for Icons/Widgets)
     - **Completed** | Precise snapping math (Fix "jumping" on long-press)
     - **Completed** | Universal Collision Avoidance (No displacement policy)
-*   **In Progress** | **App & Folder Management**
+    - **Completed** | **5-Column Grid**: Transitioned to 5-column layout for standard Pixel ergonomics.
+*   **Completed** | **App & Folder Management**
     - **Completed** | Folder Creation logic (Dragging icon over icon)
     - **Completed** | Folder Preview UI (2x2 mini-grid)
     - **Completed** | Folder Expansion & Animation
@@ -46,24 +47,32 @@ Designed as the definitive "Pixel Launcher Plus," PxlLauncher prioritizes respon
     - **Completed** | Folder Context Menu (Edit Name, Remove Folder)
     - **Completed** | Drag app out of folder
     - **Completed** | Auto-dissolve folders (1 or 0 apps)
-    - **Pending** | `[P2]` Auto-rearrange icons
+    - **Completed** | Folders in App Drawer Categories (Merge & Rendering)
+    - **Completed** | App Drawer Folder Enhancements:
+        - **Completed** | Dissolve & Contextual Categorization.
+        - **Completed** | Multi-select "Move apps here" with sectioned picker.
+        - **Completed** | Drag-and-drop into folders with visual feedback.
+        - **Completed** | Drag folders to category rail with mini-grid preview.
+        - **Completed** | Seamless "Drag-out to Escape" from expanded folders.
+        - **Completed** | Persistent renaming with keyboard Done support.
+        - **Completed** | Text-only Options menu with sorted category relocation.
 *   **Not Started** | **Advanced Layout Management**
-    - **Not Started** | Page Manager: UI for reordering/managing multiple pages.
-    - **Not Started** | Widget Stacking: Vertical stacking and swiping for widgets.
-    - **Not Started** | Cloud Sync: Google Drive integration for layout backups.
+    - **Not Started** | `[P3]` Page Manager: UI for reordering/managing multiple pages.
+    - **Not Started** | `[P3]` Widget Stacking: Vertical stacking and swiping for widgets.
+    - **Not Started** | `[P3]` Cloud Sync: Google Drive integration for layout backups.
 
-### App Drawer & Universal Search
+*   **Completed** | **App Drawer & Universal Search**
 *   **Completed** | **Smart Organization**
     - **Completed** | Bottom-anchored grid for ergonomics.
     - **Completed** | Stable category rail with scrubber.
     - **Completed** | Dynamic category rail indentation.
+    - **Completed** | Semantic Gravity: Vertical (Top/Bottom) and Horizontal (Left/Right) anchoring logic.
 *   **Completed** | **Universal Search Bar**
     - **Completed** | Animated search bar (Zoom-from-Icon).
     - **Completed** | Local search with Enter-to-launch (Top Hit).
     - **Completed** | "Recently Used" app suggestions
-*   **Pending** | **Categorization & Sorting**
-    - **Pending** | `[P2]` Drag-and-drop categorization
-    - **Pending** | `[P2]` Drawer layout toggle (Bottom vs Top-anchored)
+*   **Completed** | **Categorization & Sorting**
+    - **Completed** | `[P2]` Drag-and-drop categorization
     - **Not Started** | `[P2]` Manual Reordering: Custom sorting within the drawer.
     - **Not Started** | `[P2]` Category Management: UI for custom categories (add/rename/reorder).
 
@@ -77,6 +86,9 @@ Designed as the definitive "Pixel Launcher Plus," PxlLauncher prioritizes respon
     - **Completed** | Normalized Dock with unified database persistence.
     - **Completed** | Adaptive Floating Placement (device-agnostic bottom calibration).
     - **Completed** | Seamless long-press-to-drag and resize shadows.
+    - **Completed** | **Responsive Widget Hosting**: Implemented `updateAppWidgetSize` for real-time layout "transformation" and adaptive content.
+    - **Completed** | **NeoGlide Widget Picker**: Custom 2-step selection UI with high-fidelity, center-aligned previews, global search (by label & app), and widget count badges.
+    - **Completed** | **Configuration & Binding Fix**: Resolved "Permission Denial" and implemented mandatory system binding flow for custom hosts.
 
 ### Security & Privacy
 *   **Completed** | **App Protection**
@@ -92,22 +104,32 @@ Designed as the definitive "Pixel Launcher Plus," PxlLauncher prioritizes respon
 *   **Completed** | **Settings Experience**
     - **Completed** | Modern Bottom Sheet UI for quick settings.
     - **Completed** | Troubleshooting tools (Clear Cache/Reset Layout).
-*   **In Progress** | **Expansion Options**
-    - **Not Started** | `[P2]` Home customization (Grid sizes).
     - **Completed** | Search options toggle.
     - **Completed** | App names visibility (Label modes).
-    - **Not Started** | `[P3]` Wallpaper Shortcut: Direct system integration in settings.
+*   **Completed** | **Expansion Options**
+    - **Completed** | Side Anchor: UI for side-anchored drawer grid (now implemented as Top/Bottom + Left/Right gravity).
+    - **Not Started** | `[P2]` Sorting: UI for sorting apps in the drawer.
+    - **Not Started** | `[P2]` Home Grid: UI for customizing home screen grid sizes.
+    - **Not Started** | `[P3]` Wallpaper: Direct system integration for wallpaper changes.
+    - **Not Started** | `[P2]` Appearance: Custom colors and monochrome icon settings.
+    - **Not Started** | `[P3]` Backup (Handoff API): Save or restore launcher layout.
+    - **Not Started** | `[P3]` Premium features: Support the developer and unlock advanced options.
+    - **Completed** | `[P3]` Troubleshooting: Tools to reset layout or clear icon cache.
+    - **Not Started** | `[P3]` Review NeoGlide: Link to Play Store for feedback.
+    - **Not Started** | `[P2]` About NeoGlide: Version information and legal details.
 
 ### Visual Polish & System Integration
-*   **In Progress** | **Theming & Compliance**
+*   **Completed** | **Theming & Compliance**
     - **Completed** | Official Android Splash Screen API.
     - **Completed** | Notification dots with dynamic color.
-    - **Pending** | `[P3]` Legal & Compliance (About section).
+    - **Completed** | `[P2]` Legal & Compliance (About section).
     - **Completed** | SDK 37 & Tooling Migration.
-    - **Not Started** | Advanced Theming: "Forced Mono" engine and custom masking.
-*   **Pending** | **Tactile Feedback**
-    - **Pending** | `[P3]` Haptic Feedback Engine.
-    - **Pending** | `[P3]` Dynamic Clock/Calendar icons.
+    - **Not Started** | `[P3]` Advanced Theming: "Forced Mono" engine and custom masking.
+*   **Completed** | **Tactile Feedback**
+    - **Completed** | Haptic Feedback Engine.
+    - **Pending** | `[P2]` Dynamic Clock/Calendar icons.
+*   **Pending** | **Drawer Improvements**
+    - **Pending** | `[P2]` Category Rail Refinement: Improve touch mapping and state persistence for the category rail.
 
 ## AI Instructions
 *   **Verification**: The AI must NEVER mark a task as `Completed`. Only the user can verify and authorize the transition from `For Checking` to `Completed`.
@@ -123,3 +145,7 @@ Designed as the definitive "Pixel Launcher Plus," PxlLauncher prioritizes respon
 - **Drawer Ergonomics**: Bottom-anchored layout for better one-handed use.
 - **Widget Normalization**: All core components (Dock) are standard `WidgetEntity` entries.
 - **Placeholder Calibration**: Use special row values (99.5f) to trigger one-time physical coordinate discovery.
+- **Semantic Gravity**: Use invisible spacers in the `LazyVerticalGrid` to implement non-standard fill patterns (e.g., Bottom-Right) without breaking standard grid alignment or coordinate math.
+- **Enum-Driven Settings**: Moved complex layout toggles (Anchor, Category Bar, Sorting) to type-safe enums and `SelectionDialog` menus for better scalability and descriptive guidance.
+- **Modular Descriptions**: Relocated technical descriptions from the main settings list into individual dialogs to maintain a clean Material 3 "Settings" surface.
+- **Project Rebranding**: Completed full transition from "Pxl Launcher Neo" to **NeoGlide Launcher: Smart Organizer**, including package cleanup, metadata refactoring, and Firebase migration.

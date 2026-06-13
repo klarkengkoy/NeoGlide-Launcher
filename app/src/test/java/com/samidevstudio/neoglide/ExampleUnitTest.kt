@@ -1,4 +1,4 @@
-package com.samidevstudio.pxllauncherneo
+package com.samidevstudio.neoglide
 
 import org.junit.Test
 
