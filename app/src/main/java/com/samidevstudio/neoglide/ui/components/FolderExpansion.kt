@@ -64,6 +64,7 @@ fun FolderExpansion(
     animatedVisibilityScope: AnimatedVisibilityScope,
     useMonochrome: Boolean = false,
     iconPackPackageName: String? = null,
+    refreshTrigger: Int = 0,
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: (String) -> Unit = {},
@@ -315,13 +316,14 @@ fun FolderExpansion(
                                     showLabel = true,
                                     isLongClickEnabled = false, // Disable AppItem's internal long-click
                                     onLongClick = null,
+                                    refreshTrigger = refreshTrigger,
                                     onClick = { options -> onAppClick(app.packageName, options) }
                                 )
 
                                 if (showAppMenu) {
                                     AppContextMenu(
                                         expanded = true,
-                                        onDismissRequest = { showAppMenu = false },
+                                        onDismissRequest = { showMenu = false },
                                         packageName = app.packageName,
                                         label = app.label,
                                         shortcuts = shortcuts,
@@ -368,6 +370,7 @@ fun FolderExpansion(
                         iconPackPackageName = iconPackPackageName,
                         showLabel = false,
                         isLongClickEnabled = false,
+                        refreshTrigger = refreshTrigger,
                         onClick = {}
                     )
                 }

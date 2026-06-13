@@ -45,10 +45,11 @@ fun AppItem(
     sharedElementKeyPrefix: String = "drawer",
     showLabel: Boolean = true,
     isLongClickEnabled: Boolean = true,
+    refreshTrigger: Int = 0,
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: () -> Unit = {},
-    onLongClick: (() -> Unit)? = null, // Changed to nullable
+    onLongClick: (() -> Unit)? = null,
     onClick: (android.os.Bundle?) -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
@@ -87,6 +88,8 @@ fun AppItem(
 
         val labelStyle = if (sharedElementKeyPrefix == "dock") {
             MaterialTheme.typography.labelSmall.copy(
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
                 color = Color.White,
                 shadow = Shadow(
                     color = Color.Black.copy(alpha = 0.6f),
@@ -96,6 +99,8 @@ fun AppItem(
             )
         } else {
             MaterialTheme.typography.labelSmall.copy(
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface
             )
         }
@@ -130,7 +135,7 @@ fun AppItem(
                             } 
                         } else null
                     )
-                    .padding(8.dp),
+                    .padding(4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Box(modifier = sharedIconModifier) {
@@ -138,7 +143,8 @@ fun AppItem(
                         packageName = app.packageName,
                         contentDescription = app.label,
                         useMonochrome = useMonochrome,
-                        iconPackPackageName = iconPackPackageName
+                        iconPackPackageName = iconPackPackageName,
+                        refreshTrigger = refreshTrigger
                     )
                     
                     // NOTIFICATION DOT
@@ -226,6 +232,7 @@ fun SearchAppItem(
     notificationCount: Int = 0,
     sharedElementKeyPrefix: String = "search",
     showLabel: Boolean = true,
+    refreshTrigger: Int = 0,
     onLongClick: (() -> Unit)? = null,
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
@@ -284,7 +291,7 @@ fun SearchAppItem(
                             }
                         }
                     )
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
@@ -298,7 +305,8 @@ fun SearchAppItem(
                         packageName = app.packageName,
                         contentDescription = app.label,
                         useMonochrome = useMonochrome,
-                        iconPackPackageName = iconPackPackageName
+                        iconPackPackageName = iconPackPackageName,
+                        refreshTrigger = refreshTrigger
                     )
                     
                     // NOTIFICATION DOT
@@ -361,6 +369,8 @@ fun SearchAppItem(
                     Text(
                         text = app.label,
                         style = MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface
                         ),
                         maxLines = 1,

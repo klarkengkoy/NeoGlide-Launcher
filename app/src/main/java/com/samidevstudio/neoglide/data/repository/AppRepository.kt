@@ -21,13 +21,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-    class AppRepository @Inject constructor(
+class AppRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val appDao: AppDao,
     private val folderDao: FolderDao,
     private val homeRepository: HomeRepository,
 ) {
     private val packageManager: PackageManager = context.packageManager
+    private val launcherApps: LauncherApps = context.getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
 
     val allApps: Flow<List<AppModel>> = appDao.getAllApps().map { entities ->
         entities.map { entity ->
@@ -36,29 +37,19 @@ import javax.inject.Singleton
     }
 
     suspend fun refreshApps(forceRecategorize: Boolean = false) = withContext(Dispatchers.IO) {
-        val launcherIntent = Intent(Intent.ACTION_MAIN, null).apply {
-            addCategory(Intent.CATEGORY_LAUNCHER)
-        }
-        val resolveInfos = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            packageManager.queryIntentActivities(
-                launcherIntent, 
-                PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_ALL.toLong()),
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            packageManager.queryIntentActivities(launcherIntent, PackageManager.MATCH_ALL)
-        }
+        val userHandle = android.os.Process.myUserHandle()
+        val activityList = launcherApps.getActivityList(null, userHandle)
         
         val myPackageName = context.packageName
         val existingApps = appDao.getAllAppsList().associateBy { it.packageName }
         
-        val appEntities = resolveInfos
-            .map { it.activityInfo }
-            .filter { it.packageName != myPackageName }
-            .map { activityInfo ->
-                val existing = existingApps[activityInfo.packageName]
+        val appEntities = activityList
+            .filter { it.applicationInfo.packageName != myPackageName }
+            .map { info ->
+                val packageName = info.applicationInfo.packageName
+                val existing = existingApps[packageName]
                 createAppEntity(
-                    app = activityInfo.applicationInfo,
+                    app = info.applicationInfo,
                     existingLastUsedTime = existing?.lastUsedTime ?: 0L,
                     existingCategory = if (forceRecategorize) null else existing?.category
                 )
@@ -79,12 +70,14 @@ import javax.inject.Singleton
     suspend fun updatePackage(packageName: String) = withContext(Dispatchers.IO) {
         if (packageName == context.packageName) return@withContext
         try {
-            val appInfo = packageManager.getApplicationInfo(packageName, PackageManager.GET_META_DATA)
-            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-            if (launchIntent != null) {
+            val userHandle = android.os.Process.myUserHandle()
+            val activities = launcherApps.getActivityList(packageName, userHandle)
+            
+            if (activities.isNotEmpty()) {
+                val info = activities[0]
                 val existing = appDao.getAppByPackageName(packageName)
                 appDao.insertApp(createAppEntity(
-                    app = appInfo,
+                    app = info.applicationInfo,
                     existingLastUsedTime = existing?.lastUsedTime ?: 0L,
                     existingCategory = existing?.category
                 ))
@@ -92,7 +85,7 @@ import javax.inject.Singleton
                 appDao.deleteAppByPackageName(packageName)
                 homeRepository.cleanupPackage(packageName)
             }
-        } catch (_: PackageManager.NameNotFoundException) {
+        } catch (_: Exception) {
             appDao.deleteAppByPackageName(packageName)
             homeRepository.cleanupPackage(packageName)
         }

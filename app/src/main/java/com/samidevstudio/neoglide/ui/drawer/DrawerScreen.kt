@@ -23,7 +23,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -106,6 +105,7 @@ fun DrawerScreen(
     val recentlyUsedApps by viewModel.recentlyUsedApps.collectAsStateWithLifecycle()
     val webSuggestions by viewModel.webSuggestions.collectAsStateWithLifecycle()
     val activeNotifications by viewModel.activeNotifications.collectAsStateWithLifecycle()
+    val refreshTrigger by viewModel.refreshTrigger.collectAsStateWithLifecycle()
     val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
     val hapticFeedback = rememberHapticFeedback(preferences)
 
@@ -428,6 +428,7 @@ fun DrawerScreen(
                                             activeNotifications = activeNotifications,
                                             showNotificationDots = preferences.notificationDotMode in listOf(NotificationDotMode.APP_ICON, NotificationDotMode.BOTH),
                                             showLabel = preferences.appLabelMode == AppLabelMode.DRAWER_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
+                                            refreshTrigger = refreshTrigger,
                                             getShortcuts = { viewModel.getShortcuts(it) },
                                             onShortcutClick = { viewModel.launchShortcut(it) },
                                             onHideToggle = { packageName, isHidden ->
@@ -538,6 +539,7 @@ fun DrawerScreen(
                         animatedVisibilityScope = animatedVisibilityScope,
                         useMonochrome = preferences.useMonochromeIcons,
                         iconPackPackageName = preferences.iconPackPackageName,
+                        refreshTrigger = refreshTrigger,
                         getShortcuts = { viewModel.getShortcuts(it) },
                         onShortcutClick = { viewModel.launchShortcut(it) },
                         onHideToggle = { viewModel.hideApp(it) },
@@ -935,6 +937,7 @@ fun AppGrid(
     activeNotifications: Map<String, Int> = emptyMap(),
     showNotificationDots: Boolean = true,
     showLabel: Boolean = true,
+    refreshTrigger: Int = 0,
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: (String, Boolean) -> Unit = { _, _ -> },
@@ -1247,6 +1250,7 @@ fun AppGrid(
                                         sharedElementKeyPrefix = "drawer",
                                         isLongClickEnabled = false,
                                         onLongClick = null,
+                                        refreshTrigger = refreshTrigger,
                                         getShortcuts = getShortcuts,
                                         onShortcutClick = onShortcutClick,
                                         onHideToggle = { onHideToggle(drawerItem.appModel.packageName, drawerItem.appModel.packageName in hiddenPackages) }
@@ -1312,6 +1316,7 @@ fun SearchResults(
     activeNotifications: Map<String, Int> = emptyMap(),
     showNotificationDots: Boolean = true,
     showLabel: Boolean = true,
+    refreshTrigger: Int = 0,
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: (String, Boolean) -> Unit = { _, _ -> },
@@ -1349,6 +1354,7 @@ fun SearchResults(
                                 notificationCount = activeNotifications[app.packageName] ?: 0,
                                 showLabel = showLabel,
                                 sharedElementKeyPrefix = "recent",
+                                refreshTrigger = refreshTrigger,
                                 getShortcuts = getShortcuts,
                                 onShortcutClick = onShortcutClick,
                                 onHideToggle = { onHideToggle(app.packageName, app.packageName in hiddenPackages) }
@@ -1386,6 +1392,7 @@ fun SearchResults(
                     notificationCount = activeNotifications[app.packageName] ?: 0,
                     showLabel = showLabel,
                     sharedElementKeyPrefix = "search",
+                    refreshTrigger = refreshTrigger,
                     getShortcuts = getShortcuts,
                     onShortcutClick = onShortcutClick,
                     onHideToggle = { onHideToggle(app.packageName, app.packageName in hiddenPackages) },

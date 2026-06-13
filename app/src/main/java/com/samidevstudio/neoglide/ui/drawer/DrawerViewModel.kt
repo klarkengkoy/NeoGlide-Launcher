@@ -46,6 +46,13 @@ class DrawerViewModel @Inject constructor(
 
     private val preferences = userPreferencesRepository.userPreferencesFlow
 
+    private val _refreshTrigger = MutableStateFlow(0)
+    val refreshTrigger = _refreshTrigger.asStateFlow()
+
+    fun triggerIconRefresh() {
+        _refreshTrigger.value += 1
+    }
+
     val allApps: StateFlow<List<AppModel>> = appRepository.allApps
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
