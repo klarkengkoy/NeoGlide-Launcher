@@ -61,6 +61,7 @@ fun PxlWidgetHost(
     onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
     onDragStart: () -> Unit = {},
     onResizeStart: () -> Unit = {},
+    onLongClick: () -> Unit = {},
     onInteractionUpdate: (Float, Float, Float, Float) -> Unit = { _, _, _, _ -> },
     onResize: (Float, Float, Float, Float) -> Unit = { _, _, _, _ -> },
     content: @Composable (() -> Unit)? = null
@@ -73,6 +74,7 @@ fun PxlWidgetHost(
     val currentOnResize by rememberUpdatedState(onResize)
     val currentOnDragStart by rememberUpdatedState(onDragStart)
     val currentOnResizeStart by rememberUpdatedState(onResizeStart)
+    val currentOnLongClick by rememberUpdatedState(onLongClick)
     val currentOnInteractionUpdate by rememberUpdatedState(onInteractionUpdate)
     val currentIsEditing by rememberUpdatedState(isEditing)
     val currentRow by rememberUpdatedState(row)
@@ -90,6 +92,9 @@ fun PxlWidgetHost(
     var lastSnappedCol by remember { mutableFloatStateOf(-1f) }
     var lastSnappedSpanX by remember { mutableFloatStateOf(-1f) }
     var lastSnappedSpanY by remember { mutableFloatStateOf(-1f) }
+
+    var accumulatedDrag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    var isDragConfirmed by remember { mutableStateOf(false) }
 
     val elevation by animateDpAsState(
         targetValue = if (activeHandle != Handle.NONE) 16.dp else if (isEditing) 8.dp else 0.dp,
@@ -181,40 +186,54 @@ fun PxlWidgetHost(
                 .pointerInput(widgetId) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = {
-                            onHapticFeedback(HapticEngine.HapticType.DRAG_START)
-                            if (!currentIsEditing) {
-                                currentOnDragStart()
-                            }
-                            activeHandle = Handle.MOVE
+                            onHapticFeedback(HapticEngine.HapticType.LONG_PRESS)
+                            accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
+                            isDragConfirmed = false
                             initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                         },
                         onDragEnd = {
-                            onHapticFeedback(HapticEngine.HapticType.DRAG_END)
-                            val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
-                            val finalRow = ((base.row + dragDeltaY / unitHeightPx) * 2).roundToInt() / 2f
-                            val finalCol = ((base.col + dragDeltaX / unitWidthPx) * 2).roundToInt() / 2f
+                            if (isDragConfirmed) {
+                                onHapticFeedback(HapticEngine.HapticType.DRAG_END)
+                                val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
+                                val finalRow = ((base.row + dragDeltaY / unitHeightPx) * 2).roundToInt() / 2f
+                                val finalCol = ((base.col + dragDeltaX / unitWidthPx) * 2).roundToInt() / 2f
 
-                            currentOnResize(
-                                finalRow.coerceAtLeast(0f),
-                                finalCol.coerceAtLeast(0f).coerceAtMost(4f - base.spanX),
-                                base.spanX,
-                                base.spanY
-                            )
+                                currentOnResize(
+                                    finalRow.coerceAtLeast(0f),
+                                    finalCol.coerceAtLeast(0f).coerceAtMost(4f - base.spanX),
+                                    base.spanX,
+                                    base.spanY
+                                )
+                            } else {
+                                currentOnLongClick()
+                            }
                             activeHandle = Handle.NONE
                             dragDeltaX = 0f
                             dragDeltaY = 0f
                             initialSnapshot = null
+                            isDragConfirmed = false
                         },
                         onDragCancel = {
                             activeHandle = Handle.NONE
                             dragDeltaX = 0f
                             dragDeltaY = 0f
                             initialSnapshot = null
+                            isDragConfirmed = false
                         },
                         onDrag = { change, dragAmount ->
                             change.consume()
+                            accumulatedDrag += dragAmount
                             dragDeltaX += dragAmount.x
                             dragDeltaY += dragAmount.y
+
+                            if (!isDragConfirmed && accumulatedDrag.getDistance() > with(density) { 10.dp.toPx() }) {
+                                isDragConfirmed = true
+                                onHapticFeedback(HapticEngine.HapticType.DRAG_START)
+                                if (!currentIsEditing) {
+                                    currentOnDragStart()
+                                }
+                                activeHandle = Handle.MOVE
+                            }
                         }
                     )
                 }
@@ -243,36 +262,50 @@ fun PxlWidgetHost(
                         .pointerInput(widgetId) {
                             detectDragGestures(
                                 onDragStart = {
-                                    currentOnDragStart()
-                                    activeHandle = Handle.MOVE
+                                    accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
+                                    isDragConfirmed = false
                                     initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                                 },
                                 onDragEnd = {
-                                    val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
-                                    val finalRow = ((base.row + dragDeltaY / unitHeightPx) * 2).roundToInt() / 2f
-                                    val finalCol = ((base.col + dragDeltaX / unitWidthPx) * 2).roundToInt() / 2f
+                                    if (isDragConfirmed) {
+                                        val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
+                                        val finalRow = ((base.row + dragDeltaY / unitHeightPx) * 2).roundToInt() / 2f
+                                        val finalCol = ((base.col + dragDeltaX / unitWidthPx) * 2).roundToInt() / 2f
 
-                                    currentOnResize(
-                                        finalRow.coerceAtLeast(0f),
-                                        finalCol.coerceAtLeast(0f).coerceAtMost(4f - base.spanX),
-                                        base.spanX,
-                                        base.spanY
-                                    )
+                                        currentOnResize(
+                                            finalRow.coerceAtLeast(0f),
+                                            finalCol.coerceAtLeast(0f).coerceAtMost(4f - base.spanX),
+                                            base.spanX,
+                                            base.spanY
+                                        )
+                                    } else {
+                                        currentOnLongClick()
+                                    }
                                     activeHandle = Handle.NONE
                                     dragDeltaX = 0f
                                     dragDeltaY = 0f
                                     initialSnapshot = null
+                                    isDragConfirmed = false
                                 },
                                 onDragCancel = {
                                     activeHandle = Handle.NONE
                                     dragDeltaX = 0f
                                     dragDeltaY = 0f
                                     initialSnapshot = null
+                                    isDragConfirmed = false
                                 },
                                 onDrag = { change, dragAmount ->
                                     change.consume()
+                                    accumulatedDrag += dragAmount
                                     dragDeltaX += dragAmount.x
                                     dragDeltaY += dragAmount.y
+
+                                    if (!isDragConfirmed && accumulatedDrag.getDistance() > with(density) { 10.dp.toPx() }) {
+                                        isDragConfirmed = true
+                                        onHapticFeedback(HapticEngine.HapticType.DRAG_START)
+                                        currentOnDragStart()
+                                        activeHandle = Handle.MOVE
+                                    }
                                 }
                             )
                         }

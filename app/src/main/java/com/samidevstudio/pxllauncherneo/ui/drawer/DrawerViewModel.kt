@@ -3,7 +3,9 @@ package com.samidevstudio.pxllauncherneo.ui.drawer
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.samidevstudio.pxllauncherneo.data.local.entity.HomeAppEntity
 import com.samidevstudio.pxllauncherneo.data.repository.AppRepository
+import com.samidevstudio.pxllauncherneo.data.repository.HomeRepository
 import com.samidevstudio.pxllauncherneo.data.repository.SearchRepository
 import com.samidevstudio.pxllauncherneo.data.repository.UserPreferencesRepository
 import com.samidevstudio.pxllauncherneo.domain.model.AppCategory
@@ -16,11 +18,23 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+sealed class DrawerItem {
+    abstract val label: String
+
+    data class App(val appModel: AppModel) : DrawerItem() {
+        override val label: String get() = appModel.label
+    }
+
+    data class Folder(val id: Int, override val label: String, val apps: List<AppModel>) : DrawerItem()
+}
+
+@OptIn(FlowPreview::class)
 @HiltViewModel
 class DrawerViewModel @Inject constructor(
     private val appRepository: AppRepository,
     private val searchRepository: SearchRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
+    private val homeRepository: HomeRepository,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -43,15 +57,29 @@ class DrawerViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val categorizedApps: StateFlow<Map<AppCategory, List<AppModel>>> = combine(
+    val categorizedApps: StateFlow<Map<AppCategory, List<DrawerItem>>> = combine(
         appRepository.allApps,
+        homeRepository.allDrawerFolders,
         preferences
-    ) { apps, prefs ->
-        val filtered = apps.filter { it.packageName !in prefs.hiddenPackages || prefs.showHiddenApps }
-        val groups = filtered.groupBy { app ->
-            if (app.packageName in prefs.hiddenPackages) AppCategory.HIDDEN else app.category
+    ) { apps, folders, prefs ->
+        val filteredApps = apps.filter { it.packageName !in prefs.hiddenPackages || prefs.showHiddenApps }
+        
+        val appItems = filteredApps
+            .filter { it.category != AppCategory.FOLDER }
+            .map { app ->
+            val category = if (app.packageName in prefs.hiddenPackages) AppCategory.HIDDEN else app.category
+            category to DrawerItem.App(app)
         }
-        groups
+        
+        val folderItems = folders.filter { it.folder.category != null }.map { folderWithApps ->
+            val category = AppCategory.fromString(folderWithApps.folder.category!!)
+            val folderApps = folderWithApps.apps.mapNotNull { folderApp ->
+                apps.find { it.packageName == folderApp.packageName }
+            }
+            category to DrawerItem.Folder(folderWithApps.folder.id, folderWithApps.folder.label, folderApps)
+        }
+        
+        (appItems + folderItems).groupBy({ it.first }, { it.second })
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -78,14 +106,15 @@ class DrawerViewModel @Inject constructor(
         initialValue = emptyList()
     )
 
-    @OptIn(FlowPreview::class)
-    private val webSearchJob = _searchQuery
-        .debounce(300)
-        .filter { it.isNotBlank() }
-        .onEach { query ->
-            val suggestions = searchRepository.getWebSuggestions(query)
-            _webSuggestions.value = suggestions
-        }.launchIn(viewModelScope)
+    init {
+        _searchQuery
+            .debounce(300)
+            .filter { it.isNotBlank() }
+            .onEach { query ->
+                val suggestions = searchRepository.getWebSuggestions(query)
+                _webSuggestions.value = suggestions
+            }.launchIn(viewModelScope)
+    }
 
     fun onSearchQueryChanged(query: String) {
         savedStateHandle["search_query"] = query
@@ -136,7 +165,16 @@ class DrawerViewModel @Inject constructor(
         }
     }
 
-    fun openDefaultLauncherSettings() {
-        appRepository.openDefaultLauncherSettings()
+    fun createFolder(appA: AppModel, appB: AppModel, category: AppCategory) {
+        viewModelScope.launch {
+            homeRepository.createFolderFromApps(
+                appA = HomeAppEntity(id = 0, packageName = appA.packageName, row = 0f, column = 0f),
+                appB = HomeAppEntity(id = 0, packageName = appB.packageName, row = 0f, column = 0f),
+                label = "Folder",
+                category = category.name
+            )
+            appRepository.markAppAsInFolder(appA.packageName)
+            appRepository.markAppAsInFolder(appB.packageName)
+        }
     }
 }

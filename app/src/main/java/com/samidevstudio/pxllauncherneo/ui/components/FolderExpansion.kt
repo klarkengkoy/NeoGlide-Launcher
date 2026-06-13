@@ -123,6 +123,8 @@ fun FolderExpansion(
                             var showMenu by remember { mutableStateOf(false) }
                             var shortcuts by remember { mutableStateOf<List<AppShortcut>>(emptyList()) }
                             var initialDragOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+                            var accumulatedDrag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+                            var isDragConfirmed by remember { mutableStateOf(false) }
 
                             LaunchedEffect(showMenu) {
                                 if (showMenu) {
@@ -134,60 +136,65 @@ fun FolderExpansion(
                                 modifier = Modifier
                                     .onGloballyPositioned { itemCoords = it }
                                     .graphicsLayer {
-                                        alpha = if (isBeingDragged) 0f else 1f
+                                        alpha = if (isBeingDragged && isDragConfirmed) 0f else 1f
                                     }
                                     .pointerInput(app.packageName) {
                                         detectDragGesturesAfterLongPress(
                                             onDragStart = { offset ->
-                                                onHapticFeedback(HapticEngine.HapticType.DRAG_START)
+                                                onHapticFeedback(HapticEngine.HapticType.LONG_PRESS)
                                                 draggingApp = app
+                                                accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
+                                                isDragConfirmed = false
+                                                
                                                 // Standardize dragOffset to TOP-LEFT of the icon
                                                 val touchWindow = itemCoords?.localToWindow(offset) ?: androidx.compose.ui.geometry.Offset.Zero
                                                 val iconSizePx = with(density) { 80.dp.toPx() }
                                                 initialDragOffset = touchWindow - androidx.compose.ui.geometry.Offset(iconSizePx / 2, iconSizePx / 2)
                                                 dragOffset = initialDragOffset
-                                                onAppDragStart(app, initialDragOffset)
                                             },
                                             onDrag = { change, amount ->
                                                 change.consume()
+                                                accumulatedDrag += amount
                                                 dragOffset += amount
-                                                onAppDrag(amount)
 
-                                                // Introduce a slop/threshold before collapsing the folder
-                                                // Check movement of the touch point (center of icon)
-                                                val iconSizePx = with(density) { 80.dp.toPx() }
-                                                val currentTouch = dragOffset + androidx.compose.ui.geometry.Offset(iconSizePx / 2, iconSizePx / 2)
-                                                val initialTouch = initialDragOffset + androidx.compose.ui.geometry.Offset(iconSizePx / 2, iconSizePx / 2)
-                                                val movement = (currentTouch - initialTouch).getDistance()
-                                                val slop = with(density) { 24.dp.toPx() }
+                                                if (!isDragConfirmed && accumulatedDrag.getDistance() > with(density) { 10.dp.toPx() }) {
+                                                    isDragConfirmed = true
+                                                    onHapticFeedback(HapticEngine.HapticType.DRAG_START)
+                                                    onAppDragStart(app, dragOffset)
+                                                }
 
-                                                if (movement > slop && draggingApp != null && !isDraggedOut) {
-                                                    // Collapse only after meaningful movement
-                                                    isDraggedOut = true
-                                                    // CRITICAL: Pass the current standardized dragOffset (Top-Left), not the touch position
-                                                    onAppDragOut(app, dragOffset, amount)
+                                                if (isDragConfirmed) {
+                                                    onAppDrag(amount)
+
+                                                    // Introduce a slop/threshold before collapsing the folder
+                                                    val movement = accumulatedDrag.getDistance()
+                                                    val slop = with(density) { 24.dp.toPx() }
+
+                                                    if (movement > slop && draggingApp != null && !isDraggedOut) {
+                                                        // Collapse only after meaningful movement
+                                                        isDraggedOut = true
+                                                        onAppDragOut(app, dragOffset, amount)
+                                                    }
                                                 }
                                             },
                                             onDragEnd = {
-                                                onHapticFeedback(HapticEngine.HapticType.DRAG_END)
-                                                // Trigger Menu if dropped on same spot (minimal movement)
-                                                val iconSizePx = with(density) { 80.dp.toPx() }
-                                                val currentTouch = dragOffset + androidx.compose.ui.geometry.Offset(iconSizePx / 2, iconSizePx / 2)
-                                                val initialTouch = initialDragOffset + androidx.compose.ui.geometry.Offset(iconSizePx / 2, iconSizePx / 2)
-                                                val movement = (currentTouch - initialTouch).getDistance()
-                                                val slop = with(density) { 10.dp.toPx() }
-                                                if (movement < slop && !isDraggedOut) {
+                                                if (isDragConfirmed) {
+                                                    onHapticFeedback(HapticEngine.HapticType.DRAG_END)
+                                                    // Only collapse if we actually dragged out
+                                                    onAppDragEnd()
+                                                } else {
                                                     showMenu = true
+                                                    // Don't call onAppDragEnd() here yet, let the menu show
                                                 }
-                                                // Ensure we tell the Home screen that the drag has ended
-                                                onAppDragEnd()
                                                 draggingApp = null
                                                 isDraggedOut = false
+                                                isDragConfirmed = false
                                             },
                                             onDragCancel = {
                                                 onAppDragCancel()
                                                 draggingApp = null
                                                 isDraggedOut = false
+                                                isDragConfirmed = false
                                             }
                                         )
                                     }
@@ -201,6 +208,7 @@ fun FolderExpansion(
                                     sharedElementKeyPrefix = "folder-$folderId",
                                     showLabel = true,
                                     isLongClickEnabled = false, // Disable AppItem's internal long-click
+                                    onLongClick = null,
                                     onClick = { options -> onAppClick(app.packageName, options) }
                                 )
 

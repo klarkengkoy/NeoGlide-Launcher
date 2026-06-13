@@ -124,13 +124,9 @@ fun AppItem(
                             }
                             onClick(bundle)
                         },
-                        onLongClick = if (isLongClickEnabled) { 
+                        onLongClick = if (isLongClickEnabled && onLongClick != null) { 
                             { 
-                                if (onLongClick != null) {
-                                    onLongClick()
-                                } else {
-                                    showMenu = true
-                                }
+                                onLongClick()
                             } 
                         } else null
                     )
