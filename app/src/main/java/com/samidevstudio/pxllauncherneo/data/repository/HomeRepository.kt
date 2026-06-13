@@ -76,30 +76,104 @@ class HomeRepository @Inject constructor(
         folderDao.updateFolderLabel(folderId, label)
     }
 
+    suspend fun updateFolderCategory(folderId: Int, category: String?) = withContext(Dispatchers.IO) {
+        folderDao.updateFolderCategory(folderId, category)
+    }
+
     suspend fun removeAppFromFolders(packageName: String) = withContext(Dispatchers.IO) {
         folderDao.removeAppFromAllFolders(packageName)
     }
 
     suspend fun addAppToFolder(folderId: Int, packageName: String) = withContext(Dispatchers.IO) {
+        // 1. Surgical move: Remove from all other folders (DRAWER ONLY targeted)
+        cleanupDrawerMembership(packageName)
+        
+        // 2. Add to target folder
         val nextOrder = (folderDao.getMaxDisplayOrder(folderId) ?: -1) + 1
         folderDao.insertFolderApp(FolderAppEntity(folderId, packageName, nextOrder))
+        
+        // 3. Mark as in folder in AppRepository (hides from drawer categories)
+        appRepository.markAppAsInFolder(packageName)
+    }
+
+    suspend fun cleanupDrawerMembership(packageName: String) = withContext(Dispatchers.IO) {
+        // 1. Find folders containing this app before removing
+        val folderIds = folderDao.getFoldersContainingApp(packageName)
+        
+        // 2. Remove app from all folders
+        folderDao.removeAppFromAllFolders(packageName)
+        
+        // 3. Dissolve folders if they now have < 2 apps
+        folderIds.forEach { dissolveFolderIfNeeded(it) }
+    }
+
+    suspend fun removeAppFromFolder(folderId: Int, packageName: String) = withContext(Dispatchers.IO) {
+        // 1. Remove from folder_apps
+        folderDao.removeAppFromFolder(folderId, packageName)
+
+        val folderWithApps = folderDao.getFolderWithAppsById(folderId)
+        val category = folderWithApps?.folder?.category
+        if (category != null) {
+            // Drawer Folder: Move to folder's category
+            appRepository.updateAppCategory(packageName, com.samidevstudio.pxllauncherneo.domain.model.AppCategory.fromString(category))
+        } else {
+            // Home Folder: Remove from home screen entirely (safest for multi-select removal)
+            homeAppDao.deleteHomeAppByPackageName(packageName)
+        }
+
+        // 3. Clean up folder if needed
+        dissolveFolderIfNeeded(folderId)
     }
 
     suspend fun removeFolder(folderId: Int) = withContext(Dispatchers.IO) {
+        val folderWithApps = folderDao.getFolderWithAppsById(folderId)
+        val category = folderWithApps?.folder?.category
+        if (category != null) {
+            folderWithApps.apps.forEach { app ->
+                appRepository.updateAppCategory(app.packageName, com.samidevstudio.pxllauncherneo.domain.model.AppCategory.fromString(category))
+            }
+        }
         folderDao.deleteFolderById(folderId)
-        appRepository.refreshApps()
+    }
+
+    suspend fun dissolveFolder(folderId: Int) = withContext(Dispatchers.IO) {
+        val folderWithApps = folderDao.getFolderWithAppsById(folderId) ?: return@withContext
+        val folder = folderWithApps.folder
+        val category = folder.category
+
+        if (category != null) {
+            folderWithApps.apps.forEach { app ->
+                appRepository.updateAppCategory(app.packageName, com.samidevstudio.pxllauncherneo.domain.model.AppCategory.fromString(category))
+            }
+        } else {
+            folderWithApps.apps.forEach { app ->
+                homeAppDao.insertHomeApp(HomeAppEntity(
+                    packageName = app.packageName,
+                    row = folder.row,
+                    column = folder.column
+                ))
+            }
+        }
+        folderDao.deleteFolderById(folderId)
     }
 
     suspend fun removeAppFromFolder(folderId: Int, packageName: String, targetRow: Float, targetCol: Float) = withContext(Dispatchers.IO) {
         // 1. Remove from folder_apps
         folderDao.removeAppFromFolder(folderId, packageName)
 
-        // 2. Add back to home_apps
-        homeAppDao.insertHomeApp(HomeAppEntity(
-            packageName = packageName,
-            row = targetRow,
-            column = targetCol
-        ))
+        val folderWithApps = folderDao.getFolderWithAppsById(folderId)
+        val category = folderWithApps?.folder?.category
+        if (category != null) {
+            // Drawer Folder: Move to folder's category
+            appRepository.updateAppCategory(packageName, com.samidevstudio.pxllauncherneo.domain.model.AppCategory.fromString(category))
+        } else {
+            // Home Folder: Add back to home_apps
+            homeAppDao.insertHomeApp(HomeAppEntity(
+                packageName = packageName,
+                row = targetRow,
+                column = targetCol
+            ))
+        }
 
         // 3. Clean up folder if needed
         dissolveFolderIfNeeded(folderId)
@@ -127,13 +201,19 @@ class HomeRepository @Inject constructor(
         } else if (folderWithApps.apps.size == 1) {
             val lastApp = folderWithApps.apps.first()
             val folder = folderWithApps.folder
+            val category = folder.category
 
-            // Move last app to home at folder's position
-            homeAppDao.insertHomeApp(HomeAppEntity(
-                packageName = lastApp.packageName,
-                row = folder.row,
-                column = folder.column
-            ))
+            if (category != null) {
+                // Drawer Folder: Move to folder's category
+                appRepository.updateAppCategory(lastApp.packageName, com.samidevstudio.pxllauncherneo.domain.model.AppCategory.fromString(category))
+            } else {
+                // Home Folder: Move last app to home at folder's position
+                homeAppDao.insertHomeApp(HomeAppEntity(
+                    packageName = lastApp.packageName,
+                    row = folder.row,
+                    column = folder.column
+                ))
+            }
 
             // Delete folder (cascades to folder_apps)
             folderDao.deleteFolderById(folderId)

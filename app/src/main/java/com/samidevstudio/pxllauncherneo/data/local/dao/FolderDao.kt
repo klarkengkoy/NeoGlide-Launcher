@@ -56,6 +56,9 @@ interface FolderDao {
     @Query("UPDATE folders SET label = :label WHERE id = :folderId")
     suspend fun updateFolderLabel(folderId: Int, label: String)
 
+    @Query("UPDATE folders SET category = :category WHERE id = :folderId")
+    suspend fun updateFolderCategory(folderId: Int, category: String?)
+
     @Query("DELETE FROM folder_apps WHERE packageName = :packageName")
     suspend fun removeAppFromAllFolders(packageName: String)
 
