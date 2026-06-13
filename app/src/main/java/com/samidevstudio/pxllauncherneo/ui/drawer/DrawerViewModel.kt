@@ -46,6 +46,9 @@ class DrawerViewModel @Inject constructor(
 
     private val preferences = userPreferencesRepository.userPreferencesFlow
 
+    val allApps: StateFlow<List<AppModel>> = appRepository.allApps
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val activeNotifications: StateFlow<Map<String, Int>> = PxlNotificationListener.activeNotifications
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
@@ -161,12 +164,16 @@ class DrawerViewModel @Inject constructor(
 
     fun moveAppToCategory(packageName: String, category: AppCategory) {
         viewModelScope.launch {
+            homeRepository.cleanupDrawerMembership(packageName)
             appRepository.updateAppCategory(packageName, category)
         }
     }
 
     fun createFolder(appA: AppModel, appB: AppModel, category: AppCategory) {
         viewModelScope.launch {
+            homeRepository.cleanupDrawerMembership(appA.packageName)
+            homeRepository.cleanupDrawerMembership(appB.packageName)
+            
             homeRepository.createFolderFromApps(
                 appA = HomeAppEntity(id = 0, packageName = appA.packageName, row = 0f, column = 0f),
                 appB = HomeAppEntity(id = 0, packageName = appB.packageName, row = 0f, column = 0f),
@@ -175,6 +182,36 @@ class DrawerViewModel @Inject constructor(
             )
             appRepository.markAppAsInFolder(appA.packageName)
             appRepository.markAppAsInFolder(appB.packageName)
+        }
+    }
+
+    fun updateFolderLabel(folderId: Int, label: String) {
+        viewModelScope.launch {
+            homeRepository.updateFolderLabel(folderId, label)
+        }
+    }
+
+    fun dissolveFolder(folderId: Int) {
+        viewModelScope.launch {
+            homeRepository.dissolveFolder(folderId)
+        }
+    }
+
+    fun moveFolderToCategory(folderId: Int, category: AppCategory) {
+        viewModelScope.launch {
+            homeRepository.updateFolderCategory(folderId, category.name)
+        }
+    }
+
+    fun addAppToFolder(folderId: Int, packageName: String) {
+        viewModelScope.launch {
+            homeRepository.addAppToFolder(folderId, packageName)
+        }
+    }
+
+    fun removeAppFromFolder(folderId: Int, packageName: String) {
+        viewModelScope.launch {
+            homeRepository.removeAppFromFolder(folderId, packageName)
         }
     }
 }
