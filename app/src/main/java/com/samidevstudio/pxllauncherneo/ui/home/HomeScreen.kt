@@ -80,6 +80,7 @@ fun HomeScreen(
     var showAppPicker by remember { mutableStateOf(false) }
     var pendingAddAppRow by remember { mutableFloatStateOf(0f) }
     var pendingAddAppCol by remember { mutableFloatStateOf(0f) }
+    var pendingFolderIdForAdd by remember { mutableIntStateOf(-1) }
     var gridCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
 
     var expandedFolderId by remember { mutableIntStateOf(-1) }
@@ -957,6 +958,12 @@ fun HomeScreen(
                                 label = expandedFolder.label,
                                 apps = expandedFolder.apps,
                                 onDismiss = { expandedFolderId = -1 },
+                                isDrawerFolder = false,
+                                onDissolve = { viewModel.removeFolder(expandedFolder.id) },
+                                onAddApps = {
+                                    pendingFolderIdForAdd = expandedFolder.id
+                                    showAppPicker = true
+                                },
                                 onLabelChange = { newLabel -> viewModel.updateFolderLabel(expandedFolder.id, newLabel) },
                                 onAppClick = { pkg, options ->
                                     viewModel.launchApp(pkg, options)
@@ -1061,16 +1068,31 @@ fun HomeScreen(
         }
 
         if (showAppPicker) {
-            val availableApps by viewModel.availableAppsForPicker.collectAsStateWithLifecycle()
+            val availableApps by viewModel.allApps.collectAsStateWithLifecycle()
             val recentApps by viewModel.recentlyUsedApps.collectAsStateWithLifecycle()
-            AppPickerDialog(
-                apps = availableApps,
+            
+            val memberPackageNames = remember(pendingFolderIdForAdd, homeItems) {
+                homeItems.filterIsInstance<HomeItem.Folder>()
+                    .find { it.id == pendingFolderIdForAdd }
+                    ?.apps?.map { it.packageName }?.toSet() ?: emptySet()
+            }
+
+            MultiAppPickerDialog(
+                title = "Move apps here",
+                allApps = availableApps,
+                memberPackageNames = memberPackageNames,
                 recentlyUsedApps = recentApps,
-                onAppSelected = { app ->
-                    viewModel.addHomeApp(app.packageName, pendingAddAppRow, pendingAddAppCol)
-                    showAppPicker = false
+                onToggleMember = { app, isChecked ->
+                    if (isChecked) {
+                        viewModel.addAppToFolder(pendingFolderIdForAdd, app.packageName)
+                    } else {
+                        viewModel.removeAppFromFolder(pendingFolderIdForAdd, app.packageName)
+                    }
                 },
-                onDismissRequest = { showAppPicker = false }
+                onDismissRequest = { 
+                    showAppPicker = false
+                    pendingFolderIdForAdd = -1
+                }
             )
         }
 

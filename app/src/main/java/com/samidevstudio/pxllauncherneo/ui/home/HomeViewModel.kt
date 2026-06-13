@@ -408,6 +408,18 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    fun addAppToFolder(folderId: Int, packageName: String) {
+        viewModelScope.launch {
+            homeRepository.addAppToFolder(folderId, packageName)
+        }
+    }
+
+    fun removeAppFromFolder(folderId: Int, packageName: String) {
+        viewModelScope.launch {
+            homeRepository.removeAppFromFolder(folderId, packageName)
+        }
+    }
+
     fun removeAppFromFolder(folderId: Int, packageName: String, targetRow: Float, targetCol: Float) {
         viewModelScope.launch {
             // Find AppModel across all current apps to ensure we have valid data on rerun
