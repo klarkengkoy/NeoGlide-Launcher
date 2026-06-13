@@ -30,6 +30,9 @@ interface AppDao {
     @Query("UPDATE apps SET category = :category WHERE packageName = :packageName")
     suspend fun updateAppCategory(packageName: String, category: String)
 
+    @Query("UPDATE apps SET category = 'FOLDER' WHERE packageName = :packageName")
+    suspend fun markAppAsInFolder(packageName: String)
+
     @Query("UPDATE apps SET lastUsedTime = :time WHERE packageName = :packageName")
     suspend fun updateLastUsedTime(packageName: String, time: Long)
 

@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.net.toUri
 import com.samidevstudio.pxllauncherneo.data.local.dao.AppDao
+import com.samidevstudio.pxllauncherneo.data.local.dao.FolderDao
 import com.samidevstudio.pxllauncherneo.data.local.entity.AppEntity
 import com.samidevstudio.pxllauncherneo.domain.model.AppCategory
 import com.samidevstudio.pxllauncherneo.domain.model.AppModel
@@ -20,9 +21,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class AppRepository @Inject constructor(
+    class AppRepository @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val appDao: AppDao,
+    private val folderDao: FolderDao,
     private val homeRepository: HomeRepository,
 ) {
     private val packageManager: PackageManager = context.packageManager
@@ -33,7 +35,7 @@ class AppRepository @Inject constructor(
         }
     }
 
-    suspend fun refreshApps() = withContext(Dispatchers.IO) {
+    suspend fun refreshApps(forceRecategorize: Boolean = false) = withContext(Dispatchers.IO) {
         val launcherIntent = Intent(Intent.ACTION_MAIN, null).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
@@ -58,7 +60,7 @@ class AppRepository @Inject constructor(
                 createAppEntity(
                     app = activityInfo.applicationInfo,
                     existingLastUsedTime = existing?.lastUsedTime ?: 0L,
-                    existingCategory = existing?.category
+                    existingCategory = if (forceRecategorize) null else existing?.category
                 )
             }
             .distinctBy { it.packageName }
@@ -103,6 +105,10 @@ class AppRepository @Inject constructor(
 
     suspend fun updateAppCategory(packageName: String, category: AppCategory) = withContext(Dispatchers.IO) {
         appDao.updateAppCategory(packageName, category.name)
+    }
+
+    suspend fun markAppAsInFolder(packageName: String) = withContext(Dispatchers.IO) {
+        appDao.markAppAsInFolder(packageName)
     }
 
     private fun createAppEntity(
@@ -324,5 +330,15 @@ class AppRepository @Inject constructor(
             isFavorite = isFavorite,
             lastUsedTime = lastUsedTime
         )
+    }
+
+    suspend fun resetDrawer() = withContext(Dispatchers.IO) {
+        folderDao.deleteAppDrawerFolders()
+        refreshApps(forceRecategorize = true)
+    }
+
+    suspend fun deleteDrawerFolders() = withContext(Dispatchers.IO) {
+        folderDao.deleteAppDrawerFolders()
+        refreshApps(forceRecategorize = true)
     }
 }

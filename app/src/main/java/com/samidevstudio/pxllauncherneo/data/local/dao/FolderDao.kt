@@ -21,6 +21,14 @@ interface FolderDao {
     fun getAllFoldersWithApps(): Flow<List<FolderWithApps>>
 
     @Transaction
+    @Query("SELECT * FROM folders WHERE category = :category")
+    fun getFoldersWithAppsByCategory(category: String): Flow<List<FolderWithApps>>
+
+    @Transaction
+    @Query("SELECT * FROM folders WHERE category IS NULL")
+    fun getHomeScreenFoldersWithApps(): Flow<List<FolderWithApps>>
+
+    @Transaction
     @Query("SELECT * FROM folders WHERE id = :id")
     suspend fun getFolderWithAppsById(id: Int): FolderWithApps?
 
@@ -59,4 +67,16 @@ interface FolderDao {
 
     @Query("SELECT MAX(displayOrder) FROM folder_apps WHERE folderId = :folderId")
     suspend fun getMaxDisplayOrder(folderId: Int): Int?
+
+    @Query("DELETE FROM folders")
+    suspend fun deleteAllFolders()
+
+    @Query("DELETE FROM folders WHERE category IS NULL")
+    suspend fun deleteHomeScreenFolders()
+
+    @Query("DELETE FROM folders WHERE category IS NOT NULL")
+    suspend fun deleteAppDrawerFolders()
+
+    @Query("DELETE FROM folder_apps")
+    suspend fun deleteAllFolderApps()
 }

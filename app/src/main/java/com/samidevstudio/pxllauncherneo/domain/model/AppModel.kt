@@ -16,7 +16,7 @@ data class AppShortcut(
 )
 
 enum class AppCategory {
-    COMMUNICATION, GAMES, MEDIA, UTILITIES, SOCIAL, SHOPPING, EDUCATION, LIFESTYLE, OTHER, SYSTEM, HIDDEN;
+    COMMUNICATION, GAMES, MEDIA, UTILITIES, SOCIAL, SHOPPING, EDUCATION, LIFESTYLE, OTHER, SYSTEM, HIDDEN, FOLDER;
 
     companion object {
         fun fromString(value: String): AppCategory {

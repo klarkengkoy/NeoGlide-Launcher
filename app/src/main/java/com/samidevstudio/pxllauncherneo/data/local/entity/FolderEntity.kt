@@ -8,5 +8,6 @@ data class FolderEntity(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val label: String,
     val row: Float,
-    val column: Float
+    val column: Float,
+    val category: String? = null
 )

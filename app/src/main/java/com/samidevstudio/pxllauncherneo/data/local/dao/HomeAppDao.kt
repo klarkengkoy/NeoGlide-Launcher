@@ -23,4 +23,7 @@ interface HomeAppDao {
 
     @Query("DELETE FROM home_apps WHERE id = :id")
     suspend fun deleteHomeAppById(id: Int)
+
+    @Query("DELETE FROM home_apps")
+    suspend fun deleteAllHomeApps()
 }

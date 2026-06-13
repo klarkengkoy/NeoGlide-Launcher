@@ -26,4 +26,7 @@ interface WidgetDao {
 
     @Query("UPDATE widgets SET `row` = :row, `column` = :column, spanX = :spanX, spanY = :spanY WHERE widgetId = :widgetId")
     suspend fun updateWidgetBounds(widgetId: Int, row: Float, column: Float, spanX: Float, spanY: Float)
+
+    @Query("DELETE FROM widgets")
+    suspend fun deleteAllWidgets()
 }

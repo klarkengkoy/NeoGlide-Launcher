@@ -9,20 +9,24 @@ import com.samidevstudio.pxllauncherneo.data.local.entity.HomeAppEntity
 import com.samidevstudio.pxllauncherneo.data.local.entity.WidgetEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 @Singleton
 class HomeRepository @Inject constructor(
     private val homeAppDao: HomeAppDao,
     private val widgetDao: WidgetDao,
-    private val folderDao: FolderDao
+    private val folderDao: FolderDao,
+    private val appRepositoryProvider: Provider<AppRepository>,
+    private val userPreferencesRepository: UserPreferencesRepository
 ) {
+    private val appRepository get() = appRepositoryProvider.get()
     val allHomeApps: Flow<List<HomeAppEntity>> = homeAppDao.getAllHomeApps()
     val allWidgets: Flow<List<WidgetEntity>> = widgetDao.getAllWidgets()
-    val allFolders = folderDao.getAllFoldersWithApps()
+    val allFolders = folderDao.getHomeScreenFoldersWithApps()
+    val allDrawerFolders = folderDao.getAllFoldersWithApps()
 
     suspend fun addHomeApp(homeApp: HomeAppEntity) = withContext(Dispatchers.IO) {
         homeAppDao.insertHomeApp(homeApp)
@@ -44,12 +48,13 @@ class HomeRepository @Inject constructor(
         widgetDao.updateWidgetBounds(widgetId, row, col, spanX, spanY)
     }
 
-    suspend fun createFolderFromApps(appA: HomeAppEntity, appB: HomeAppEntity, label: String = "Folder"): Int = withContext(Dispatchers.IO) {
+    suspend fun createFolderFromApps(appA: HomeAppEntity, appB: HomeAppEntity, label: String = "Folder", category: String? = null): Int = withContext(Dispatchers.IO) {
         // 1. Create Folder
         val folderId = folderDao.insertFolder(FolderEntity(
             label = label,
             row = appB.row,
-            column = appB.column
+            column = appB.column,
+            category = category
         )).toInt()
 
         // 2. Add apps to folder
@@ -82,6 +87,7 @@ class HomeRepository @Inject constructor(
 
     suspend fun removeFolder(folderId: Int) = withContext(Dispatchers.IO) {
         folderDao.deleteFolderById(folderId)
+        appRepository.refreshApps()
     }
 
     suspend fun removeAppFromFolder(folderId: Int, packageName: String, targetRow: Float, targetCol: Float) = withContext(Dispatchers.IO) {
@@ -132,5 +138,18 @@ class HomeRepository @Inject constructor(
             // Delete folder (cascades to folder_apps)
             folderDao.deleteFolderById(folderId)
         }
+    }
+
+    suspend fun resetHome() = withContext(Dispatchers.IO) {
+        homeAppDao.deleteAllHomeApps()
+        widgetDao.deleteAllWidgets()
+        folderDao.deleteHomeScreenFolders()
+        userPreferencesRepository.setFirstInstallRun(true)
+        appRepository.refreshApps()
+    }
+
+    suspend fun deleteHomeFolders() = withContext(Dispatchers.IO) {
+        folderDao.deleteHomeScreenFolders()
+        appRepository.refreshApps()
     }
 }
