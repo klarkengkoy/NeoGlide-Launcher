@@ -74,6 +74,13 @@ class HomeViewModel @Inject constructor(
     private val _uiEvent = MutableSharedFlow<UiEvent>()
     val uiEvent = _uiEvent.asSharedFlow()
 
+    private val _refreshTrigger = MutableStateFlow(0)
+    val refreshTrigger = _refreshTrigger.asStateFlow()
+
+    fun triggerIconRefresh() {
+        _refreshTrigger.value += 1
+    }
+
     private val _shouldShowDefaultPrompt = MutableStateFlow(value = false)
     val shouldShowDefaultPrompt = _shouldShowDefaultPrompt.asStateFlow()
 

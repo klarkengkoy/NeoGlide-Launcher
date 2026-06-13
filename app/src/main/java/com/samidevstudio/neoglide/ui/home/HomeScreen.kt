@@ -1,6 +1,5 @@
 package com.samidevstudio.neoglide.ui.home
 
-import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.widget.Toast
 import kotlin.math.roundToInt
@@ -62,7 +61,6 @@ fun HomeScreen(
     drawerViewModel: com.samidevstudio.neoglide.ui.drawer.DrawerViewModel = hiltViewModelV2(),
 ) {
     val activeNotifications by viewModel.activeNotifications.collectAsStateWithLifecycle()
-    val recentlyUsedApps by viewModel.recentlyUsedApps.collectAsStateWithLifecycle()
     val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
     val hapticFeedback = rememberHapticFeedback(preferences)
     val shouldShowDefaultPrompt by viewModel.shouldShowDefaultPrompt.collectAsStateWithLifecycle()
@@ -108,6 +106,7 @@ fun HomeScreen(
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
     val homeItems by viewModel.homeItems.collectAsStateWithLifecycle()
+    val refreshTrigger by viewModel.refreshTrigger.collectAsStateWithLifecycle()
 
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
     val homeAlpha by animateFloatAsState(
@@ -217,7 +216,7 @@ fun HomeScreen(
                 ) {
                     val unitWidth = maxWidth / 5f
                     val topOffset = 0.dp // Use padding from Scaffold
-                    val bottomPadding = 0.dp // Use padding from Scaffold
+                    // val bottomPadding = 0.dp // Use padding from Scaffold
                     val topOffsetPx = with(density) { topOffset.toPx() }
 
                     // Adaptive Grid: Calculate nearest row count and stretch to fill height minus bottom padding
@@ -276,6 +275,7 @@ fun HomeScreen(
                                 showLabel = false, // Keep label hidden during drag out
                                 sharedElementKeyPrefix = "dragging-folder",
                                 isLongClickEnabled = false,
+                                refreshTrigger = refreshTrigger,
                                 onClick = {}
                             )
                         }
@@ -451,12 +451,6 @@ fun HomeScreen(
                                                         isDragConfirmed = false
                                                     },
                                                     onDragCancel = {
-                                                        if (isDragConfirmed) {
-                                                            // If we were dragging, just reset
-                                                        } else {
-                                                            // Maybe show menu on cancel too if it was a long press? 
-                                                            // But usually cancel means something else interrupted.
-                                                        }
                                                         draggingItemId = -1
                                                         dragTargetBounds = null
                                                         isDragConfirmed = false
@@ -479,6 +473,7 @@ fun HomeScreen(
                                         showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
                                         sharedElementKeyPrefix = "home",
                                         isLongClickEnabled = false,
+                                        refreshTrigger = refreshTrigger,
                                         getShortcuts = { viewModel.getShortcuts(it) },
                                         onShortcutClick = { viewModel.launchShortcut(it) },
                                         onHideToggle = {
@@ -771,6 +766,7 @@ fun HomeScreen(
                                                             notificationCount = activeNotifications[app.packageName] ?: 0,
                                                             showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
                                                             sharedElementKeyPrefix = "dock",
+                                                            refreshTrigger = refreshTrigger,
                                                             getShortcuts = { viewModel.getShortcuts(it) },
                                                             onShortcutClick = { viewModel.launchShortcut(it) },
                                                             onHideToggle = {
@@ -926,6 +922,7 @@ fun HomeScreen(
                                 animatedVisibilityScope = animatedVisibilityScope,
                                 useMonochrome = preferences.useMonochromeIcons,
                                 iconPackPackageName = preferences.iconPackPackageName,
+                                refreshTrigger = refreshTrigger,
                                 onHapticFeedback = hapticFeedback,
                                 getShortcuts = { viewModel.getShortcuts(it) },
                                 onShortcutClick = { viewModel.launchShortcut(it) },
