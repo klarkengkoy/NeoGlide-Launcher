@@ -9,11 +9,11 @@ plugins {
 }
 
 android {
-    namespace = "com.samidevstudio.pxllauncherneo"
+    namespace = "com.samidevstudio.neoglide"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.samidevstudio.pxllauncherneo"
+        applicationId = "com.samidevstudio.neoglide"
         minSdk = 24
         targetSdk = 37
         versionCode = 1

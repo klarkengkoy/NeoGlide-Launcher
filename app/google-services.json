@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "597932171292",
-    "project_id": "pxllauncher-0d829d71",
-    "storage_bucket": "pxllauncher-0d829d71.firebasestorage.app"
+    "project_number": "746410757096",
+    "project_id": "neoglidelaunchersmartorganizer",
+    "storage_bucket": "neoglidelaunchersmartorganizer.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:597932171292:android:2ad5c4225f252ee6d53fd9",
+        "mobilesdk_app_id": "1:746410757096:android:8da91011bf2adbd6d3b25d",
         "android_client_info": {
-          "package_name": "com.samidevstudio.pxllauncherneo"
+          "package_name": "com.samidevstudio.neoglide"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyC9T7JUYosuo_XgA2wpAiZjaTjCrzNGhq4"
+          "current_key": "AIzaSyDkbX3JCNWUXz3IJCHgn_6KJRkcV89DYvk"
         }
       ],
       "services": {
