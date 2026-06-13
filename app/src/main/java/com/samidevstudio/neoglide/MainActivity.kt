@@ -29,6 +29,12 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import com.samidevstudio.neoglide.data.repository.WidgetRepository
 import androidx.compose.runtime.CompositionLocalProvider
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+
+import com.samidevstudio.neoglide.ui.drawer.DrawerViewModel
 
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
@@ -42,18 +48,35 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var hapticEngine: HapticEngine
     
     private val homeViewModel: HomeViewModel by viewModels()
+    private val drawerViewModel: DrawerViewModel by viewModels()
+
+    private val iconRefreshReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            homeViewModel.triggerIconRefresh()
+            drawerViewModel.triggerIconRefresh()
+        }
+    }
 
     override fun onStart() {
         super.onStart()
         widgetRepository.startListening()
+        
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_TIME_TICK)
+            addAction(Intent.ACTION_TIME_CHANGED)
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
+            addAction(Intent.ACTION_DATE_CHANGED)
+        }
+        registerReceiver(iconRefreshReceiver, filter)
     }
 
     override fun onStop() {
         super.onStop()
         widgetRepository.stopListening()
+        unregisterReceiver(iconRefreshReceiver)
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_WIDGET_CONFIG) {
             val widgetId = data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1) ?: -1
@@ -78,7 +101,7 @@ class MainActivity : FragmentActivity() {
     }
 
     fun startWidgetBind(widgetId: Int, provider: android.content.ComponentName) {
-        val intent = android.content.Intent(AppWidgetManager.ACTION_APPWIDGET_BIND).apply {
+        val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_BIND).apply {
             putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
             putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, provider)
         }
@@ -103,6 +126,8 @@ class MainActivity : FragmentActivity() {
     @OptIn(ExperimentalSharedTransitionApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
+        // Removed forced delay
+        
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
@@ -141,10 +166,10 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    override fun onNewIntent(intent: android.content.Intent) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        val isHomeIntent = intent.action == android.content.Intent.ACTION_MAIN && 
-                          intent.hasCategory(android.content.Intent.CATEGORY_HOME)
+        val isHomeIntent = intent.action == Intent.ACTION_MAIN && 
+                          intent.hasCategory(Intent.CATEGORY_HOME)
         if (isHomeIntent) {
             // Re-center or reset home view if needed
         }
