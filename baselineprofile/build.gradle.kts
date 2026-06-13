@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.samidevstudio.pxllauncherneo.baselineprofile"
+    namespace = "com.samidevstudio.neoglide.baselineprofile"
     compileSdk = 36
 
     defaultConfig {

@@ -22,6 +22,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "PxlLauncher"
+rootProject.name = "NeoGlideLauncher"
 include(":app")
  
