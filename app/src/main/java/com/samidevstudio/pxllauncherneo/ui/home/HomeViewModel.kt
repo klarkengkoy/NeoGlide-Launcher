@@ -76,33 +76,40 @@ class HomeViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            // Provision the internal Dock widget into the standard database strictly on FIRST INSTALL
-            val prefs = userPreferencesRepository.userPreferencesFlow.first()
-            if (prefs.isFirstInstallRun) {
-                // Double check DB to prevent accidental duplicates
-                val existing = widgetRepository.allWidgets.first()
-                if (existing.none { (it.providerPackage == "internal") && (it.providerClass == "dock") }) {
-                    // Provision internal Dock (Floating placeholder: 99.5f)
-                    val dockId = widgetRepository.allocateWidgetId()
-                    widgetRepository.addWidget(
-                        WidgetEntity(
-                            widgetId = dockId,
-                            providerPackage = "internal",
-                            providerClass = "dock",
-                            label = "Dock",
-                            row = 99.5f,
-                            column = 0f,
-                            spanX = 4f,
-                            spanY = 1f
-                        )
-                    )
+            // Observe preferences to handle first run provisioning (and resets)
+            userPreferencesRepository.userPreferencesFlow.collect { prefs ->
+                if (prefs.isFirstInstallRun) {
+                    provisionDefaultDock()
                 }
-                userPreferencesRepository.setFirstInstallRun(isFirst = false)
             }
-
-            // 2. Refresh apps after provisioning
+        }
+        viewModelScope.launch {
+            // Refresh apps on startup
             appRepository.refreshApps()
         }
+    }
+
+    private suspend fun provisionDefaultDock() {
+        // Double check DB to prevent accidental duplicates
+        val existing = widgetRepository.allWidgets.first()
+        if (existing.none { (it.providerPackage == "internal") && (it.providerClass == "dock") }) {
+            // Provision internal Dock (Floating placeholder: 99.5f)
+            val dockId = widgetRepository.allocateWidgetId()
+            widgetRepository.addWidget(
+                WidgetEntity(
+                    widgetId = dockId,
+                    providerPackage = "internal",
+                    providerClass = "dock",
+                    label = "Dock",
+                    row = 99.5f,
+                    column = 0f,
+                    spanX = 4f,
+                    spanY = 1f
+                )
+            )
+        }
+        // Mark as done so we don't repeat this until next reset
+        userPreferencesRepository.setFirstInstallRun(isFirst = false)
     }
 
     val activeNotifications: StateFlow<Map<String, Int>> = PxlNotificationListener.activeNotifications
@@ -355,7 +362,7 @@ class HomeViewModel @Inject constructor(
             val currentWidget = homeItems.value.find { it.id == widgetId && it is HomeItem.Widget } as? HomeItem.Widget ?: return@launch
             val tempWidget = currentWidget.copy(row = row, column = col, spanX = spanX, spanY = spanY)
             
-            val collisionResult = checkCollision(tempWidget, row, col)
+            val collisionResult = checkCollision(tempWidget, row, col, ignoreItemId = widgetId, ignoreItemClass = HomeItem.Widget::class)
             if (collisionResult is CollisionResult.None) {
                 widgetRepository.updateWidgetBounds(widgetId, row, col, spanX, spanY)
             } else {

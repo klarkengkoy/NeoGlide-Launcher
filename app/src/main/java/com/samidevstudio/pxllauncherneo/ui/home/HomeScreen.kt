@@ -100,6 +100,8 @@ fun HomeScreen(
     var draggingItemId by remember { mutableIntStateOf(-1) }
     var dragOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var dragTargetBounds by remember { mutableStateOf<RectBounds?>(null) }
+    var accumulatedDrag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    var isDragConfirmed by remember { mutableStateOf(false) }
 
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
@@ -214,7 +216,7 @@ fun HomeScreen(
     ) {
         // FULL SCREEN FROSTED GLASS
         AnimatedVisibility(
-            visible = editingWidgetId != -1 || showAppMenuPackage != null || showFolderMenu || draggingItemId != -1 || expandedFolderId != -1,
+            visible = editingWidgetId != -1 || showFolderMenu || draggingItemId != -1 || expandedFolderId != -1,
             enter = fadeIn(),
             exit = fadeOut()
         ) {
@@ -333,7 +335,7 @@ fun HomeScreen(
 
 
                     // GRID OVERLAY
-                    if (editingWidgetId != -1 || showAppMenuPackage != null || draggingItemId != -1 || draggingAppFromFolder != null) {
+                    if (editingWidgetId != -1 || draggingItemId != -1 || draggingAppFromFolder != null) {
                         val isDark = isSystemInDarkTheme()
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val mainGridColor = (if (isDark) Color.White else Color.Black).copy(alpha = 0.3f)
@@ -430,8 +432,10 @@ fun HomeScreen(
                                             if (!preferences.lockLayout) {
                                                 detectDragGesturesAfterLongPress(
                                                     onDragStart = { _ ->
-                                                        hapticFeedback(HapticEngine.HapticType.DRAG_START)
-                                                        draggingItemId = item.id
+                                                        hapticFeedback(HapticEngine.HapticType.LONG_PRESS)
+                                                        accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
+                                                        isDragConfirmed = false
+                                                        
                                                         showAppMenuPackage = null // Hide menu on drag start
                                                         originalRow = item.row
                                                         originalCol = item.column
@@ -444,54 +448,70 @@ fun HomeScreen(
                                                     },
                                                     onDrag = { change, dragAmount ->
                                                         change.consume()
+                                                        accumulatedDrag += dragAmount
                                                         dragOffset += dragAmount
 
-                                                        // Calculate nearest grid cell with 0.5f snapping
-                                                        // FIX: Remove the + unitSize/2f offset that caused a 0.5 grid jump
-                                                        val targetRow = (((dragOffset.y - topOffsetPx) / unitHeightPx) * 2).roundToInt() / 2f
-                                                            .coerceIn(0f, maxRows.toFloat() - 1f)
-                                                        val targetCol = (((dragOffset.x) / unitWidthPx) * 2).roundToInt() / 2f
-                                                            .coerceIn(0f, 3f)
-
-                                                        if (targetRow != dragTargetBounds?.row || targetCol != dragTargetBounds?.col) {
-                                                            hapticFeedback(HapticEngine.HapticType.GRID_SNAP)
+                                                        if (!isDragConfirmed && accumulatedDrag.getDistance() > with(density) { 10.dp.toPx() }) {
+                                                            isDragConfirmed = true
+                                                            hapticFeedback(HapticEngine.HapticType.DRAG_START)
+                                                            draggingItemId = item.id
                                                         }
 
-                                                        dragTargetBounds = RectBounds(targetRow, targetCol, 1f, 1f)
+                                                        if (isDragConfirmed) {
+                                                            // Calculate nearest grid cell with 0.5f snapping
+                                                            val targetRow = (((dragOffset.y - topOffsetPx) / unitHeightPx) * 2).roundToInt() / 2f
+                                                                .coerceIn(0f, maxRows.toFloat() - 1f)
+                                                            val targetCol = (((dragOffset.x) / unitWidthPx) * 2).roundToInt() / 2f
+                                                                .coerceIn(0f, 3f)
+
+                                                            if (targetRow != dragTargetBounds?.row || targetCol != dragTargetBounds?.col) {
+                                                                hapticFeedback(HapticEngine.HapticType.GRID_SNAP)
+                                                            }
+
+                                                            dragTargetBounds = RectBounds(targetRow, targetCol, 1f, 1f)
+                                                        }
                                                     },
                                                     onDragEnd = {
-                                                        hapticFeedback(HapticEngine.HapticType.DRAG_END)
-                                                        dragTargetBounds?.let { bounds ->
-                                                            if (bounds.row == originalRow && bounds.col == originalCol) {
-                                                                // Trigger Menu (dropped on same spot)
-                                                                appMenuLabel = app.label
-                                                                showAppMenuId = item.id
-                                                                val iconLeft = (unitWidth * item.column)
-                                                                val iconTop = topOffset + (unitHeight * item.row)
-
-                                                                val menuH = 150.dp
-                                                                val gap = 8.dp
-
-                                                                var finalY = iconTop + unitHeight + gap
-                                                                if (finalY + menuH > availableHeight) {
-                                                                    finalY = iconTop - menuH - gap
-                                                                }
-
-                                                                contextMenuOffset = DpOffset(x = iconLeft, y = finalY)
-                                                                coroutineScope.launch {
-                                                                    appMenuShortcuts = viewModel.getShortcuts(app.packageName)
-                                                                    showAppMenuPackage = app.packageName
-                                                                }
-                                                            } else {
+                                                        if (isDragConfirmed) {
+                                                            hapticFeedback(HapticEngine.HapticType.DRAG_END)
+                                                            dragTargetBounds?.let { bounds ->
                                                                 viewModel.updateItemPosition(item, bounds.row, bounds.col)
+                                                            }
+                                                        } else {
+                                                            // Trigger Menu (not dragged enough)
+                                                            appMenuLabel = app.label
+                                                            showAppMenuId = item.id
+                                                            val iconLeft = (unitWidth * item.column)
+                                                            val iconTop = topOffset + (unitHeight * item.row)
+
+                                                            val menuH = 150.dp
+                                                            val gap = 8.dp
+
+                                                            var finalY = iconTop + unitHeight + gap
+                                                            if (finalY + menuH > availableHeight) {
+                                                                finalY = iconTop - menuH - gap
+                                                            }
+
+                                                            contextMenuOffset = DpOffset(x = iconLeft, y = finalY)
+                                                            coroutineScope.launch {
+                                                                appMenuShortcuts = viewModel.getShortcuts(app.packageName)
+                                                                showAppMenuPackage = app.packageName
                                                             }
                                                         }
                                                         draggingItemId = -1
                                                         dragTargetBounds = null
+                                                        isDragConfirmed = false
                                                     },
                                                     onDragCancel = {
+                                                        if (isDragConfirmed) {
+                                                            // If we were dragging, just reset
+                                                        } else {
+                                                            // Maybe show menu on cancel too if it was a long press? 
+                                                            // But usually cancel means something else interrupted.
+                                                        }
                                                         draggingItemId = -1
                                                         dragTargetBounds = null
+                                                        isDragConfirmed = false
                                                     }
                                                 )
                                             }
@@ -510,7 +530,7 @@ fun HomeScreen(
                                         notificationCount = activeNotifications[app.packageName] ?: 0,
                                         showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
                                         sharedElementKeyPrefix = "home",
-                                        isLongClickEnabled = draggingItemId == -1, // Disable menu during drag
+                                        isLongClickEnabled = false,
                                         getShortcuts = { viewModel.getShortcuts(it) },
                                         onShortcutClick = { viewModel.launchShortcut(it) },
                                         onHideToggle = {
@@ -520,9 +540,7 @@ fun HomeScreen(
                                                 viewModel.hideApp(app.packageName)
                                             }
                                         },
-                                        onLongClick = {
-                                            // No longer triggering menu immediately
-                                        }
+                                        onLongClick = null
                                     ) { options ->
                                         if (draggingItemId == -1) {
                                             viewModel.launchApp(app.packageName, options)
@@ -563,8 +581,10 @@ fun HomeScreen(
                                             if (!preferences.lockLayout) {
                                                 detectDragGesturesAfterLongPress(
                                                     onDragStart = { _ ->
-                                                        hapticFeedback(HapticEngine.HapticType.DRAG_START)
-                                                        draggingItemId = item.id
+                                                        hapticFeedback(HapticEngine.HapticType.LONG_PRESS)
+                                                        accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
+                                                        isDragConfirmed = false
+                                                        
                                                         originalRow = item.row
                                                         originalCol = item.column
 
@@ -575,50 +595,61 @@ fun HomeScreen(
                                                     },
                                                     onDrag = { change, dragAmount ->
                                                         change.consume()
+                                                        accumulatedDrag += dragAmount
                                                         dragOffset += dragAmount
 
-                                                        val targetRow = (((dragOffset.y - topOffsetPx) / unitHeightPx) * 2).roundToInt() / 2f
-                                                            .coerceIn(0f, maxRows.toFloat() - 1f)
-                                                        val targetCol = (((dragOffset.x) / unitWidthPx) * 2).roundToInt() / 2f
-                                                            .coerceIn(0f, 3f)
-
-                                                        if (targetRow != dragTargetBounds?.row || targetCol != dragTargetBounds?.col) {
-                                                            hapticFeedback(HapticEngine.HapticType.GRID_SNAP)
+                                                        if (!isDragConfirmed && accumulatedDrag.getDistance() > with(density) { 10.dp.toPx() }) {
+                                                            isDragConfirmed = true
+                                                            hapticFeedback(HapticEngine.HapticType.DRAG_START)
+                                                            draggingItemId = item.id
                                                         }
 
-                                                        dragTargetBounds = RectBounds(targetRow, targetCol, 1f, 1f)
+                                                        if (isDragConfirmed) {
+                                                            val targetRow = (((dragOffset.y - topOffsetPx) / unitHeightPx) * 2).roundToInt() / 2f
+                                                                .coerceIn(0f, maxRows.toFloat() - 1f)
+                                                            val targetCol = (((dragOffset.x) / unitWidthPx) * 2).roundToInt() / 2f
+                                                                .coerceIn(0f, 3f)
+
+                                                            if (targetRow != dragTargetBounds?.row || targetCol != dragTargetBounds?.col) {
+                                                                hapticFeedback(HapticEngine.HapticType.GRID_SNAP)
+                                                            }
+
+                                                            dragTargetBounds = RectBounds(targetRow, targetCol, 1f, 1f)
+                                                        }
                                                     },
                                                     onDragEnd = {
-                                                        hapticFeedback(HapticEngine.HapticType.DRAG_END)
-                                                        dragTargetBounds?.let { bounds ->
-                                                            if (bounds.row == originalRow && bounds.col == originalCol) {
-                                                                // Trigger Menu
-                                                                showFolderMenuLabel = item.label
-                                                                showFolderMenuId = item.id
-                                                                val iconLeft = (unitWidth * item.column)
-                                                                val iconTop = topOffset + (unitHeight * item.row)
-                                                                val iconHeight = unitHeight
-
-                                                                val menuH = 100.dp
-                                                                val gap = 8.dp
-
-                                                                var finalY = iconTop + iconHeight + gap
-                                                                if (finalY + menuH > availableHeight) {
-                                                                    finalY = iconTop - menuH - gap
-                                                                }
-
-                                                                contextMenuOffset = DpOffset(x = iconLeft, y = finalY)
-                                                                showFolderMenu = true
-                                                            } else {
+                                                        if (isDragConfirmed) {
+                                                            hapticFeedback(HapticEngine.HapticType.DRAG_END)
+                                                            dragTargetBounds?.let { bounds ->
                                                                 viewModel.updateItemPosition(item, bounds.row, bounds.col)
                                                             }
+                                                        } else {
+                                                            // Trigger Menu
+                                                            showFolderMenuLabel = item.label
+                                                            showFolderMenuId = item.id
+                                                            val iconLeft = (unitWidth * item.column)
+                                                            val iconTop = topOffset + (unitHeight * item.row)
+                                                            val iconHeight = unitHeight
+
+                                                            val menuH = 100.dp
+                                                            val gap = 8.dp
+
+                                                            var finalY = iconTop + iconHeight + gap
+                                                            if (finalY + menuH > availableHeight) {
+                                                                finalY = iconTop - menuH - gap
+                                                            }
+
+                                                            contextMenuOffset = DpOffset(x = iconLeft, y = finalY)
+                                                            showFolderMenu = true
                                                         }
                                                         draggingItemId = -1
                                                         dragTargetBounds = null
+                                                        isDragConfirmed = false
                                                     },
                                                     onDragCancel = {
                                                         draggingItemId = -1
                                                         dragTargetBounds = null
+                                                        isDragConfirmed = false
                                                     }
                                                 )
                                             }
@@ -671,79 +702,77 @@ fun HomeScreen(
                                     onResizeStart = {
                                         showWidgetMenu = false
                                     },
+                                    onLongClick = {
+                                        // Trigger Menu (dropped on same spot)
+                                        val widgetLeft = (unitWidth * item.column) + 4.dp
+                                        val widgetTop = topOffset + (unitHeight * item.row) + 4.dp
+                                        val widgetWidth = (unitWidth * item.spanX) - 8.dp
+                                        val widgetHeight = (unitHeight * item.spanY) - 8.dp
+                                        val widgetBottom = widgetTop + widgetHeight
+                                        val widgetRight = widgetLeft + widgetWidth
+
+                                        val menuH = 100.dp
+                                        val menuW = 150.dp
+                                        val gap = 12.dp
+
+                                        var finalX = widgetLeft
+                                        var finalY = widgetBottom + gap
+
+                                        val gridW = maxWidth
+                                        val gridH = maxHeight
+
+                                        if (widgetBottom + menuH + gap > gridH) {
+                                            if (widgetTop > menuH + gap) {
+                                                finalY = widgetTop - menuH - gap
+                                            } else {
+                                                finalY = widgetTop
+                                                if (widgetRight + menuW + gap <= gridW) {
+                                                    finalX = widgetRight + gap
+                                                } else if (widgetLeft > menuW + gap) {
+                                                    finalX = widgetLeft - menuW - gap
+                                                } else {
+                                                    finalX = (gridW - menuW) / 2f
+                                                    finalY = (gridH - menuH) / 2f
+                                                }
+                                            }
+                                        }
+
+                                        contextMenuOffset = DpOffset(x = finalX, y = finalY)
+                                        showWidgetMenu = true
+                                        // RETAIN editingWidgetId as requested
+                                        editingWidgetId = item.id
+                                    },
                                     onInteractionUpdate = { r, c, sx, sy ->
                                         dragTargetBounds = RectBounds(r, c, sx, sy)
                                     },
                                     onResize = { newRow, newCol, newSpanX, newSpanY ->
-                                        // Handle drag-end/release logic for menu vs move
-                                        if (newRow == originalRow && newCol == originalCol) {
-                                            // Trigger Menu (dropped on same spot)
-                                            val widgetLeft = (unitWidth * item.column) + 4.dp
-                                            val widgetTop = topOffset + (unitHeight * item.row) + 4.dp
-                                            val widgetWidth = (unitWidth * item.spanX) - 8.dp
-                                            val widgetHeight = (unitHeight * item.spanY) - 8.dp
-                                            val widgetBottom = widgetTop + widgetHeight
-                                            val widgetRight = widgetLeft + widgetWidth
-
-                                            val menuH = 100.dp
-                                            val menuW = 150.dp
-                                            val gap = 12.dp
-
-                                            var finalX = widgetLeft
-                                            var finalY = widgetBottom + gap
-
-                                            val gridW = maxWidth
-                                            val gridH = maxHeight
-
-                                            if (widgetBottom + menuH + gap > gridH) {
-                                                if (widgetTop > menuH + gap) {
-                                                    finalY = widgetTop - menuH - gap
-                                                } else {
-                                                    finalY = widgetTop
-                                                    if (widgetRight + menuW + gap <= gridW) {
-                                                        finalX = widgetRight + gap
-                                                    } else if (widgetLeft > menuW + gap) {
-                                                        finalX = widgetLeft - menuW - gap
-                                                    } else {
-                                                        finalX = (gridW - menuW) / 2f
-                                                        finalY = (gridH - menuH) / 2f
-                                                    }
+                                        // Normal move
+                                        if (item.isCustom) {
+                                            // Handle fixed-dimension widget (Internal Widgets like Dock)
+                                            val widthChanged = newSpanX != item.spanX
+                                            val heightChanged = newSpanY != item.spanY
+                                            if (widthChanged || heightChanged) {
+                                                val message = when {
+                                                    widthChanged && heightChanged -> "This widget has a fixed size"
+                                                    widthChanged -> "This widget has a fixed width"
+                                                    else -> "This widget has a fixed height"
                                                 }
-                                            }
-
-                                            contextMenuOffset = DpOffset(x = finalX, y = finalY)
-                                            showWidgetMenu = true
-                                            // RETAIN editingWidgetId as requested
-                                            editingWidgetId = item.id
-                                        } else {
-                                            // Normal move
-                                            if (item.isCustom) {
-                                                // Handle fixed-dimension widget (Internal Widgets like Dock)
-                                                val widthChanged = newSpanX != item.spanX
-                                                val heightChanged = newSpanY != item.spanY
-                                                if (widthChanged || heightChanged) {
-                                                    val message = when {
-                                                        widthChanged && heightChanged -> "This widget has a fixed size"
-                                                        widthChanged -> "This widget has a fixed width"
-                                                        else -> "This widget has a fixed height"
-                                                    }
-                                                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                                                    viewModel.updateWidgetBounds(item.id, item.row, item.column, item.spanX, item.spanY)
-                                                } else {
-                                                    viewModel.updateWidgetBounds(item.id, newRow.coerceAtLeast(0f), newCol, newSpanX, newSpanY)
-                                                }
+                                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                                viewModel.updateWidgetBounds(item.id, item.row, item.column, item.spanX, item.spanY)
                                             } else {
-                                                viewModel.updateWidgetBounds(
-                                                    item.id,
-                                                    newRow.coerceIn(0f, (maxRows - newSpanY).coerceAtLeast(0f)),
-                                                    newCol.coerceIn(0f, (4f - newSpanX).coerceAtLeast(0f)),
-                                                    newSpanX,
-                                                    newSpanY
-                                                )
+                                                viewModel.updateWidgetBounds(item.id, newRow.coerceAtLeast(0f), newCol, newSpanX, newSpanY)
                                             }
-                                            // RETAIN editingWidgetId as requested
-                                            editingWidgetId = item.id
+                                        } else {
+                                            viewModel.updateWidgetBounds(
+                                                item.id,
+                                                newRow.coerceIn(0f, (maxRows - newSpanY).coerceAtLeast(0f)),
+                                                newCol.coerceIn(0f, (4f - newSpanX).coerceAtLeast(0f)),
+                                                newSpanX,
+                                                newSpanY
+                                            )
                                         }
+                                        // RETAIN editingWidgetId as requested
+                                        editingWidgetId = item.id
                                         dragTargetBounds = null
                                     }
                                 ) {

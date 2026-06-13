@@ -5,9 +5,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
@@ -53,6 +55,7 @@ fun SettingsSheet(
 
     var activeDialog by remember { mutableStateOf<String?>(null) }
     var pendingCategoryBarType by remember { mutableStateOf<CategoryBarType?>(null) }
+    val pendingResetAction = remember { mutableStateOf<ResetAction?>(null) }
 
     val showHiddenAppsWithAuth = {
         if (isAuthForHidden) {
@@ -159,6 +162,10 @@ fun SettingsSheet(
             onDismiss = { activeDialog = null },
             onSelect = { viewModel.setGridSize(it as GridSize) }
         )
+        "trouble" -> TroubleshootingDialog(
+            onDismiss = { activeDialog = null },
+            onAction = { pendingResetAction.value = it }
+        )
         "search" -> SelectionDialog(
             title = "Search provider",
             description = "Choose which engine to use for web search suggestions.",
@@ -181,17 +188,6 @@ fun SettingsSheet(
             onDismiss = { activeDialog = null },
             onSelect = { viewModel.setNotificationDotMode(it as NotificationDotMode) }
         )
-        "trouble" -> AlertDialog(
-            onDismissRequest = { activeDialog = null },
-            title = { Text("Troubleshooting") },
-            text = { Text("Choose an action to resolve launcher issues.") },
-            confirmButton = {
-                TextButton(onClick = { viewModel.clearIconCache(); activeDialog = null }) { Text("Clear Icon Cache") }
-            },
-            dismissButton = {
-                TextButton(onClick = { viewModel.resetLayout(); activeDialog = null }) { Text("Reset Layout") }
-            }
-        )
         "about" -> AboutDialog(onDismiss = { activeDialog = null })
         "notif_settings" -> NotificationSettingsDialog(
             isNotifEnabled = isNotifEnabled,
@@ -210,6 +206,47 @@ fun SettingsSheet(
         )
     }
     
+    if (pendingResetAction.value != null) {
+        AlertDialog(
+            onDismissRequest = { pendingResetAction.value = null },
+            title = { Text("Confirm Action") },
+            text = { 
+                val message = if (pendingResetAction.value == ResetAction.OPEN_APP_INFO) {
+                    "You will be taken to the system settings for Pxl Launcher where you can manually clear cache or storage."
+                } else {
+                    "Are you sure you want to ${pendingResetAction.value?.label?.lowercase()}? This action cannot be undone."
+                }
+                Text(message)
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        when (pendingResetAction.value) {
+                            ResetAction.CLEAR_ICON_CACHE -> viewModel.clearIconCache()
+                            ResetAction.RESET_HOME -> viewModel.resetHomeScreen()
+                            ResetAction.RESET_DRAWER -> viewModel.resetAppDrawer()
+                            ResetAction.DELETE_HOME_FOLDERS -> viewModel.deleteHomeFolders()
+                            ResetAction.DELETE_DRAWER_FOLDERS -> viewModel.deleteAppDrawerFolders()
+                            ResetAction.OPEN_APP_INFO -> viewModel.openAppInfo()
+                            null -> {}
+                        }
+                        pendingResetAction.value = null
+                        activeDialog = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = if (pendingResetAction.value == ResetAction.OPEN_APP_INFO) 
+                            MaterialTheme.colorScheme.primary 
+                        else 
+                            MaterialTheme.colorScheme.error
+                    )
+                ) { Text(if (pendingResetAction.value == ResetAction.OPEN_APP_INFO) "Open Settings" else "Confirm") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingResetAction.value = null }) { Text("Cancel") }
+            }
+        )
+    }
+
     androidx.compose.runtime.LaunchedEffect(Unit) {
         viewModel.checkNotificationPermission()
     }
@@ -362,6 +399,7 @@ fun SettingsSheet(
                         SettingsItem(
                             icon = Icons.Default.Info,
                             title = "About Pxl Launcher",
+                            // TODO: Finalize Legal & Compliance info in AboutDialog before marking as Completed
                             onClick = { activeDialog = "about" },
                             trailing = { Text("v1.0-neo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         )
@@ -871,8 +909,9 @@ fun AboutDialog(onDismiss: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(8.dp))
+                // TODO: Add proper Legal & Compliance links and info (Privacy Policy, Licenses, etc.)
                 TextButton(
-                    onClick = { /* Open Privacy Policy URL */ },
+                    onClick = { /* TODO: Open Privacy Policy URL */ },
                     contentPadding = PaddingValues(0.dp)
                 ) {
                     Text("Privacy Policy", style = MaterialTheme.typography.labelLarge)
@@ -926,7 +965,7 @@ fun AnchorSettingsDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    VerticalAnchor.entries.forEach { anchor ->
+                    VerticalAnchor.entries.reversed().forEach { anchor ->
                         FilterChip(
                             selected = verticalAnchor == anchor,
                             onClick = { onSelectVertical(anchor) },
@@ -1022,6 +1061,90 @@ fun SelectionDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+@Composable
+fun TroubleshootingDialog(
+    onDismiss: () -> Unit,
+    onAction: (ResetAction) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Troubleshooting") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                SettingsGroup(title = "HOME SCREEN") {
+                    SettingsItem(
+                        icon = ResetAction.RESET_HOME.icon,
+                        title = ResetAction.RESET_HOME.label,
+                        description = ResetAction.RESET_HOME.description,
+                        showChevron = false,
+                        onClick = { onAction(ResetAction.RESET_HOME) }
+                    )
+                    SettingsItem(
+                        icon = ResetAction.DELETE_HOME_FOLDERS.icon,
+                        title = ResetAction.DELETE_HOME_FOLDERS.label,
+                        description = ResetAction.DELETE_HOME_FOLDERS.description,
+                        showChevron = false,
+                        onClick = { onAction(ResetAction.DELETE_HOME_FOLDERS) }
+                    )
+                }
+
+                SettingsGroup(title = "APP DRAWER") {
+                    SettingsItem(
+                        icon = ResetAction.RESET_DRAWER.icon,
+                        title = ResetAction.RESET_DRAWER.label,
+                        description = ResetAction.RESET_DRAWER.description,
+                        showChevron = false,
+                        onClick = { onAction(ResetAction.RESET_DRAWER) }
+                    )
+                    SettingsItem(
+                        icon = ResetAction.DELETE_DRAWER_FOLDERS.icon,
+                        title = ResetAction.DELETE_DRAWER_FOLDERS.label,
+                        description = ResetAction.DELETE_DRAWER_FOLDERS.description,
+                        showChevron = false,
+                        onClick = { onAction(ResetAction.DELETE_DRAWER_FOLDERS) }
+                    )
+                }
+
+                SettingsGroup(title = "CACHE & PERFORMANCE") {
+                    SettingsItem(
+                        icon = ResetAction.CLEAR_ICON_CACHE.icon,
+                        title = ResetAction.CLEAR_ICON_CACHE.label,
+                        description = ResetAction.CLEAR_ICON_CACHE.description,
+                        showChevron = false,
+                        onClick = { onAction(ResetAction.CLEAR_ICON_CACHE) }
+                    )
+                }
+
+                SettingsGroup(title = "SYSTEM & STORAGE") {
+                    SettingsItem(
+                        icon = ResetAction.OPEN_APP_INFO.icon,
+                        title = ResetAction.OPEN_APP_INFO.label,
+                        description = ResetAction.OPEN_APP_INFO.description,
+                        showChevron = false,
+                        onClick = { onAction(ResetAction.OPEN_APP_INFO) }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
+}
+
+enum class ResetAction(val label: String, val description: String, val icon: ImageVector) {
+    CLEAR_ICON_CACHE("Clear Icon Cache", "Refresh cached launcher icons.", Icons.Default.Refresh),
+    RESET_HOME("Reset Home Screen", "Restore the default home screen layout and dock.", Icons.Default.LayersClear),
+    RESET_DRAWER("Reset App Drawer", "Clear drawer folders and reset categories.", Icons.Default.FolderDelete),
+    DELETE_HOME_FOLDERS("Delete Home Folders", "Dissolve folders on home screen.", Icons.Default.DeleteSweep),
+    DELETE_DRAWER_FOLDERS("Delete App Drawer Folders", "Dissolve folders in app drawer.", Icons.Default.FolderOff),
+    OPEN_APP_INFO("App Info", "Open system settings to clear cache or storage.", Icons.Default.Settings)
 }
 
 @Composable
@@ -1124,6 +1247,7 @@ fun SettingsItem(
     icon: ImageVector, 
     title: String, 
     description: String? = null,
+    showChevron: Boolean = true,
     onClick: (() -> Unit)? = null, 
     trailing: @Composable (() -> Unit)? = null
 ) {
@@ -1147,6 +1271,8 @@ fun SettingsItem(
             }
         }
         if (trailing != null) trailing()
-        else if (onClick != null) Icon(Icons.Default.ChevronRight, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.outline)
+        else if (onClick != null && showChevron) {
+            Icon(Icons.Default.ChevronRight, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.outline)
+        }
     }
 }

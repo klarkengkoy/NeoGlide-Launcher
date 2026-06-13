@@ -134,7 +134,39 @@ class SettingsViewModel @Inject constructor(
         // TODO: Implement icon cache clearing logic
     }
 
+    fun resetHomeScreen() {
+        viewModelScope.launch {
+            homeRepository.resetHome()
+        }
+    }
+
+    fun resetAppDrawer() {
+        viewModelScope.launch {
+            appRepository.resetDrawer()
+        }
+    }
+
+    fun deleteHomeFolders() {
+        viewModelScope.launch {
+            homeRepository.deleteHomeFolders()
+        }
+    }
+
+    fun deleteAppDrawerFolders() {
+        viewModelScope.launch {
+            appRepository.deleteDrawerFolders()
+        }
+    }
+
+    fun openAppInfo() {
+        val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = android.net.Uri.fromParts("package", context.packageName, null)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    }
+
     fun resetLayout() {
-        // TODO: Implement layout reset logic
+        // Deprecated by granular reset methods
     }
 }
