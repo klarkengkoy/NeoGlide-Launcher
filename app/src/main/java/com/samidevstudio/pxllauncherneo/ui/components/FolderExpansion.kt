@@ -12,9 +12,14 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,14 +31,18 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.samidevstudio.pxllauncherneo.domain.model.AppCategory
 import com.samidevstudio.pxllauncherneo.domain.model.AppModel
 import com.samidevstudio.pxllauncherneo.domain.model.AppShortcut
 import com.samidevstudio.pxllauncherneo.ui.utils.HapticEngine
+import com.samidevstudio.pxllauncherneo.ui.utils.toIcon
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalFoundationApi::class)
@@ -45,6 +54,12 @@ fun FolderExpansion(
     onDismiss: () -> Unit,
     onLabelChange: (String) -> Unit,
     onAppClick: (String, android.os.Bundle?) -> Unit,
+    onDissolve: () -> Unit = {},
+    onAddApps: () -> Unit = {},
+    onMoveToCategory: (AppCategory) -> Unit = {},
+    isDrawerFolder: Boolean = true,
+    currentCategory: AppCategory? = null,
+    allCategories: List<AppCategory> = emptyList(),
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     useMonochrome: Boolean = false,
@@ -64,7 +79,9 @@ fun FolderExpansion(
     var isDraggedOut by remember { mutableStateOf(false) }
     var dragOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var rootCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+    var showMenu by remember { mutableStateOf(false) }
     val density = LocalDensity.current
+    val focusManager = LocalFocusManager.current
 
     Box(
         modifier = Modifier
@@ -82,33 +99,122 @@ fun FolderExpansion(
                 .wrapContentHeight()
                 .clickable(enabled = false) {}, // Consume clicks
             shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-            tonalElevation = 8.dp
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 12.dp,
+            shadowElevation = 16.dp,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         ) {
             Box {
                 Column(
                     modifier = Modifier.padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Folder Label (Editable)
-                    BasicTextField(
-                        value = currentLabel,
-                        onValueChange = {
-                            currentLabel = it
-                            onLabelChange(it)
-                        },
-                        textStyle = TextStyle(
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
-                        ),
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        singleLine = true,
+                    // Header Row: Centered Title + Menu
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 24.dp)
-                    )
+                            .padding(bottom = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // Folder Label (Editable)
+                        BasicTextField(
+                            value = currentLabel,
+                            onValueChange = {
+                                currentLabel = it
+                                onLabelChange(it)
+                            },
+                            textStyle = TextStyle(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 24.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center
+                            ),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Box(modifier = Modifier.align(Alignment.CenterEnd)) {
+                            IconButton(onClick = { showMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Options",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false },
+                                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Move apps here") },
+                                    onClick = {
+                                        showMenu = false
+                                        onAddApps()
+                                    }
+                                )
+
+                                if (isDrawerFolder) {
+                                    var showCategoryMenu by remember { mutableStateOf(false) }
+                                    
+                                    DropdownMenuItem(
+                                        text = { Text("Move folder to...") },
+                                        onClick = { showCategoryMenu = true },
+                                        trailingIcon = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) }
+                                    )
+
+                                    if (showCategoryMenu) {
+                                        DropdownMenu(
+                                            expanded = showCategoryMenu,
+                                            onDismissRequest = { showCategoryMenu = false }
+                                        ) {
+                                            val sortedCats = if (allCategories.isNotEmpty()) {
+                                                allCategories.filter { it != AppCategory.HIDDEN && it != currentCategory }
+                                            } else {
+                                                AppCategory.entries.filter { it != AppCategory.FOLDER && it != AppCategory.HIDDEN && it != currentCategory }
+                                            }
+
+                                            sortedCats.forEach { category ->
+                                                DropdownMenuItem(
+                                                    text = { Text(category.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                                                    leadingIcon = {
+                                                        Icon(
+                                                            imageVector = category.toIcon(),
+                                                            contentDescription = null,
+                                                            modifier = Modifier.size(20.dp)
+                                                        )
+                                                    },
+                                                    onClick = {
+                                                        showCategoryMenu = false
+                                                        showMenu = false
+                                                        onMoveToCategory(category)
+                                                        onDismiss()
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                                DropdownMenuItem(
+                                    text = { 
+                                        Text(if (isDrawerFolder) "Dissolve folder" else "Remove from Home") 
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        onDissolve()
+                                        onDismiss()
+                                    }
+                                )
+                            }
+                        }
+                    }
 
                     // Apps Grid
                     LazyVerticalGrid(
@@ -120,14 +226,14 @@ fun FolderExpansion(
                         items(apps, key = { it.packageName }) { app ->
                             var itemCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
                             val isBeingDragged = draggingApp?.packageName == app.packageName
-                            var showMenu by remember { mutableStateOf(false) }
+                            var showAppMenu by remember { mutableStateOf(false) }
                             var shortcuts by remember { mutableStateOf<List<AppShortcut>>(emptyList()) }
                             var initialDragOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
                             var accumulatedDrag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
                             var isDragConfirmed by remember { mutableStateOf(false) }
 
-                            LaunchedEffect(showMenu) {
-                                if (showMenu) {
+                            LaunchedEffect(showAppMenu) {
+                                if (showAppMenu) {
                                     shortcuts = getShortcuts(app.packageName)
                                 }
                             }
@@ -183,7 +289,7 @@ fun FolderExpansion(
                                                     // Only collapse if we actually dragged out
                                                     onAppDragEnd()
                                                 } else {
-                                                    showMenu = true
+                                                    showAppMenu = true
                                                     // Don't call onAppDragEnd() here yet, let the menu show
                                                 }
                                                 draggingApp = null
@@ -212,10 +318,10 @@ fun FolderExpansion(
                                     onClick = { options -> onAppClick(app.packageName, options) }
                                 )
 
-                                if (showMenu) {
+                                if (showAppMenu) {
                                     AppContextMenu(
                                         expanded = true,
-                                        onDismissRequest = { showMenu = false },
+                                        onDismissRequest = { showAppMenu = false },
                                         packageName = app.packageName,
                                         label = app.label,
                                         shortcuts = shortcuts,
