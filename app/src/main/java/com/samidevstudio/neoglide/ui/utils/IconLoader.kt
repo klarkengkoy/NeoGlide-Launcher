@@ -9,6 +9,8 @@ import android.os.Build
 import android.os.Process
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.Calendar
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,10 +29,10 @@ class IconLoader @Inject constructor(
         useMonochrome: Boolean,
         iconPackPackageName: String? = null,
         refreshTrigger: Int = 0
-    ): Pair<Drawable?, Boolean> {
+    ): Pair<Drawable?, Boolean> = withContext(Dispatchers.IO) {
         val cacheKey = "$packageName-$useMonochrome-$iconPackPackageName"
         
-        return iconCache.withLoadLock(cacheKey) {
+        iconCache.withLoadLock(cacheKey) {
             // Check cache again inside lock
             val cached = iconCache.get(cacheKey)
             if (cached != null && !iconCache.isDynamic(packageName)) {
@@ -38,7 +40,6 @@ class IconLoader @Inject constructor(
             }
 
             try {
-                Log.d(TAG, "Loading icon for $packageName (Trigger: $refreshTrigger)")
                 val userHandle = Process.myUserHandle()
                 val activities = launcherApps.getActivityList(packageName, userHandle)
                 

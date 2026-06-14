@@ -9,8 +9,8 @@ import javax.inject.Singleton
 
 @Singleton
 class IconCache @Inject constructor() {
-    // Stores Pair<Icon, isMonochrome> - Increased to 1000 for full library warm-up
-    private val memoryCache = object : LruCache<String, Pair<Drawable?, Boolean>>(1000) {
+    // Stores Pair<Icon, isMonochrome> - Balanced for memory efficiency (approx 200 icons)
+    private val memoryCache = object : LruCache<String, Pair<Drawable?, Boolean>>(200) {
         override fun sizeOf(key: String, value: Pair<Drawable?, Boolean>): Int {
             return 1 
         }
