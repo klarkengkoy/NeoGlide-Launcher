@@ -1,14 +1,12 @@
 package com.samidevstudio.neoglide.ui.home
 
-import android.appwidget.AppWidgetManager
 import android.widget.Toast
 import kotlin.math.roundToInt
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.*
@@ -29,7 +27,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import kotlin.math.roundToInt
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel as hiltViewModelV2
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
@@ -50,6 +47,11 @@ data class RectBounds(
     val spanX: Float,
     val spanY: Float
 )
+
+private fun getLiftScale(spanX: Float, spanY: Float): Float {
+    val area = spanX * spanY
+    return 1.0f + (0.2f / kotlin.math.sqrt(area.toDouble()).toFloat()).coerceAtMost(0.2f)
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
@@ -97,8 +99,11 @@ fun HomeScreen(
     var appMenuLabel by remember { mutableStateOf("") }
 
     // DRAG STATE FOR ICON REPOSITIONING
-    var draggingItemId by remember { mutableIntStateOf(-1) }
+    var draggingUniqueKey by remember { mutableStateOf<String?>(null) }
+    var hoveredUniqueKey by remember { mutableStateOf<String?>(null) }
+    var blockedUniqueKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var dragOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    var grabPoint by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var dragTargetBounds by remember { mutableStateOf<RectBounds?>(null) }
     var accumulatedDrag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var isDragConfirmed by remember { mutableStateOf(false) }
@@ -163,7 +168,7 @@ fun HomeScreen(
     ) {
         // FULL SCREEN FROSTED GLASS
         AnimatedVisibility(
-            visible = editingWidgetId != -1 || showFolderMenu || draggingItemId != -1 || expandedFolderId != -1,
+            visible = editingWidgetId != -1 || showFolderMenu || draggingUniqueKey != null || expandedFolderId != -1,
             enter = fadeIn(),
             exit = fadeOut()
         ) {
@@ -229,61 +234,194 @@ fun HomeScreen(
                     val unitHeightPx = with(density) { unitHeight.toPx() }
 
                     // DRAG LOGIC REFINEMENT: Update bounds in response to dragOffset changes
-                    fun calculateTargetBounds(offset: androidx.compose.ui.geometry.Offset): RectBounds {
-                        val iconSizePx = with(density) { 80.dp.toPx() }
-                        // Offset is standardized as the TOP-LEFT of the dragging 80dp icon
-                        val centerX = offset.x + iconSizePx / 2
-                        val centerY = offset.y + iconSizePx / 2
-
-                        // Find the grid cell index (0.5 steps) that contains the center point
-                        val targetRow = (((centerY - topOffsetPx) / unitHeightPx) * 2).toInt() / 2f
-                            .coerceIn(0f, maxRows.toFloat() - 1f)
-                        val targetCol = ((centerX / unitWidthPx) * 2).toInt() / 2f
-                            .coerceIn(0f, 3f)
-                        return RectBounds(targetRow, targetCol, 1f, 1f)
+                    fun calculateTargetBounds(fingerPosition: androidx.compose.ui.geometry.Offset, spanX: Float = 1f, spanY: Float = 1f): RectBounds {
+                        // Use item's logical top-left (finger - grabPoint) for grid mapping to avoid "lean"
+                        val itemTopLeft = fingerPosition - grabPoint
+                        
+                        val rawRow = (((itemTopLeft.y - topOffsetPx) / unitHeightPx) * 2).roundToInt() / 2f
+                            .coerceIn(0f, (maxRows - spanY).coerceAtLeast(0f))
+                        val rawCol = ((itemTopLeft.x / unitWidthPx) * 2).roundToInt() / 2f
+                            .coerceIn(0f, (5f - spanX).coerceAtLeast(0f))
+                        
+                        return RectBounds(rawRow, rawCol, spanX, spanY)
                     }
 
-                    LaunchedEffect(dragOffset, draggingItemId, draggingAppFromFolder) {
-                        if (draggingItemId != -1 || draggingAppFromFolder != null) {
-                            dragTargetBounds = calculateTargetBounds(dragOffset)
+                    LaunchedEffect(dragOffset, grabPoint, draggingUniqueKey, draggingAppFromFolder, isDragConfirmed) {
+                        if ((draggingUniqueKey != null || draggingAppFromFolder != null) && isDragConfirmed) {
+                            val fingerPosition = dragOffset + grabPoint
+                            
+                            val rawRow = (fingerPosition.y - topOffsetPx) / unitHeightPx
+                            val rawCol = fingerPosition.x / unitWidthPx
+
+                            // Find dragging item's span to calculate bounds correctly
+                            val draggingItem = homeItems.find { it.uniqueKey == draggingUniqueKey }
+                            val spanX = draggingItem?.spanX ?: 1f
+                            val spanY = draggingItem?.spanY ?: 1f
+
+                            val bounds = calculateTargetBounds(fingerPosition, spanX, spanY)
+                            val isCellJump = bounds.row != dragTargetBounds?.row || bounds.col != dragTargetBounds?.col
+                            
+                            val sourceFolderKey = if (sourceFolderId != -1) "FOLDER_$sourceFolderId" else null
+
+                            val target = homeItems.find { item ->
+                                // Skip self/dragging item
+                                if (item.uniqueKey == draggingUniqueKey) return@find false
+                                // Skip source folder
+                                if (item.uniqueKey == sourceFolderKey) return@find false
+                                
+                                // Center-to-center distance check
+                                val targetCenterX = item.column + item.spanX / 2f
+                                val targetCenterY = item.row + item.spanY / 2f
+                                
+                                val distSq = (rawRow - targetCenterY) * (rawRow - targetCenterY) + 
+                                           (rawCol - targetCenterX) * (rawCol - targetCenterX)
+                                           
+                                // Tighter radius for standard items (1x1), slightly larger for widgets
+                                val radiusSq = if (item is HomeItem.Widget) 0.36f else 0.16f
+                                distSq < radiusSq
+                            }
+                            
+                            val isHoverChange = target?.uniqueKey != hoveredUniqueKey
+                            
+                            if (isHoverChange) {
+                                if (target != null) {
+                                    hapticFeedback(HapticEngine.HapticType.GRID_SNAP)
+                                }
+                                hoveredUniqueKey = target?.uniqueKey
+                            } else if (isCellJump && hoveredUniqueKey == null) {
+                                // Only tick for grid snap if we are NOT currently hovering over a merge target
+                                hapticFeedback(HapticEngine.HapticType.GRID_SNAP)
+                            }
+                            
+                            dragTargetBounds = bounds
+                        } else {
+                            hoveredUniqueKey = null
+                            if (draggingUniqueKey == null && draggingAppFromFolder == null) {
+                                dragTargetBounds = null
+                            }
                         }
                     }
 
-                    // RENDER DRAGGING APP FROM FOLDER
-                    draggingAppFromFolder?.let { app ->
+                    // OBSTRUCTION DETECTION (Soft Red Indicator)
+                    LaunchedEffect(dragTargetBounds, draggingUniqueKey, editingWidgetId, hoveredUniqueKey) {
+                        val bounds = dragTargetBounds
+                        if (bounds != null) {
+                            val activeUniqueKey = draggingUniqueKey ?: if (editingWidgetId != -1) "WIDGET_$editingWidgetId" else null
+                            val sourceFolderKey = if (sourceFolderId != -1) "FOLDER_$sourceFolderId" else null
+
+                            blockedUniqueKeys = homeItems.asSequence()
+                                .filter { it.uniqueKey != activeUniqueKey && it.uniqueKey != sourceFolderKey }
+                                .filter { item ->
+                                    // Check if item's rect intersects with dragTargetBounds
+                                    val itemRect = android.graphics.RectF(item.column, item.row, item.column + item.spanX, item.row + item.spanY)
+                                    val shadowRect = android.graphics.RectF(bounds.col, bounds.row, bounds.col + bounds.spanX, bounds.row + bounds.spanY)
+                                    
+                                    android.graphics.RectF.intersects(itemRect, shadowRect)
+                                }
+                                .map { it.uniqueKey }
+                                .filter { it != hoveredUniqueKey } // Don't turn the merge target red
+                                .toSet()
+                        } else {
+                            blockedUniqueKeys = emptySet()
+                        }
+                    }
+
+                    // UNIFIED DRAGGING OVERLAY
+                    val draggingItem = remember(draggingUniqueKey, homeItems) {
+                        homeItems.find { it.uniqueKey == draggingUniqueKey }
+                    }
+                    val isLifting = draggingUniqueKey != null || draggingAppFromFolder != null
+                    val liftScaleOverlay by animateFloatAsState(
+                        targetValue = if (isLifting) {
+                            val spanX = draggingItem?.spanX ?: 1f
+                            val spanY = draggingItem?.spanY ?: 1f
+                            getLiftScale(spanX, spanY)
+                        } else 1f,
+                        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+                        label = "liftScaleOverlay"
+                    )
+                    val liftShadowOverlay by animateDpAsState(
+                        targetValue = if (isLifting) 16.dp else 0.dp,
+                        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+                        label = "liftShadowOverlay"
+                    )
+
+                    if (isLifting) {
+                        val overlayWidth = draggingItem?.let { unitWidth * it.spanX } ?: unitWidth
+                        val overlayHeight = draggingItem?.let { unitHeight * it.spanY } ?: unitHeight
+                        
                         Box(
                             modifier = Modifier
                                 .offset {
                                     androidx.compose.ui.unit.IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt())
                                 }
-                                .size(80.dp) // Render with 80dp to match FolderExpansion
-                                .zIndex(100f)
+                                .size(overlayWidth, overlayHeight)
+                                .zIndex(110f)
                                 .graphicsLayer {
-                                    scaleX = 1.2f
-                                    scaleY = 1.2f
-                                    alpha = 0.9f
-                                    shadowElevation = 16.dp.toPx()
+                                    scaleX = liftScaleOverlay
+                                    scaleY = liftScaleOverlay
+                                    val sizeX = with(density) { overlayWidth.toPx() }
+                                    val sizeY = with(density) { overlayHeight.toPx() }
+                                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
+                                        grabPoint.x / sizeX,
+                                        grabPoint.y / sizeY
+                                    )
+                                    shadowElevation = liftShadowOverlay.toPx()
                                     shape = RoundedCornerShape(16.dp)
+                                    clip = true
                                 }
                         ) {
-                            AppItem(
-                                app = app,
-                                sharedTransitionScope = sharedTransitionScope,
-                                animatedVisibilityScope = animatedVisibilityScope,
-                                useMonochrome = preferences.useMonochromeIcons,
-                                iconPackPackageName = preferences.iconPackPackageName,
-                                showLabel = false, // Keep label hidden during drag out
-                                sharedElementKeyPrefix = "dragging-folder",
-                                isLongClickEnabled = false,
-                                refreshTrigger = refreshTrigger,
-                                onClick = {}
-                            )
+                            if (draggingAppFromFolder != null) {
+                                AppItem(
+                                    app = draggingAppFromFolder!!,
+                                    sharedTransitionScope = sharedTransitionScope,
+                                    animatedVisibilityScope = animatedVisibilityScope,
+                                    useMonochrome = preferences.useMonochromeIcons,
+                                    iconPackPackageName = preferences.iconPackPackageName,
+                                    showLabel = false,
+                                    sharedElementKeyPrefix = "dragging-folder",
+                                    isLongClickEnabled = false,
+                                    refreshTrigger = refreshTrigger,
+                                    onClick = {}
+                                )
+                            } else if (draggingItem != null) {
+                                when (draggingItem) {
+                                    is HomeItem.App -> {
+                                        AppItem(
+                                            app = draggingItem.appModel,
+                                            sharedTransitionScope = sharedTransitionScope,
+                                            animatedVisibilityScope = animatedVisibilityScope,
+                                            useMonochrome = preferences.useMonochromeIcons,
+                                            iconPackPackageName = preferences.iconPackPackageName,
+                                            showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
+                                            sharedElementKeyPrefix = "dragging-home",
+                                            isLongClickEnabled = false,
+                                            refreshTrigger = refreshTrigger,
+                                            onClick = {}
+                                        )
+                                    }
+                                    is HomeItem.Folder -> {
+                                        FolderItem(
+                                            label = draggingItem.label,
+                                            apps = draggingItem.apps,
+                                            useMonochrome = preferences.useMonochromeIcons,
+                                            showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
+                                            onClick = {}
+                                        )
+                                    }
+                                    is HomeItem.Widget -> {
+                                        // Widgets currently handle their own drag state visually via NeoGlideWidgetHost, 
+                                        // but we could unify them here too in future if needed.
+                                        // For now, we skip them in the overlay to avoid double rendering.
+                                    }
+                                }
+                            }
                         }
                     }
 
 
                     // GRID OVERLAY
-                    if (editingWidgetId != -1 || draggingItemId != -1 || draggingAppFromFolder != null) {
+                    if (editingWidgetId != -1 || draggingUniqueKey != null || draggingAppFromFolder != null) {
                         val isDark = isSystemInDarkTheme()
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             val mainGridColor = (if (isDark) Color.White else Color.Black).copy(alpha = 0.3f)
@@ -329,57 +467,67 @@ fun HomeScreen(
                     // No longer rendering static Dock here, it's now in homeItems
 
                     // GHOST TARGET VISUAL
-                    if (draggingItemId != -1 || draggingAppFromFolder != null || (editingWidgetId != -1 && dragTargetBounds != null)) {
-                        dragTargetBounds?.let { bounds ->
-                            Box(
-                                modifier = Modifier
-                                    .offset(
-                                        x = unitWidth * bounds.col,
-                                        y = topOffset + (unitHeight * bounds.row)
+                    val ghostTargetX by animateDpAsState(
+                        targetValue = dragTargetBounds?.let { unitWidth * it.col } ?: 0.dp,
+                        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+                        label = "ghostX"
+                    )
+                    val ghostTargetY by animateDpAsState(
+                        targetValue = dragTargetBounds?.let { topOffset + (unitHeight * it.row) } ?: 0.dp,
+                        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+                        label = "ghostY"
+                    )
+                    val ghostTargetWidth by animateDpAsState(
+                        targetValue = dragTargetBounds?.let { unitWidth * it.spanX } ?: 0.dp,
+                        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+                        label = "ghostWidth"
+                    )
+                    val ghostTargetHeight by animateDpAsState(
+                        targetValue = dragTargetBounds?.let { unitHeight * it.spanY } ?: 0.dp,
+                        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+                        label = "ghostHeight"
+                    )
+
+                    if (draggingUniqueKey != null || draggingAppFromFolder != null || (editingWidgetId != -1 && dragTargetBounds != null)) {
+                        Box(
+                            modifier = Modifier
+                                .offset {
+                                    androidx.compose.ui.unit.IntOffset(
+                                        ghostTargetX.toPx().roundToInt(),
+                                        ghostTargetY.toPx().roundToInt()
                                     )
-                                    .size(unitWidth * bounds.spanX, unitHeight * bounds.spanY)
-                                    .padding(8.dp)
-                                    .background((if (isSystemInDarkTheme()) Color.White else Color.Black).copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-                            )
-                        }
+                                }
+                                .size(ghostTargetWidth, ghostTargetHeight)
+                                .padding(8.dp)
+                                .background((if (isSystemInDarkTheme()) Color.White else Color.Black).copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+                        )
                     }
 
                     homeItems.forEach { item ->
+                        var itemCoords by remember(item.uniqueKey) { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+                        
                         when (item) {
                             is HomeItem.App -> {
                                 val app = item.appModel
-                                val isDragging = draggingItemId == item.id
-                                val unitWidthPx = with(density) { unitWidth.toPx() }
-                                val unitHeightPx = with(density) { unitHeight.toPx() }
-                                val topOffsetPx = with(density) { topOffset.toPx() }
-
+                                val isDragging = draggingUniqueKey == item.uniqueKey
+                                
                                 Box(
                                     modifier = Modifier
+                                        .onGloballyPositioned { itemCoords = it }
                                         .offset {
-                                            if (isDragging) {
-                                                androidx.compose.ui.unit.IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt())
-                                            } else {
-                                                androidx.compose.ui.unit.IntOffset(
-                                                    (unitWidth * item.column).toPx().roundToInt(),
-                                                    (topOffset + (unitHeight * item.row)).toPx().roundToInt()
-                                                )
-                                            }
+                                            androidx.compose.ui.unit.IntOffset(
+                                                (unitWidthPx * item.column).roundToInt(),
+                                                (topOffsetPx + unitHeightPx * item.row).roundToInt()
+                                            )
                                         }
                                         .size(unitWidth, unitHeight)
-                                        .zIndex(if (isDragging) 100f else 0f)
                                         .graphicsLayer {
-                                            if (isDragging) {
-                                                scaleX = 1.2f
-                                                scaleY = 1.2f
-                                                alpha = 0.9f
-                                                shadowElevation = 16.dp.toPx()
-                                                shape = RoundedCornerShape(16.dp)
-                                            }
+                                            alpha = if (isDragging) 0f else 1f
                                         }
                                         .pointerInput(item.id, item.row, item.column) {
                                             if (!preferences.lockLayout) {
                                                 detectDragGesturesAfterLongPress(
-                                                    onDragStart = { _ ->
+                                                    onDragStart = { offset ->
                                                         hapticFeedback(HapticEngine.HapticType.LONG_PRESS)
                                                         accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
                                                         isDragConfirmed = false
@@ -388,11 +536,14 @@ fun HomeScreen(
                                                         originalRow = item.row
                                                         originalCol = item.column
 
-                                                        // Calculate initial dragOffset based on current position
-                                                        val startX = unitWidthPx * item.column
-                                                        val startY = topOffsetPx + (unitHeightPx * item.row)
-                                                        dragOffset = androidx.compose.ui.geometry.Offset(startX, startY)
-                                                        dragTargetBounds = RectBounds(item.row, item.column, 1f, 1f)
+                                                        // Use Bit-Perfect Initialization for Zero-Jump
+                                                        grabPoint = offset
+                                                        dragOffset = androidx.compose.ui.geometry.Offset(
+                                                            unitWidthPx * item.column,
+                                                            topOffsetPx + unitHeightPx * item.row
+                                                        )
+                                                        
+                                                        dragTargetBounds = calculateTargetBounds(dragOffset + grabPoint, 1f, 1f)
                                                     },
                                                     onDrag = { change, dragAmount ->
                                                         change.consume()
@@ -402,22 +553,10 @@ fun HomeScreen(
                                                         if (!isDragConfirmed && accumulatedDrag.getDistance() > with(density) { 10.dp.toPx() }) {
                                                             isDragConfirmed = true
                                                             hapticFeedback(HapticEngine.HapticType.DRAG_START)
-                                                            draggingItemId = item.id
+                                                            draggingUniqueKey = item.uniqueKey
                                                         }
 
-                                                        if (isDragConfirmed) {
-                                                            // Calculate nearest grid cell with 0.5f snapping
-                                                            val targetRow = (((dragOffset.y - topOffsetPx) / unitHeightPx) * 2).roundToInt() / 2f
-                                                                .coerceIn(0f, maxRows.toFloat() - 1f)
-                                                            val targetCol = (((dragOffset.x) / unitWidthPx) * 2).roundToInt() / 2f
-                                                                .coerceIn(0f, 3f)
-
-                                                            if (targetRow != dragTargetBounds?.row || targetCol != dragTargetBounds?.col) {
-                                                                hapticFeedback(HapticEngine.HapticType.GRID_SNAP)
-                                                            }
-
-                                                            dragTargetBounds = RectBounds(targetRow, targetCol, 1f, 1f)
-                                                        }
+                                                        // Logic handled by LaunchedEffect
                                                     },
                                                     onDragEnd = {
                                                         if (isDragConfirmed) {
@@ -446,12 +585,12 @@ fun HomeScreen(
                                                                 showAppMenuPackage = app.packageName
                                                             }
                                                         }
-                                                        draggingItemId = -1
+                                                        draggingUniqueKey = null
                                                         dragTargetBounds = null
                                                         isDragConfirmed = false
                                                     },
                                                     onDragCancel = {
-                                                        draggingItemId = -1
+                                                        draggingUniqueKey = null
                                                         dragTargetBounds = null
                                                         isDragConfirmed = false
                                                     }
@@ -471,6 +610,8 @@ fun HomeScreen(
                                                 app.packageName in activeNotifications.keys,
                                         notificationCount = activeNotifications[app.packageName] ?: 0,
                                         showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
+                                        isHovered = hoveredUniqueKey == item.uniqueKey,
+                                        isBlocked = item.uniqueKey in blockedUniqueKeys,
                                         sharedElementKeyPrefix = "home",
                                         isLongClickEnabled = false,
                                         refreshTrigger = refreshTrigger,
@@ -485,45 +626,32 @@ fun HomeScreen(
                                         },
                                         onLongClick = null
                                     ) { options ->
-                                        if (draggingItemId == -1) {
+                                        if (draggingUniqueKey == null) {
                                             viewModel.launchApp(app.packageName, options)
                                         }
                                     }
                                 }
                             }
                             is HomeItem.Folder -> {
-                                val isDragging = draggingItemId == item.id
-                                val unitWidthPx = with(density) { unitWidth.toPx() }
-                                val unitHeightPx = with(density) { unitHeight.toPx() }
-                                val topOffsetPx = with(density) { topOffset.toPx() }
-
+                                val isDragging = draggingUniqueKey == item.uniqueKey
+                                
                                 Box(
                                     modifier = Modifier
+                                        .onGloballyPositioned { itemCoords = it }
                                         .offset {
-                                            if (isDragging) {
-                                                androidx.compose.ui.unit.IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt())
-                                            } else {
-                                                androidx.compose.ui.unit.IntOffset(
-                                                    (unitWidth * item.column).toPx().roundToInt(),
-                                                    (topOffset + (unitHeight * item.row)).toPx().roundToInt()
-                                                )
-                                            }
+                                            androidx.compose.ui.unit.IntOffset(
+                                                (unitWidthPx * item.column).roundToInt(),
+                                                (topOffsetPx + unitHeightPx * item.row).roundToInt()
+                                            )
                                         }
                                         .size(unitWidth, unitHeight)
-                                        .zIndex(if (isDragging) 100f else 0f)
                                         .graphicsLayer {
-                                            if (isDragging) {
-                                                scaleX = 1.2f
-                                                scaleY = 1.2f
-                                                alpha = 0.9f
-                                                shadowElevation = 16.dp.toPx()
-                                                shape = RoundedCornerShape(16.dp)
-                                            }
+                                            alpha = if (isDragging) 0f else 1f
                                         }
                                         .pointerInput(item.id, item.row, item.column) {
                                             if (!preferences.lockLayout) {
                                                 detectDragGesturesAfterLongPress(
-                                                    onDragStart = { _ ->
+                                                    onDragStart = { offset ->
                                                         hapticFeedback(HapticEngine.HapticType.LONG_PRESS)
                                                         accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
                                                         isDragConfirmed = false
@@ -531,10 +659,14 @@ fun HomeScreen(
                                                         originalRow = item.row
                                                         originalCol = item.column
 
-                                                        val startX = unitWidthPx * item.column
-                                                        val startY = topOffsetPx + (unitHeightPx * item.row)
-                                                        dragOffset = androidx.compose.ui.geometry.Offset(startX, startY)
-                                                        dragTargetBounds = RectBounds(item.row, item.column, 1f, 1f)
+                                                        // Use Bit-Perfect Initialization for Zero-Jump
+                                                        grabPoint = offset
+                                                        dragOffset = androidx.compose.ui.geometry.Offset(
+                                                            unitWidthPx * item.column,
+                                                            topOffsetPx + unitHeightPx * item.row
+                                                        )
+
+                                                        dragTargetBounds = calculateTargetBounds(dragOffset + grabPoint, 1f, 1f)
                                                     },
                                                     onDrag = { change, dragAmount ->
                                                         change.consume()
@@ -544,21 +676,10 @@ fun HomeScreen(
                                                         if (!isDragConfirmed && accumulatedDrag.getDistance() > with(density) { 10.dp.toPx() }) {
                                                             isDragConfirmed = true
                                                             hapticFeedback(HapticEngine.HapticType.DRAG_START)
-                                                            draggingItemId = item.id
+                                                            draggingUniqueKey = item.uniqueKey
                                                         }
 
-                                                        if (isDragConfirmed) {
-                                                            val targetRow = (((dragOffset.y - topOffsetPx) / unitHeightPx) * 2).roundToInt() / 2f
-                                                                .coerceIn(0f, maxRows.toFloat() - 1f)
-                                                            val targetCol = (((dragOffset.x) / unitWidthPx) * 2).roundToInt() / 2f
-                                                                .coerceIn(0f, 3f)
-
-                                                            if (targetRow != dragTargetBounds?.row || targetCol != dragTargetBounds?.col) {
-                                                                hapticFeedback(HapticEngine.HapticType.GRID_SNAP)
-                                                            }
-
-                                                            dragTargetBounds = RectBounds(targetRow, targetCol, 1f, 1f)
-                                                        }
+                                                        // Logic handled by LaunchedEffect
                                                     },
                                                     onDragEnd = {
                                                         if (isDragConfirmed) {
@@ -585,12 +706,12 @@ fun HomeScreen(
                                                             contextMenuOffset = DpOffset(x = iconLeft, y = finalY)
                                                             showFolderMenu = true
                                                         }
-                                                        draggingItemId = -1
+                                                        draggingUniqueKey = null
                                                         dragTargetBounds = null
                                                         isDragConfirmed = false
                                                     },
                                                     onDragCancel = {
-                                                        draggingItemId = -1
+                                                        draggingUniqueKey = null
                                                         dragTargetBounds = null
                                                         isDragConfirmed = false
                                                     }
@@ -603,9 +724,11 @@ fun HomeScreen(
                                         apps = item.apps,
                                         useMonochrome = preferences.useMonochromeIcons,
                                         showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
+                                        isHovered = hoveredUniqueKey == item.uniqueKey,
+                                        isBlocked = item.uniqueKey in blockedUniqueKeys,
                                         onHapticFeedback = hapticFeedback,
                                         onClick = {
-                                            if (draggingItemId == -1) {
+                                            if (draggingUniqueKey == null) {
                                                 expandedFolderId = item.id
                                             }
                                         }
@@ -632,6 +755,7 @@ fun HomeScreen(
                                     unitWidth = unitWidth,
                                     unitHeight = unitHeight,
                                     isEditing = isCurrentEditing,
+                                    isBlocked = item.uniqueKey in blockedUniqueKeys,
                                     onHapticFeedback = hapticFeedback,
                                     modifier = Modifier
                                         .offset(y = topOffset)
@@ -906,6 +1030,8 @@ fun HomeScreen(
                                 folderId = expandedFolder.id,
                                 label = expandedFolder.label,
                                 apps = expandedFolder.apps,
+                                unitWidth = unitWidth,
+                                unitHeight = unitHeight,
                                 onDismiss = { expandedFolderId = -1 },
                                 isDrawerFolder = false,
                                 onDissolve = { viewModel.removeFolder(expandedFolder.id) },
@@ -929,23 +1055,21 @@ fun HomeScreen(
                                 onHideToggle = { pkg ->
                                     viewModel.hideApp(pkg)
                                 },
-                                onAppDragStart = { app, initialTopLeft ->
+                                onAppDragStart = { app, initialTopLeft, initialGrabPoint ->
                                     hapticFeedback(HapticEngine.HapticType.DRAG_START)
                                     draggingAppFromFolder = app
                                     sourceFolderId = expandedFolder.id
+                                    isDragConfirmed = true // Trigger shadow guide immediately
 
-                                    // initialTopLeft is window-relative Top-Left of the 80dp icon
+                                    // initialTopLeft is window-relative Top-Left of the icon
                                     val localTopLeft = gridCoords?.windowToLocal(initialTopLeft) ?: initialTopLeft
                                     dragOffset = localTopLeft
-                                    dragTargetBounds = calculateTargetBounds(dragOffset)
+                                    grabPoint = initialGrabPoint
+                                    dragTargetBounds = calculateTargetBounds(dragOffset + grabPoint)
                                 },
                                 onAppDrag = { amount ->
                                     dragOffset += amount
-                                    val newBounds = calculateTargetBounds(dragOffset)
-                                    if (newBounds.row != dragTargetBounds?.row || newBounds.col != dragTargetBounds?.col) {
-                                        hapticFeedback(HapticEngine.HapticType.GRID_SNAP)
-                                    }
-                                    dragTargetBounds = newBounds
+                                    // Logic moved to LaunchedEffect(dragOffset)
                                 },
                                 onAppDragOut = { _, _, _ ->
                                     isInvisibleByDrag = true

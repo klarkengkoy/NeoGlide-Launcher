@@ -25,6 +25,12 @@ sealed class HomeItem {
     abstract val column: Float
     abstract val spanX: Float
     abstract val spanY: Float
+    
+    val uniqueKey: String get() = when(this) {
+        is App -> "APP_$id"
+        is Folder -> "FOLDER_$id"
+        is Widget -> "WIDGET_$id"
+    }
 
     data class App(
         override val id: Int,
@@ -248,7 +254,7 @@ class HomeViewModel @Inject constructor(
     fun updateItemPosition(item: HomeItem, newRow: Float, newCol: Float) {
         viewModelScope.launch {
             // Check for collisions and potential merges
-            when (val collisionResult = checkCollision(item, newRow, newCol, ignoreItemId = item.id, ignoreItemClass = item::class)) {
+            when (val collisionResult = checkCollision(item, newRow, newCol, ignoreUniqueKey = item.uniqueKey)) {
                 is CollisionResult.None -> {
                     when (item) {
                         is HomeItem.App -> homeRepository.updateHomeAppPosition(item.id, newRow, newCol)
@@ -304,15 +310,14 @@ class HomeViewModel @Inject constructor(
         draggedItem: HomeItem, 
         newRow: Float, 
         newCol: Float,
-        ignoreItemId: Int = -1,
-        ignoreItemClass: kotlin.reflect.KClass<out HomeItem>? = null
+        ignoreUniqueKey: String? = null
     ): CollisionResult {
         val currentItems = homeItems.value
         val draggedRect = android.graphics.RectF(newCol, newRow, newCol + draggedItem.spanX, newRow + draggedItem.spanY)
         
         currentItems.forEach { item ->
-            // Skip self or ignored item
-            if (item.id == ignoreItemId && item::class == ignoreItemClass) return@forEach
+            // Skip self or ignored item via uniqueKey
+            if (item.uniqueKey == ignoreUniqueKey) return@forEach
             
             val itemRect = android.graphics.RectF(item.column, item.row, item.column + item.spanX, item.row + item.spanY)
             
@@ -428,7 +433,7 @@ class HomeViewModel @Inject constructor(
             val currentWidget = homeItems.value.find { it.id == widgetId && it is HomeItem.Widget } as? HomeItem.Widget ?: return@launch
             val tempWidget = currentWidget.copy(row = row, column = col, spanX = spanX, spanY = spanY)
             
-            val collisionResult = checkCollision(tempWidget, row, col, ignoreItemId = widgetId, ignoreItemClass = HomeItem.Widget::class)
+            val collisionResult = checkCollision(tempWidget, row, col, ignoreUniqueKey = tempWidget.uniqueKey)
             if (collisionResult is CollisionResult.None) {
                 widgetRepository.updateWidgetBounds(widgetId, row, col, spanX, spanY)
             } else {
@@ -521,8 +526,7 @@ class HomeViewModel @Inject constructor(
                 tempApp, 
                 targetRow, 
                 targetCol, 
-                ignoreItemId = folderId, 
-                ignoreItemClass = HomeItem.Folder::class
+                ignoreUniqueKey = sourceFolder?.uniqueKey
             )
             
             android.util.Log.d("HomeViewModel", "removeAppFromFolder: pkg=$packageName, target=($targetRow, $targetCol), collision=$collisionResult")

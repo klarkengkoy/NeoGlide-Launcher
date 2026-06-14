@@ -2,7 +2,7 @@ package com.samidevstudio.neoglide.ui.components
 
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.changedToUp
@@ -56,6 +57,7 @@ fun NeoGlideWidgetHost(
     unitWidth: Dp,
     unitHeight: Dp,
     isEditing: Boolean,
+    isBlocked: Boolean = false,
     modifier: Modifier = Modifier,
     onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
     onDragStart: () -> Unit = {},
@@ -86,6 +88,7 @@ fun NeoGlideWidgetHost(
     var dragDeltaY by remember { mutableFloatStateOf(0f) }
 
     var initialSnapshot by remember { mutableStateOf<WidgetBounds?>(null) }
+    var grabPoint by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
 
     var lastSnappedRow by remember { mutableFloatStateOf(-1f) }
     var lastSnappedCol by remember { mutableFloatStateOf(-1f) }
@@ -97,7 +100,16 @@ fun NeoGlideWidgetHost(
 
     val elevation by animateDpAsState(
         targetValue = if (activeHandle != Handle.NONE) 16.dp else if (isEditing) 8.dp else 0.dp,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
         label = "widgetElevation"
+    )
+
+    val liftScale by animateFloatAsState(
+        targetValue = if (activeHandle == Handle.MOVE) {
+            1.0f + (0.2f / kotlin.math.sqrt((spanX * spanY).toDouble()).toFloat()).coerceAtMost(0.2f)
+        } else 1f,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+        label = "widgetLiftScale"
     )
 
     val visualRect = remember(row, column, spanX, spanY, dragDeltaX, dragDeltaY, activeHandle, initialSnapshot) {
@@ -166,7 +178,15 @@ fun NeoGlideWidgetHost(
             )
             .width(unitWidth * visualRect[2])
             .height(unitHeight * visualRect[3])
-            .zIndex(if (isEditing) 10f else 0f)
+            .zIndex(if (isEditing || liftScale > 1f) 10f else 0f)
+            .graphicsLayer {
+                scaleX = liftScale
+                scaleY = liftScale
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
+                    grabPoint.x / (unitWidthPx * visualRect[2]),
+                    grabPoint.y / (unitHeightPx * visualRect[3])
+                )
+            }
     ) {
         Box(
             modifier = Modifier
@@ -180,14 +200,17 @@ fun NeoGlideWidgetHost(
                 .then(
                     if (isEditing) {
                         Modifier.border(2.dp, Color.White, RoundedCornerShape(28.dp))
+                    } else if (isBlocked) {
+                        Modifier.border(2.dp, Color.Red.copy(alpha = 0.5f), RoundedCornerShape(28.dp))
                     } else Modifier
                 )
                 .pointerInput(widgetId) {
                     detectDragGesturesAfterLongPress(
-                        onDragStart = {
+                        onDragStart = { offset ->
                             onHapticFeedback(HapticEngine.HapticType.LONG_PRESS)
                             accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
                             isDragConfirmed = false
+                            grabPoint = offset
                             initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                         },
                         onDragEnd = {
@@ -259,6 +282,14 @@ fun NeoGlideWidgetHost(
                 content()
             }
 
+            if (isBlocked) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Red.copy(alpha = 0.2f), RoundedCornerShape(24.dp))
+                )
+            }
+
             if (isEditing) {
                 Box(
                     modifier = Modifier
@@ -269,9 +300,10 @@ fun NeoGlideWidgetHost(
                         }
                         .pointerInput(widgetId) {
                             detectDragGestures(
-                                onDragStart = {
+                                onDragStart = { offset ->
                                     accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
                                     isDragConfirmed = false
+                                    grabPoint = offset
                                     initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                                 },
                                 onDragEnd = {
