@@ -32,7 +32,7 @@ class SettingsViewModel @Inject constructor(
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = UserPreferences(categoryBarType = CategoryBarType.RIGHT)
+            initialValue = UserPreferences(categoryBarType = CategoryBarType.BOTTOM)
         )
 
     private val _isNotificationServiceEnabled = MutableStateFlow(value = false)
@@ -128,6 +128,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setHapticsEnabled(enabled: Boolean) {
         viewModelScope.launch { preferencesRepository.updateHapticsEnabled(enabled) }
+    }
+
+    fun setIsSortReverse(reverse: Boolean) {
+        viewModelScope.launch { preferencesRepository.updateIsSortReverse(reverse) }
     }
 
     fun clearIconCache() {

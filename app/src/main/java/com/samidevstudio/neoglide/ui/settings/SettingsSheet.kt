@@ -24,6 +24,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,7 +56,6 @@ fun SettingsSheet(
     }
 
     var activeDialog by remember { mutableStateOf<String?>(null) }
-    var pendingCategoryBarType by remember { mutableStateOf<CategoryBarType?>(null) }
     val pendingResetAction = remember { mutableStateOf<ResetAction?>(null) }
 
     val showHiddenAppsWithAuth = {
@@ -96,27 +97,10 @@ fun SettingsSheet(
                 }) { Text("Set up Lock") }
             }
         )
-        "category" -> SelectionDialog(
-            title = "Category bar",
-            description = "Change the position or visibility of the category selection rail.",
-            options = listOf(
-                DialogOption("Left side", CategoryBarType.LEFT, preferences.categoryBarType == CategoryBarType.LEFT),
-                DialogOption("Right side", CategoryBarType.RIGHT, preferences.categoryBarType == CategoryBarType.RIGHT),
-                DialogOption("Bottom bar", CategoryBarType.BOTTOM, preferences.categoryBarType == CategoryBarType.BOTTOM),
-                DialogOption("Hidden", CategoryBarType.NONE, preferences.categoryBarType == CategoryBarType.NONE)
-            ),
+        "category" -> CategoryBarSettingsDialog(
+            currentType = preferences.categoryBarType,
             onDismiss = { activeDialog = null },
-            autoDismiss = false,
-            onSelect = { 
-                val newType = it as CategoryBarType
-                if (newType == CategoryBarType.NONE) {
-                    pendingCategoryBarType = newType
-                    activeDialog = "category_hide_warning"
-                } else {
-                    viewModel.setCategoryBarType(newType)
-                    activeDialog = null
-                }
-            }
+            onSelect = { viewModel.setCategoryBarType(it) }
         )
         "anchor" -> AnchorSettingsDialog(
             verticalAnchor = preferences.verticalAnchor,
@@ -125,31 +109,12 @@ fun SettingsSheet(
             onSelectVertical = { viewModel.setVerticalAnchor(it) },
             onSelectHorizontal = { viewModel.setHorizontalAnchor(it) }
         )
-        "category_hide_warning" -> AlertDialog(
-            onDismissRequest = { activeDialog = null },
-            title = { Text("Hide Category Bar?") },
-            text = { Text("Hiding the category bar will group all your apps into a single list. You won't be able to filter by category until you re-enable it.") },
-            confirmButton = {
-                TextButton(onClick = { 
-                    pendingCategoryBarType?.let { viewModel.setCategoryBarType(it) }
-                    activeDialog = null 
-                }) { Text("Hide") }
-            },
-            dismissButton = {
-                TextButton(onClick = { activeDialog = "category" }) { Text("Cancel") }
-            }
-        )
-        "sorting" -> SelectionDialog(
-            title = "Sorting",
-            description = "Change the order in which apps appear in the drawer.",
-            options = listOf(
-                DialogOption("Alphabetical (A-Z)", SortingMode.ALPHABETICAL, preferences.sortingMode == SortingMode.ALPHABETICAL),
-                DialogOption("Installation Time", SortingMode.INSTALL_TIME, preferences.sortingMode == SortingMode.INSTALL_TIME),
-                DialogOption("Last Used", SortingMode.LAST_USED, preferences.sortingMode == SortingMode.LAST_USED),
-                DialogOption("App Icon Color", SortingMode.ICON_COLOR, preferences.sortingMode == SortingMode.ICON_COLOR)
-            ),
+        "sorting" -> SortingSettingsDialog(
+            currentMode = preferences.sortingMode,
+            isReverse = preferences.isSortReverse,
             onDismiss = { activeDialog = null },
-            onSelect = { viewModel.setSortingMode(it as SortingMode) }
+            onSelectMode = { viewModel.setSortingMode(it) },
+            onToggleReverse = { viewModel.setIsSortReverse(it) }
         )
         "grid" -> SelectionDialog(
             title = "Home screen grid",
@@ -282,7 +247,7 @@ fun SettingsSheet(
                                     CategoryBarType.LEFT -> "Left"
                                     CategoryBarType.RIGHT -> "Right"
                                     CategoryBarType.BOTTOM -> "Bottom"
-                                    CategoryBarType.NONE -> "Hidden"
+                                    CategoryBarType.NONE -> "Categoryless"
                                 }
                                 ValueLabel(label) 
                             }
@@ -297,7 +262,7 @@ fun SettingsSheet(
                             icon = Icons.Default.SortByAlpha,
                             title = "Sorting",
                             onClick = { activeDialog = "sorting" },
-                            trailing = { ValueLabel(preferences.sortingMode.name.formatLabel()) }
+                            trailing = { ValueLabel(getSortingLabel(preferences.sortingMode)) }
                         )
                         SettingsItem(
                             icon = Icons.Default.VisibilityOff,
@@ -415,6 +380,20 @@ fun SettingsSheet(
 private fun String.formatLabel(): String = this.replace("_", " ")
     .lowercase(Locale.getDefault())
     .replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
+
+private fun getSortingLabel(mode: SortingMode): String = when(mode) {
+    SortingMode.ALPHABETICAL -> "Alphabetical"
+    SortingMode.INSTALL_TIME -> "Install Time"
+    SortingMode.LAST_USED -> "Last Used"
+    SortingMode.ICON_COLOR -> "Icon Color"
+}
+
+private fun getSortingDescription(mode: SortingMode, isReverse: Boolean): String = when(mode) {
+    SortingMode.ALPHABETICAL -> if (isReverse) "Reverse Z to A organization." else "Standard A to Z organization."
+    SortingMode.INSTALL_TIME -> if (isReverse) "Oldest applications first." else "Newest applications first."
+    SortingMode.LAST_USED -> if (isReverse) "Least used apps first. Defaults to Z-A." else "Most used apps first. Defaults to A-Z."
+    SortingMode.ICON_COLOR -> if (isReverse) "Black icons, then reverse spectrum, then white." else "White icons, then color spectrum, then grayscale."
+}
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -926,6 +905,110 @@ fun AboutDialog(onDismiss: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun SortingSettingsDialog(
+    currentMode: SortingMode,
+    isReverse: Boolean,
+    onDismiss: () -> Unit,
+    onSelectMode: (SortingMode) -> Unit,
+    onToggleReverse: (Boolean) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.SortByAlpha, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("Sorting Settings")
+            }
+        },
+        text = {
+            Column {
+                Text(
+                    "Change the order in which apps appear in the drawer. Settings apply instantly.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    text = "Sort by:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // CHIP GROUP FOR MODERN SELECTION
+                androidx.compose.foundation.layout.FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SortingMode.entries.forEach { mode ->
+                        val label = getSortingLabel(mode)
+                        FilterChip(
+                            selected = currentMode == mode,
+                            onClick = { onSelectMode(mode) },
+                            label = { Text(label) },
+                            leadingIcon = if (currentMode == mode) {
+                                { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                            } else null,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onToggleReverse(!isReverse) }
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.SwapVert, 
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Text(
+                            text = "Reverse Order",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Switch(
+                            checked = isReverse,
+                            onCheckedChange = { onToggleReverse(it) },
+                            modifier = Modifier.scale(0.8f)
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Text(
+                    text = getSortingDescription(currentMode, isReverse),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done", fontWeight = FontWeight.Bold) }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun AnchorSettingsDialog(
     verticalAnchor: VerticalAnchor,
     horizontalAnchor: HorizontalAnchor,
@@ -933,6 +1016,19 @@ fun AnchorSettingsDialog(
     onSelectVertical: (VerticalAnchor) -> Unit,
     onSelectHorizontal: (HorizontalAnchor) -> Unit
 ) {
+    var selectedVertical by remember { mutableStateOf(verticalAnchor) }
+    var selectedHorizontal by remember { mutableStateOf(horizontalAnchor) }
+
+    val verticalDescription = when (selectedVertical) {
+        VerticalAnchor.TOP -> "Standard look. Application stack aligns to the top of the screen."
+        VerticalAnchor.BOTTOM -> "Ergonomic layout. Application stack aligns to the bottom for easier one-handed reach."
+    }
+
+    val horizontalDescription = when (selectedHorizontal) {
+        HorizontalAnchor.LEFT -> "Left-hand ergonomics. Partial rows gravitate to the left edge, closer to your thumb."
+        HorizontalAnchor.RIGHT -> "Right-hand ergonomics. Partial rows gravitate to the right edge, closer to your thumb."
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -945,7 +1041,7 @@ fun AnchorSettingsDialog(
         text = {
             Column {
                 Text(
-                    "Control how your app grid fills the space. Vertical anchoring moves the entire stack, while horizontal anchoring shifts the alignment of the partial row.",
+                    "Control how your app grid fills the space. Anchoring shifts the stack and alignment for better ergonomics.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -967,15 +1063,29 @@ fun AnchorSettingsDialog(
                 ) {
                     VerticalAnchor.entries.reversed().forEach { anchor ->
                         FilterChip(
-                            selected = verticalAnchor == anchor,
-                            onClick = { onSelectVertical(anchor) },
+                            selected = selectedVertical == anchor,
+                            onClick = { selectedVertical = anchor },
                             label = { Text(anchor.name.formatLabel()) },
-                            leadingIcon = if (verticalAnchor == anchor) {
+                            leadingIcon = if (selectedVertical == anchor) {
                                 { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
                             } else null,
                             shape = RoundedCornerShape(12.dp)
                         )
                     }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                ) {
+                    Text(
+                        text = verticalDescription,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(12.dp).fillMaxWidth()
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -995,20 +1105,147 @@ fun AnchorSettingsDialog(
                 ) {
                     HorizontalAnchor.entries.forEach { anchor ->
                         FilterChip(
-                            selected = horizontalAnchor == anchor,
-                            onClick = { onSelectHorizontal(anchor) },
+                            selected = selectedHorizontal == anchor,
+                            onClick = { selectedHorizontal = anchor },
                             label = { Text(anchor.name.formatLabel()) },
-                            leadingIcon = if (horizontalAnchor == anchor) {
+                            leadingIcon = if (selectedHorizontal == anchor) {
                                 { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
                             } else null,
                             shape = RoundedCornerShape(12.dp)
                         )
                     }
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                ) {
+                    Text(
+                        text = horizontalDescription,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(12.dp).fillMaxWidth()
+                    )
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Done", fontWeight = FontWeight.Bold) }
+            TextButton(
+                onClick = { 
+                    onSelectVertical(selectedVertical)
+                    onSelectHorizontal(selectedHorizontal)
+                    onDismiss()
+                }
+            ) { Text("Apply", fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun CategoryBarSettingsDialog(
+    currentType: CategoryBarType,
+    onDismiss: () -> Unit,
+    onSelect: (CategoryBarType) -> Unit
+) {
+    var selectedType by remember { mutableStateOf(currentType) }
+
+    val description = when (selectedType) {
+        CategoryBarType.LEFT -> "Optimized for left-handed ergonomics. Scrubber rail stays on the left edge."
+        CategoryBarType.RIGHT -> "Optimized for right-handed ergonomics. Scrubber rail stays on the right edge."
+        CategoryBarType.BOTTOM -> "Balanced bottom layout. Perfect for quick thumb gliding across categories."
+        CategoryBarType.NONE -> "All apps will appear in a single unified list without category divisions. Rapid gliding is disabled."
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.ViewStream, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("Category Bar")
+            }
+        },
+        text = {
+            Column {
+                Text(
+                    "Choose the position or visibility of the category selection rail.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    text = "Position:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CategoryBarType.entries.forEach { type ->
+                        val label = when(type) {
+                            CategoryBarType.LEFT -> "Left"
+                            CategoryBarType.RIGHT -> "Right"
+                            CategoryBarType.BOTTOM -> "Bottom"
+                            CategoryBarType.NONE -> "Categoryless"
+                        }
+                        FilterChip(
+                            selected = selectedType == type,
+                            onClick = { selectedType = type },
+                            label = { Text(label) },
+                            leadingIcon = if (selectedType == type) {
+                                { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                            } else null,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                ) {
+                    Column(modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                    ) {
+                        Text(
+                            text = description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (selectedType == CategoryBarType.NONE) 
+                                MaterialTheme.colorScheme.error 
+                            else 
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { 
+                    onSelect(selectedType)
+                    onDismiss()
+                }
+            ) { Text("Apply", fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
 }

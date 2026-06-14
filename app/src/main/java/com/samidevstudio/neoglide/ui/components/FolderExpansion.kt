@@ -62,7 +62,7 @@ fun FolderExpansion(
     onMoveToCategory: (AppCategory) -> Unit = {},
     isDrawerFolder: Boolean = true,
     currentCategory: AppCategory? = null,
-    allCategories: List<AppCategory> = emptyList(),
+    allCategories: List<AppCategory?> = emptyList(),
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     useMonochrome: Boolean = false,
@@ -178,7 +178,7 @@ fun FolderExpansion(
                                             onDismissRequest = { showCategoryMenu = false }
                                         ) {
                                             val sortedCats = if (allCategories.isNotEmpty()) {
-                                                allCategories.filter { it != AppCategory.HIDDEN && it != currentCategory }
+                                                allCategories.filterNotNull().filter { it != AppCategory.HIDDEN && it != currentCategory }
                                             } else {
                                                 AppCategory.entries.filter { it != AppCategory.FOLDER && it != AppCategory.HIDDEN && it != currentCategory }
                                             }

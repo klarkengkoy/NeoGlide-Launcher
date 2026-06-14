@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.samidevstudio.neoglide.data.local.entity.HomeAppEntity
 import com.samidevstudio.neoglide.data.repository.AppRepository
+import com.samidevstudio.neoglide.data.repository.CategoryBarType
 import com.samidevstudio.neoglide.data.repository.HomeRepository
 import com.samidevstudio.neoglide.data.repository.HorizontalAnchor
 import com.samidevstudio.neoglide.data.repository.SearchRepository
@@ -15,6 +16,7 @@ import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.domain.model.AppShortcut
 import com.samidevstudio.neoglide.service.NeoGlideNotificationListener
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -30,6 +32,10 @@ sealed class DrawerItem {
     data class Folder(val id: Int, override val label: String, val apps: List<AppModel>) : DrawerItem()
 }
 
+sealed class DrawerUiEvent {
+    data class ShowToast(val message: String) : DrawerUiEvent()
+}
+
 @OptIn(FlowPreview::class)
 @HiltViewModel
 class DrawerViewModel @Inject constructor(
@@ -39,6 +45,15 @@ class DrawerViewModel @Inject constructor(
     private val homeRepository: HomeRepository,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
+
+    private val _uiEvent = MutableSharedFlow<DrawerUiEvent>()
+    val uiEvent = _uiEvent.asSharedFlow()
+
+    fun showToast(message: String) {
+        viewModelScope.launch {
+            _uiEvent.emit(DrawerUiEvent.ShowToast(message))
+        }
+    }
 
     private val _searchQuery = savedStateHandle.getStateFlow("search_query", "")
     val searchQuery = _searchQuery
@@ -76,30 +91,54 @@ class DrawerViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val categorizedApps: StateFlow<Map<AppCategory, List<DrawerItem>>> = combine(
+    val categorizedApps: StateFlow<Map<AppCategory?, List<DrawerItem>>> = combine(
         appRepository.allApps,
         homeRepository.allDrawerFolders,
         preferences
     ) { apps, folders, prefs ->
         val filteredApps = apps.filter { it.packageName !in prefs.hiddenPackages || prefs.showHiddenApps }
+        val appsMap = filteredApps.associateBy { it.packageName }
         
-        val appItems = filteredApps
-            .filter { it.category != AppCategory.FOLDER }
-            .map { app ->
-            val category = if (app.packageName in prefs.hiddenPackages) AppCategory.HIDDEN else app.category
-            category to DrawerItem.App(app)
-        }
-        
-        val folderItems = folders.filter { it.folder.category != null }.map { folderWithApps ->
-            val category = AppCategory.fromString(folderWithApps.folder.category!!)
-            val folderApps = folderWithApps.apps.mapNotNull { folderApp ->
-                apps.find { it.packageName == folderApp.packageName }
+        val result: Map<AppCategory?, List<DrawerItem>> = if (prefs.categoryBarType == CategoryBarType.NONE) {
+            // CATEGORYLESS MODE: Show all apps and folders in one unified list
+            val unifiedFolders = folders.filter { it.folder.category == "CATEGORYLESS" }.map { folderWithApps ->
+                val folderApps = folderWithApps.apps.mapNotNull { folderApp ->
+                    appsMap[folderApp.packageName]
+                }
+                DrawerItem.Folder(folderWithApps.folder.id, folderWithApps.folder.label, folderApps)
             }
-            category to DrawerItem.Folder(folderWithApps.folder.id, folderWithApps.folder.label, folderApps)
+            
+            val appItems = filteredApps
+                .filter { it.category != AppCategory.FOLDER && it.packageName !in folders.flatMap { f -> f.apps.map { a -> a.packageName } }.toSet() }
+                .map { DrawerItem.App(it) }
+            
+            // Map to null key for consistency with selectedCategory being null
+            mapOf(null to (unifiedFolders + appItems))
+        } else {
+            // CATEGORIZED MODE: Only show folders belonging to standard categories
+            val appItems = filteredApps
+                .filter { it.category != AppCategory.FOLDER }
+                .map { app ->
+                    val category = if (app.packageName in prefs.hiddenPackages) AppCategory.HIDDEN else app.category
+                    category to DrawerItem.App(app)
+                }
+            
+            val folderItems = folders
+                .filter { it.folder.category != null && it.folder.category != "CATEGORYLESS" }
+                .map { folderWithApps ->
+                    val category = AppCategory.fromString(folderWithApps.folder.category!!)
+                    val folderApps = folderWithApps.apps.mapNotNull { folderApp ->
+                        appsMap[folderApp.packageName]
+                    }
+                    category to DrawerItem.Folder(folderWithApps.folder.id, folderWithApps.folder.label, folderApps)
+                }
+            
+            val grouped = (appItems + folderItems).groupBy({ it.first as AppCategory? }, { it.second })
+            grouped
         }
-        
-        (appItems + folderItems).groupBy({ it.first }, { it.second })
-    }.stateIn(
+        result
+    }.flowOn(Dispatchers.Default)
+    .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyMap()
@@ -119,7 +158,8 @@ class DrawerViewModel @Inject constructor(
                     it.label.startsWith(query, ignoreCase = true) 
                 }.thenBy { it.label.length }.thenBy { it.label })
         }
-    }.stateIn(
+    }.flowOn(Dispatchers.Default)
+    .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
@@ -133,13 +173,30 @@ class DrawerViewModel @Inject constructor(
         val items = categorized[selected] ?: emptyList()
         if (items.isEmpty()) return@combine emptyList<DrawerItem?>()
 
-        val columns = 4 // Could be dynamic in future
+        val columns = 4 
         
+        val sortingMode = prefs.sortingMode
+        val isReverse = prefs.isSortReverse
+
+        val baseComparator = when (sortingMode) {
+            com.samidevstudio.neoglide.data.repository.SortingMode.ALPHABETICAL -> compareBy<AppModel> { it.label.lowercase() }
+            com.samidevstudio.neoglide.data.repository.SortingMode.INSTALL_TIME -> compareByDescending<AppModel> { it.installTime }.thenBy { it.label.lowercase() }
+            com.samidevstudio.neoglide.data.repository.SortingMode.LAST_USED -> compareByDescending<AppModel> { it.lastUsedTime }.thenBy { it.label.lowercase() }
+            com.samidevstudio.neoglide.data.repository.SortingMode.ICON_COLOR -> compareBy<AppModel> { it.dominantHue }.thenBy { it.label.lowercase() }
+        }
+
+        val finalComparator = if (isReverse) baseComparator.reversed() else baseComparator
+
         val folders = items.filterIsInstance<DrawerItem.Folder>().sortedBy { it.label }
-        val apps = items.filterIsInstance<DrawerItem.App>().sortedBy { it.appModel.label }
+        val apps = items.filterIsInstance<DrawerItem.App>()
+            .map { it.appModel }
+            .sortedWith(finalComparator)
+            .map { DrawerItem.App(it) }
         
         val verticalAnchor = prefs.verticalAnchor
         val horizontalAnchor = prefs.horizontalAnchor
+
+        android.util.Log.d("NeoGlideDrawer", "Calculating Grid: vAnchor=$verticalAnchor, hAnchor=$horizontalAnchor, items=${items.size}")
 
         val totalContentCount = items.size
         val numRows = (totalContentCount + columns - 1) / columns
@@ -163,6 +220,9 @@ class DrawerViewModel @Inject constructor(
                     index < placeholdersCount
                 }
                 else -> false
+            }
+            if (isP) {
+                android.util.Log.v("NeoGlideDrawer", "Index $index is Placeholder")
             }
             if (!isP) {
                 contentSlots.add(index / columns to index % columns)
@@ -205,7 +265,8 @@ class DrawerViewModel @Inject constructor(
             }
         }
         result
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
         _searchQuery
@@ -267,8 +328,11 @@ class DrawerViewModel @Inject constructor(
         }
     }
 
-    fun createFolder(appA: AppModel, appB: AppModel, category: AppCategory) {
+    fun createFolder(appA: AppModel, appB: AppModel, category: AppCategory?) {
         viewModelScope.launch {
+            val prefs = preferences.first()
+            val folderCategory = if (prefs.categoryBarType == CategoryBarType.NONE) "CATEGORYLESS" else category?.name ?: "OTHER"
+            
             homeRepository.cleanupDrawerMembership(appA.packageName)
             homeRepository.cleanupDrawerMembership(appB.packageName)
             
@@ -276,7 +340,7 @@ class DrawerViewModel @Inject constructor(
                 appA = HomeAppEntity(id = 0, packageName = appA.packageName, row = 0f, column = 0f),
                 appB = HomeAppEntity(id = 0, packageName = appB.packageName, row = 0f, column = 0f),
                 label = "Folder",
-                category = category.name
+                category = folderCategory
             )
             appRepository.markAppAsInFolder(appA.packageName)
             appRepository.markAppAsInFolder(appB.packageName)

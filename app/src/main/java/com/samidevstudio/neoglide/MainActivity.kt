@@ -34,6 +34,7 @@ import javax.inject.Inject
 import com.samidevstudio.neoglide.data.repository.WidgetRepository
 import com.samidevstudio.neoglide.data.repository.AppRepository
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.*
 import androidx.compose.runtime.CompositionLocalProvider
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -68,8 +69,11 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Warm up icons as soon as the user looks at the app
-        appRepository.warmUpIcons(iconLoader, lifecycleScope)
+        // Warm up icons after a short delay to ensure initial Home frame is rendered
+        lifecycleScope.launch {
+            delay(300)
+            appRepository.warmUpIcons(iconLoader, lifecycleScope)
+        }
     }
 
     override fun onStart() {

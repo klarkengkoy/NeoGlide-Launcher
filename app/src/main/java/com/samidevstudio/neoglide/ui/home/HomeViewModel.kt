@@ -15,8 +15,8 @@ import com.samidevstudio.neoglide.domain.model.AppShortcut
 import com.samidevstudio.neoglide.service.NeoGlideNotificationListener
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 sealed class HomeItem {
@@ -92,12 +92,18 @@ class HomeViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            // Observe preferences to handle first run provisioning (and resets)
-            userPreferencesRepository.userPreferencesFlow.collect { prefs ->
-                if (prefs.isFirstInstallRun) {
-                    provisionDefaultDock()
+            // Self-healing check for mandatory internal widgets (Dock) on startup
+            ensureInternalWidgetsProvisioned()
+            
+            // Also react to reset signals via the preference flag
+            userPreferencesRepository.userPreferencesFlow
+                .map { it.isFirstInstallRun }
+                .distinctUntilChanged()
+                .collect { isFirst ->
+                    if (isFirst) {
+                        ensureInternalWidgetsProvisioned()
+                    }
                 }
-            }
         }
         viewModelScope.launch {
             // Refresh apps on startup
@@ -105,26 +111,38 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    private suspend fun provisionDefaultDock() {
+    private suspend fun ensureInternalWidgetsProvisioned() {
         // Double check DB to prevent accidental duplicates
-        val existing = widgetRepository.allWidgets.first()
-        if (existing.none { (it.providerPackage == "internal") && (it.providerClass == "dock") }) {
-            // Provision internal Dock (Floating placeholder: 99.5f)
-            val dockId = widgetRepository.allocateWidgetId()
-            widgetRepository.addWidget(
-                WidgetEntity(
-                    widgetId = dockId,
-                    providerPackage = "internal",
-                    providerClass = "dock",
-                    label = "Dock",
-                    row = 99.5f,
-                    column = 0f,
-                    spanX = 5f,
-                    spanY = 1f
-                )
-            )
+        // Use a small timeout to ensure we don't block if the DB is under heavy load/initialization
+        try {
+            withTimeout(2000L) {
+                val existing = widgetRepository.allWidgets.first()
+                if (existing.none { (it.providerPackage == "internal") && (it.providerClass == "dock") }) {
+                    provisionDefaultDock()
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("HomeViewModel", "Failed to check/provision internal widgets", e)
         }
-        // Mark as done so we don't repeat this until next reset
+    }
+
+    private suspend fun provisionDefaultDock() {
+        // Provision internal Dock (Floating placeholder: 99.5f)
+        val dockId = widgetRepository.allocateWidgetId()
+        widgetRepository.addWidget(
+            WidgetEntity(
+                widgetId = dockId,
+                providerPackage = "internal",
+                providerClass = "dock",
+                label = "Dock",
+                row = 99.5f,
+                column = 0f,
+                spanX = 5f,
+                spanY = 1f
+            )
+        )
+        // Only clear the first install flag if we actually successfully provisioned (or checked)
+        // though we check DB directly now, it's good to keep for other things.
         userPreferencesRepository.setFirstInstallRun(isFirst = false)
     }
 
