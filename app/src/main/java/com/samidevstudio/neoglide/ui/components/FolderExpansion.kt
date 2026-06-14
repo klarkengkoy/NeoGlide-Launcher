@@ -1,6 +1,7 @@
 package com.samidevstudio.neoglide.ui.components
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -51,6 +52,8 @@ fun FolderExpansion(
     folderId: Int,
     label: String,
     apps: List<AppModel>,
+    unitWidth: androidx.compose.ui.unit.Dp = 80.dp,
+    unitHeight: androidx.compose.ui.unit.Dp = 96.dp,
     onDismiss: () -> Unit,
     onLabelChange: (String) -> Unit,
     onAppClick: (String, android.os.Bundle?) -> Unit,
@@ -69,7 +72,7 @@ fun FolderExpansion(
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: (String) -> Unit = {},
     onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
-    onAppDragStart: (AppModel, androidx.compose.ui.geometry.Offset) -> Unit = { _, _ -> },
+    onAppDragStart: (AppModel, androidx.compose.ui.geometry.Offset, androidx.compose.ui.geometry.Offset) -> Unit = { _, _, _ -> },
     onAppDrag: (androidx.compose.ui.geometry.Offset) -> Unit = {},
     onAppDragOut: (AppModel, androidx.compose.ui.geometry.Offset, androidx.compose.ui.geometry.Offset) -> Unit = { _, _, _ -> },
     onAppDragEnd: () -> Unit = {},
@@ -79,6 +82,7 @@ fun FolderExpansion(
     var draggingApp by remember { mutableStateOf<AppModel?>(null) }
     var isDraggedOut by remember { mutableStateOf(false) }
     var dragOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    var grabPoint by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var rootCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
     var showMenu by remember { mutableStateOf(false) }
     val density = LocalDensity.current
@@ -229,7 +233,6 @@ fun FolderExpansion(
                             val isBeingDragged = draggingApp?.packageName == app.packageName
                             var showAppMenu by remember { mutableStateOf(false) }
                             var shortcuts by remember { mutableStateOf<List<AppShortcut>>(emptyList()) }
-                            var initialDragOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
                             var accumulatedDrag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
                             var isDragConfirmed by remember { mutableStateOf(false) }
 
@@ -253,11 +256,13 @@ fun FolderExpansion(
                                                 accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
                                                 isDragConfirmed = false
                                                 
-                                                // Standardize dragOffset to TOP-LEFT of the icon
+                                                // offset is the touch point relative to the item (0..size)
+                                                // This IS the grabPoint.
+                                                grabPoint = offset 
+                                                
+                                                // Standardize dragOffset to TOP-LEFT of the icon in Window coordinates
                                                 val touchWindow = itemCoords?.localToWindow(offset) ?: androidx.compose.ui.geometry.Offset.Zero
-                                                val iconSizePx = with(density) { 80.dp.toPx() }
-                                                initialDragOffset = touchWindow - androidx.compose.ui.geometry.Offset(iconSizePx / 2, iconSizePx / 2)
-                                                dragOffset = initialDragOffset
+                                                dragOffset = touchWindow - offset
                                             },
                                             onDrag = { change, amount ->
                                                 change.consume()
@@ -267,7 +272,7 @@ fun FolderExpansion(
                                                 if (!isDragConfirmed && accumulatedDrag.getDistance() > with(density) { 10.dp.toPx() }) {
                                                     isDragConfirmed = true
                                                     onHapticFeedback(HapticEngine.HapticType.DRAG_START)
-                                                    onAppDragStart(app, dragOffset)
+                                                    onAppDragStart(app, dragOffset, grabPoint)
                                                 }
 
                                                 if (isDragConfirmed) {
@@ -339,6 +344,18 @@ fun FolderExpansion(
         }
 
         // Floating Drag Icon
+        val isLifting = draggingApp != null
+        val liftScale by animateFloatAsState(
+            targetValue = if (isLifting) 1.2f else 1f,
+            animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+            label = "liftScale"
+        )
+        val liftShadow by animateDpAsState(
+            targetValue = if (isLifting) 16.dp else 0.dp,
+            animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+            label = "liftShadow"
+        )
+
         if (!isDraggedOut) {
             draggingApp?.let { app ->
                 Box(
@@ -353,13 +370,17 @@ fun FolderExpansion(
                                 localTopLeft.y.roundToInt()
                             )
                         }
-                        .size(80.dp) // Approximate size for drag feedback
+                        .size(unitWidth, unitHeight)
                         .graphicsLayer {
-                            scaleX = 1.2f
-                            scaleY = 1.2f
-                            shadowElevation = with(density) { 16.dp.toPx() }
+                            scaleX = liftScale
+                            scaleY = liftScale
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
+                                grabPoint.x / with(density) { unitWidth.toPx() },
+                                grabPoint.y / with(density) { unitHeight.toPx() }
+                            )
+                            shadowElevation = liftShadow.toPx()
                             shape = RoundedCornerShape(16.dp)
-                            clip = true
+                            clip = liftScale > 1f
                         }
                 ) {
                     AppItem(

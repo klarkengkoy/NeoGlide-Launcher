@@ -27,6 +27,7 @@ Designed as a refined "Pixel Launcher Plus," NeoGlide Launcher prioritizes respo
     - **Completed** | Material 3 dynamic color support.
     - **Completed** | True edge-to-edge handling.
     - **Completed** | White text with deep drop shadows for readability.
+    - **Completed** | Larger App Icons (56dp) & Labels (13sp).
 *   **Completed** | **Interaction & Gestures**
     - **Completed** | Smooth "Zoom-from-Icon" transitions.
     - **Completed** | Fixed interaction feedback positions.
@@ -35,6 +36,9 @@ Designed as a refined "Pixel Launcher Plus," NeoGlide Launcher prioritizes respo
     - **Completed** | Icon repositioning (long-press and drag)
     - **Completed** | Drop target visuals (Ghost Target for Icons/Widgets)
     - **Completed** | Precise snapping math (Fix "jumping" on long-press)
+    - **Completed** | **Bit-Perfect Drag Initialization**: Resolved "jump to top-left" via formula mirroring.
+    - **Completed** | **Unified Overlay Drag System**: Unified repositioning and folder drag-out for zero-drift sync.
+    - **Completed** | **Visual Collision Feedback**: Soft red indicator for obstructed drop zones.
     - **Completed** | Universal Collision Avoidance (No displacement policy)
     - **Completed** | **5-Column Grid**: Transitioned to 5-column layout for standard Pixel ergonomics.
 *   **Completed** | **App & Folder Management**
@@ -62,6 +66,13 @@ Designed as a refined "Pixel Launcher Plus," NeoGlide Launcher prioritizes respo
     - **Not Started** | `[P3]` Cloud Sync: Google Drive integration for layout backups.
 
 *   **Completed** | **App Drawer & Universal Search**
+*   **Completed** | **Performance & Smoothness**
+    - **Completed** | **Ultra-High-Speed Rail Gliding**: Achieved 120fps "painted-on" feel during rapid Category Rail scrubbing.
+    - **Completed** | **Fluid Ghost Target**: Animated grid highlight for smooth, non-jumpy drag-and-drop.
+    - **Completed** | **Reactive Hover Feedback**: Magnetic feel where target apps shrink (0.8x) and folders expand (1.2x) during drag.
+    - **Completed** | **ViewModel-Driven Layout**: Off-thread grid math (Corner Priority sorting) to eliminate re-composition stutters.
+    - **Completed** | **Direct Icon Rendering**: Coil bypass for cached icons using custom `Painter` for instant frame updates.
+    - **Completed** | **Adaptive Warm-up**: Prioritized icon loading (Visible -> Immediate Glide -> Full Library) to fill cache silently.
 *   **Completed** | **Smart Organization**
     - **Completed** | Bottom-anchored grid for ergonomics.
     - **Completed** | Stable category rail with scrubber.
@@ -119,17 +130,19 @@ Designed as a refined "Pixel Launcher Plus," NeoGlide Launcher prioritizes respo
     - **Not Started** | `[P2]` About NeoGlide: Version information and legal details.
 
 ### Visual Polish & System Integration
-*   **Completed** | **Theming & Compliance**
+*   **In Progress** | **Theming & Compliance**
     - **Completed** | Official Android Splash Screen API.
+    - **Completed** | Adaptive icon & splash screen support.
     - **Completed** | Notification dots with dynamic color.
-    - **Completed** | `[P2]` Legal & Compliance (About section).
+    - **Completed** | Native Dynamic Icons (LauncherApps refactor).
+    - **Pending** | `[P2]` Legal & Compliance (About section).
     - **Completed** | SDK 37 & Tooling Migration.
     - **Not Started** | `[P3]` Advanced Theming: "Forced Mono" engine and custom masking.
 *   **Completed** | **Tactile Feedback**
     - **Completed** | Haptic Feedback Engine.
-    - **Pending** | `[P2]` Dynamic Clock/Calendar icons.
-*   **Pending** | **Drawer Improvements**
-    - **Pending** | `[P2]` Category Rail Refinement: Improve touch mapping and state persistence for the category rail.
+    - **Completed** | Dynamic Clock/Calendar icons.
+*   **Completed** | **Drawer Improvements**
+    - **Completed** | `[P2]` Category Rail Refinement: Improve touch mapping and state persistence for the category rail.
 
 ## AI Instructions
 *   **Verification**: The AI must NEVER mark a task as `Completed`. Only the user can verify and authorize the transition from `For Checking` to `Completed`.

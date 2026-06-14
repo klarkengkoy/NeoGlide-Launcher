@@ -1,6 +1,7 @@
 package com.samidevstudio.neoglide.ui.components
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -9,10 +10,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -27,9 +30,17 @@ fun FolderItem(
     modifier: Modifier = Modifier,
     useMonochrome: Boolean = false,
     showLabel: Boolean = true,
+    isHovered: Boolean = false,
+    isBlocked: Boolean = false,
     onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
     onClick: () -> Unit = {}
 ) {
+    val hoverScale by animateFloatAsState(
+        targetValue = if (isHovered) 1.2f else 1f,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessLow),
+        label = "hoverScale"
+    )
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -37,7 +48,11 @@ fun FolderItem(
                 onHapticFeedback(HapticEngine.HapticType.FOLDER_OPEN)
                 onClick() 
             }
-            .padding(4.dp),
+            .padding(4.dp)
+            .graphicsLayer {
+                scaleX = hoverScale
+                scaleY = hoverScale
+            },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -45,7 +60,7 @@ fun FolderItem(
             modifier = Modifier
                 .size(64.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                .background(if (isBlocked) Color.Red.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
             contentAlignment = Alignment.Center
         ) {
             // 2x2 Grid of mini icons

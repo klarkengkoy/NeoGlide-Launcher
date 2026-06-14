@@ -2,8 +2,7 @@ package com.samidevstudio.neoglide.ui.components
 
 import android.app.ActivityOptions
 import androidx.compose.animation.*
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -19,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalView
@@ -45,6 +45,8 @@ fun AppItem(
     sharedElementKeyPrefix: String = "drawer",
     showLabel: Boolean = true,
     isLongClickEnabled: Boolean = true,
+    isHovered: Boolean = false,
+    isBlocked: Boolean = false,
     refreshTrigger: Int = 0,
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
@@ -56,6 +58,12 @@ fun AppItem(
     var shortcuts by remember { mutableStateOf<List<AppShortcut>>(emptyList()) }
     val view = LocalView.current
     var coords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+
+    val hoverScale by animateFloatAsState(
+        targetValue = if (isHovered) 0.8f else 1f,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessLow),
+        label = "hoverScale"
+    )
 
     LaunchedEffect(showMenu) {
         if (showMenu) {
@@ -108,13 +116,18 @@ fun AppItem(
         Column(
             modifier = modifier
                 .onGloballyPositioned { coords = it }
-                .fillMaxWidth(),
+                .fillMaxWidth()
+                .graphicsLayer {
+                    scaleX = hoverScale
+                    scaleY = hoverScale
+                },
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
+                    .background(if (isBlocked) Color.Red.copy(alpha = 0.2f) else Color.Transparent)
                     .combinedClickable(
                         onClick = {
                             val bundle = coords?.let {
