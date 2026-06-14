@@ -4,8 +4,7 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -110,7 +109,8 @@ fun DrawerScreen(
     val hapticFeedback = rememberHapticFeedback(preferences)
 
     val context = LocalContext.current
-    var selectedCategory by remember { mutableStateOf<AppCategory?>(null) }
+    val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
+    val gridItems by viewModel.gridItems.collectAsStateWithLifecycle()
     var showSettings by remember { mutableStateOf(false) }
 
     val categories = remember(categorizedApps) {
@@ -125,9 +125,9 @@ fun DrawerScreen(
     // Auto-select "All Apps" (null) if bar is hidden, otherwise first category
     LaunchedEffect(categories, showCategoryBar) {
         if (!showCategoryBar) {
-            selectedCategory = null
+            viewModel.selectCategory(null)
         } else if (selectedCategory == null && categories.isNotEmpty()) {
-            selectedCategory = categories.first()
+            viewModel.selectCategory(categories.first())
         }
     }
 
@@ -379,9 +379,6 @@ fun DrawerScreen(
                             context.startActivity(intent)
                         }
                     } else {
-                        val itemsToDisplay = remember(categorizedApps, selectedCategory) {
-                            (categorizedApps[selectedCategory] ?: emptyList()).sortedBy { it.label }
-                        }
 
                         Box(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                             val isVertical = orientation != CategoryOrientation.HORIZONTAL_BOTTOM
@@ -399,7 +396,7 @@ fun DrawerScreen(
                                             allCategories = categories,
                                             selectedCategory = selectedCategory,
                                             orientation = orientation,
-                                            onCategorySelected = { selectedCategory = it },
+                                            onCategorySelected = { viewModel.selectCategory(it) },
                                             onDrop = { app, category -> 
                                                 category?.let { viewModel.moveAppToCategory(app.packageName, it) }
                                             },
@@ -413,7 +410,7 @@ fun DrawerScreen(
 
                                 Column(modifier = Modifier.weight(1f)) {
                                         AppGrid(
-                                            items = itemsToDisplay,
+                                            items = gridItems,
                                             columns = 4,
                                             onFolderClick = { expandedFolderId = it },
                                             bottomPadding = if (showCategoryBar && orientation == CategoryOrientation.HORIZONTAL_BOTTOM) 8.dp else 20.dp,
@@ -424,7 +421,6 @@ fun DrawerScreen(
                                             iconPackPackageName = preferences.iconPackPackageName,
                                             hiddenPackages = preferences.hiddenPackages,
                                             verticalAnchor = preferences.verticalAnchor,
-                                            horizontalAnchor = preferences.horizontalAnchor,
                                             activeNotifications = activeNotifications,
                                             showNotificationDots = preferences.notificationDotMode in listOf(NotificationDotMode.APP_ICON, NotificationDotMode.BOTH),
                                             showLabel = preferences.appLabelMode == AppLabelMode.DRAWER_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
@@ -458,7 +454,7 @@ fun DrawerScreen(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .height(64.dp),
-                                            onCategorySelected = { selectedCategory = it },
+                                            onCategorySelected = { viewModel.selectCategory(it) },
                                             onDrop = { app, category -> 
                                                 category?.let { viewModel.moveAppToCategory(app.packageName, it) }
                                             },
@@ -481,7 +477,7 @@ fun DrawerScreen(
                                             allCategories = categories,
                                             selectedCategory = selectedCategory,
                                             orientation = orientation,
-                                            onCategorySelected = { selectedCategory = it },
+                                            onCategorySelected = { viewModel.selectCategory(it) },
                                             onDrop = { app, category -> 
                                                 category?.let { viewModel.moveAppToCategory(app.packageName, it) }
                                             },
@@ -544,13 +540,13 @@ fun DrawerScreen(
                         onShortcutClick = { viewModel.launchShortcut(it) },
                         onHideToggle = { viewModel.hideApp(it) },
                         onHapticFeedback = hapticFeedback,
-                        onAppDragStart = { app, windowOffset ->
+                        onAppDragStart = { app, windowOffset, grabPoint ->
                             hapticFeedback(HapticEngine.HapticType.DRAG_START)
                             dragInfo.isDragging = true
                             dragInfo.draggableItem = app
-                            dragInfo.dragPosition = windowOffset
-                            dragInfo.dragOffset = androidx.compose.ui.geometry.Offset.Zero
-                            dragInfo.grabOffset = androidx.compose.ui.geometry.Offset.Zero // Offset is already standardized
+                            dragInfo.dragPosition = windowOffset + grabPoint
+                            dragInfo.dragOffset = Offset.Zero
+                            dragInfo.grabOffset = grabPoint
                         },
                         onAppDrag = { amount ->
                             dragInfo.dragOffset += amount
@@ -599,6 +595,18 @@ fun DrawerScreen(
             }
 
             // FLOATING DRAG ICON
+            val isLifting = dragInfo.isDragging && (dragInfo.draggableItem != null || dragInfo.draggableFolderId != -1)
+            val liftScale by animateFloatAsState(
+                targetValue = if (isLifting) 1.2f else 1f,
+                animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+                label = "liftScaleDrawer"
+            )
+            val liftShadow by animateDpAsState(
+                targetValue = if (isLifting) 16.dp else 0.dp,
+                animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
+                label = "liftShadowDrawer"
+            )
+
             if (dragInfo.isDragging && (dragInfo.draggableItem != null || dragInfo.draggableFolderId != -1)) {
                 Box(
                     modifier = Modifier
@@ -611,8 +619,11 @@ fun DrawerScreen(
                         .size(80.dp)
                         .graphicsLayer {
                             alpha = 0.7f
-                            scaleX = 1.2f
-                            scaleY = 1.2f
+                            scaleX = liftScale
+                            scaleY = liftScale
+                            shadowElevation = liftShadow.toPx()
+                            shape = RoundedCornerShape(16.dp)
+                            clip = liftScale > 1f
                         },
                     contentAlignment = Alignment.Center
                 ) {
@@ -922,7 +933,7 @@ private fun CategoryIconItem(
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun AppGrid(
-    items: List<DrawerItem>,
+    items: List<DrawerItem?>,
     columns: Int,
     onFolderClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
@@ -933,7 +944,6 @@ fun AppGrid(
     iconPackPackageName: String? = null,
     hiddenPackages: Set<String> = emptySet(),
     verticalAnchor: VerticalAnchor = VerticalAnchor.BOTTOM,
-    horizontalAnchor: HorizontalAnchor = HorizontalAnchor.RIGHT,
     activeNotifications: Map<String, Int> = emptyMap(),
     showNotificationDots: Boolean = true,
     showLabel: Boolean = true,
@@ -948,71 +958,6 @@ fun AppGrid(
     onFolderMove: (Int, AppCategory) -> Unit = { _, _ -> },
     onAppClick: (String, android.os.Bundle?) -> Unit
 ) {
-    // Separate and sort apps and folders
-    val folders = items.filterIsInstance<DrawerItem.Folder>().sortedBy { it.label }
-    val apps = items.filterIsInstance<DrawerItem.App>().sortedBy { it.appModel.label }
-    
-    val sortedItems = remember(items, verticalAnchor, horizontalAnchor, columns) {
-        if (items.isEmpty()) return@remember emptyList<DrawerItem>()
-        
-        val totalContentCount = items.size
-        val numRows = (totalContentCount + columns - 1) / columns
-        val rem = totalContentCount % columns
-        val placeholdersCount = if (rem > 0) columns - rem else 0
-
-        // 1. Identify which slots are content vs placeholders.
-        val contentSlots = mutableListOf<Pair<Int, Int>>()
-        val totalGridSlots = numRows * columns
-
-        for (index in 0 until totalGridSlots) {
-            val isP = when {
-                verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.LEFT -> index >= totalContentCount
-                verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.RIGHT -> {
-                    val lastRowStart = (numRows - 1) * columns
-                    index >= lastRowStart && index < lastRowStart + placeholdersCount
-                }
-                verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.LEFT -> {
-                    index >= rem && index < rem + placeholdersCount
-                }
-                verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.RIGHT -> {
-                    index < placeholdersCount
-                }
-                else -> false
-            }
-            if (!isP) {
-                contentSlots.add(index / columns to index % columns)
-            }
-        }
-        
-        // 2. Sort content slots by "Corner Priority" (distance from anchor corner)
-        val sortedContentSlots = contentSlots.sortedWith(compareBy { (r, c) ->
-            val rowDist = if (verticalAnchor == VerticalAnchor.TOP) r else (numRows - 1 - r)
-            val colDist = if (horizontalAnchor == HorizontalAnchor.LEFT) c else (columns - 1 - c)
-            rowDist * 100 + colDist
-        })
-        
-        // 3. Assign folders to top priority slots, apps to the rest
-        val folderAssignedSlots = sortedContentSlots.take(folders.size).sortedWith(compareBy({ it.first }, { it.second }))
-        val appAssignedSlots = sortedContentSlots.drop(folders.size).sortedWith(compareBy({ it.first }, { it.second }))
-        
-        val slotToItem = mutableMapOf<Pair<Int, Int>, DrawerItem>()
-        folderAssignedSlots.forEachIndexed { i, slot -> slotToItem[slot] = folders[i] }
-        appAssignedSlots.forEachIndexed { i, slot -> slotToItem[slot] = apps[i] }
-        
-        // 4. Return items in grid sequential order (matching how itemIndex maps grid -> list)
-        contentSlots.map { slotToItem[it]!! }
-    }
-
-    val rem = sortedItems.size % columns
-    val placeholdersCount = if (rem > 0) columns - rem else 0
-    
-    // Only use placeholders for non-standard Top-Left setup
-    val totalItems = if (verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.LEFT) {
-        sortedItems.size
-    } else {
-        sortedItems.size + placeholdersCount
-    }
-
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
         reverseLayout = false,
@@ -1026,271 +971,206 @@ fun AppGrid(
         modifier = modifier
     ) {
         items(
-            count = totalItems,
+            count = items.size,
             key = { index ->
-                val isPlaceholder = when {
-                    verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.LEFT -> false
-                    verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.RIGHT -> {
-                        val lastRowStart = (sortedItems.size / columns) * columns
-                        index >= lastRowStart && index < lastRowStart + placeholdersCount
-                    }
-                    verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.LEFT -> {
-                        index >= rem && index < rem + placeholdersCount
-                    }
-                    verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.RIGHT -> {
-                        index < placeholdersCount
-                    }
-                    else -> false
-                }
-
-                if (isPlaceholder) "placeholder_$index"
+                val it = items[index]
+                if (it == null) "placeholder_$index"
                 else {
-                    val itemIndex = when {
-                        verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.LEFT -> index
-                        verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.RIGHT -> {
-                            val lastRowStart = (sortedItems.size / columns) * columns
-                            if (index >= lastRowStart + placeholdersCount) index - placeholdersCount else index
-                        }
-                        verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.LEFT -> {
-                            if (index >= rem + placeholdersCount) index - placeholdersCount else index
-                        }
-                        verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.RIGHT -> {
-                            index - placeholdersCount
-                        }
-                        else -> index
+                    when (it) {
+                        is DrawerItem.App -> it.appModel.packageName
+                        is DrawerItem.Folder -> "folder_${it.id}"
                     }
-                    if (itemIndex in sortedItems.indices) {
-                        val it = sortedItems[itemIndex]
-                        when (it) {
-                            is DrawerItem.App -> it.appModel.packageName
-                            is DrawerItem.Folder -> "folder_${it.id}"
-                        }
-                    } else "invalid_$index"
                 }
             }
         ) { index ->
-            val isPlaceholder = when {
-                verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.LEFT -> false
-                verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.RIGHT -> {
-                    val lastRowStart = (sortedItems.size / columns) * columns
-                    index >= lastRowStart && index < lastRowStart + placeholdersCount
-                }
-                verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.LEFT -> {
-                    index >= rem && index < rem + placeholdersCount
-                }
-                verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.RIGHT -> {
-                    index < placeholdersCount
-                }
-                else -> false
-            }
-
-            if (isPlaceholder) {
+            val drawerItem = items[index]
+            if (drawerItem == null) {
                 Spacer(modifier = Modifier.fillMaxWidth().height(80.dp))
             } else {
-                val itemIndex = when {
-                    verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.LEFT -> index
-                    verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.RIGHT -> {
-                        val lastRowStart = (sortedItems.size / columns) * columns
-                        if (index >= lastRowStart + placeholdersCount) index - placeholdersCount else index
-                    }
-                    verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.LEFT -> {
-                        if (index >= rem + placeholdersCount) index - placeholdersCount else index
-                    }
-                    verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.RIGHT -> {
-                        index - placeholdersCount
-                    }
-                    else -> index
-                }
+                val dragInfo = LocalDragTargetInfo.current
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                val coroutineScope = rememberCoroutineScope()
                 
-                if (itemIndex in sortedItems.indices) {
-                    val drawerItem = sortedItems[itemIndex]
-                    val dragInfo = LocalDragTargetInfo.current
-                    val density = androidx.compose.ui.platform.LocalDensity.current
-                    val coroutineScope = rememberCoroutineScope()
-                    
-                    var itemPosition by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-                    var accumulatedDrag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-                    var isDragConfirmed by remember { mutableStateOf(false) }
-                    var showMenu by remember { mutableStateOf(false) }
-                    var shortcuts by remember { mutableStateOf<List<com.samidevstudio.neoglide.domain.model.AppShortcut>>(emptyList()) }
+                var itemPosition by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+                var accumulatedDrag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+                var isDragConfirmed by remember { mutableStateOf(false) }
+                var showMenu by remember { mutableStateOf(false) }
+                var shortcuts by remember { mutableStateOf<List<com.samidevstudio.neoglide.domain.model.AppShortcut>>(emptyList()) }
 
-                    val isHoveredByDrag = dragInfo.isDragging && dragInfo.hoveredApp?.packageName == (drawerItem as? DrawerItem.App)?.appModel?.packageName
+                Box(
+                    modifier = Modifier
+                        .onGloballyPositioned { 
+                            val pos = it.positionInWindow()
+                            itemPosition = pos
+                        }
+                        .pointerInput(drawerItem) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { offset ->
+                                    onHapticFeedback(HapticEngine.HapticType.LONG_PRESS)
+                                    accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
+                                    isDragConfirmed = false
+                                    if (drawerItem is DrawerItem.App) {
+                                        dragInfo.draggableItem = drawerItem.appModel
+                                        dragInfo.grabOffset = offset
+                                    } else if (drawerItem is DrawerItem.Folder) {
+                                        dragInfo.draggableFolderId = drawerItem.id
+                                        dragInfo.draggableFolderApps = drawerItem.apps
+                                        dragInfo.draggableFolderName = drawerItem.label
+                                        dragInfo.grabOffset = offset
+                                    }
+                                },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    accumulatedDrag += dragAmount
+                                    
+                                    if (!isDragConfirmed && accumulatedDrag.getDistance() > with(density) { 10.dp.toPx() }) {
+                                        isDragConfirmed = true
+                                        onHapticFeedback(HapticEngine.HapticType.DRAG_START)
+                                        dragInfo.isDragging = true
+                                        dragInfo.dragPosition = itemPosition + dragInfo.grabOffset
+                                        dragInfo.dragOffset = accumulatedDrag
+                                    }
 
-                    Box(
-                        modifier = Modifier
-                            .onGloballyPositioned { 
-                                val pos = it.positionInWindow()
-                                itemPosition = pos
-                            }
-                            .pointerInput(drawerItem) {
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = { offset ->
-                                        onHapticFeedback(HapticEngine.HapticType.LONG_PRESS)
-                                        accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
-                                        isDragConfirmed = false
-                                        if (drawerItem is DrawerItem.App) {
-                                            dragInfo.draggableItem = drawerItem.appModel
-                                            dragInfo.grabOffset = offset
-                                        } else if (drawerItem is DrawerItem.Folder) {
-                                            dragInfo.draggableFolderId = drawerItem.id
-                                            dragInfo.draggableFolderApps = drawerItem.apps
-                                            dragInfo.draggableFolderName = drawerItem.label
-                                            dragInfo.grabOffset = offset
-                                        }
-                                    },
-                                    onDrag = { change, dragAmount ->
-                                        change.consume()
-                                        accumulatedDrag += dragAmount
+                                    if (isDragConfirmed) {
+                                        dragInfo.dragOffset += dragAmount
+                                    }
+                                },
+                                onDragEnd = {
+                                    if (isDragConfirmed) {
+                                        onHapticFeedback(HapticEngine.HapticType.DRAG_END)
+                                        val appToDrop = dragInfo.draggableItem
+                                        val folderToDrop = dragInfo.draggableFolderId
+                                        val categoryToDrop = dragInfo.hoveredCategory
+                                        val targetApp = dragInfo.hoveredApp
+                                        val targetFolderId = dragInfo.hoveredFolderId
                                         
-                                        if (!isDragConfirmed && accumulatedDrag.getDistance() > with(density) { 10.dp.toPx() }) {
-                                            isDragConfirmed = true
-                                            onHapticFeedback(HapticEngine.HapticType.DRAG_START)
-                                            dragInfo.isDragging = true
-                                            dragInfo.dragPosition = itemPosition + dragInfo.grabOffset
-                                            dragInfo.dragOffset = accumulatedDrag
-                                        }
-
-                                        if (isDragConfirmed) {
-                                            dragInfo.dragOffset += dragAmount
-                                        }
-                                    },
-                                    onDragEnd = {
-                                        if (isDragConfirmed) {
-                                            onHapticFeedback(HapticEngine.HapticType.DRAG_END)
-                                            val appToDrop = dragInfo.draggableItem
-                                            val folderToDrop = dragInfo.draggableFolderId
-                                            val categoryToDrop = dragInfo.hoveredCategory
-                                            val targetApp = dragInfo.hoveredApp
-                                            val targetFolderId = dragInfo.hoveredFolderId
-                                            
-                                            if (appToDrop != null) {
-                                                if (targetFolderId != -1) {
-                                                    onFolderMerge(appToDrop, targetFolderId)
-                                                } else if (targetApp != null && appToDrop.packageName != targetApp.packageName) {
-                                                    onMerge(appToDrop, targetApp)
-                                                } else if (categoryToDrop != null) {
-                                                    onDrop(appToDrop, categoryToDrop)
-                                                }
-                                            } else if (folderToDrop != -1) {
-                                                if (categoryToDrop != null) {
-                                                    onFolderMove(folderToDrop, categoryToDrop)
-                                                }
+                                        if (appToDrop != null) {
+                                            if (targetFolderId != -1) {
+                                                onFolderMerge(appToDrop, targetFolderId)
+                                            } else if (targetApp != null && appToDrop.packageName != targetApp.packageName) {
+                                                onMerge(appToDrop, targetApp)
+                                            } else if (categoryToDrop != null) {
+                                                onDrop(appToDrop, categoryToDrop)
                                             }
-                                            dragInfo.isDragging = false
-                                            dragInfo.draggableItem = null
-                                            dragInfo.draggableFolderId = -1
-                                            dragInfo.hoveredCategory = null
-                                            dragInfo.hoveredApp = null
-                                            dragInfo.hoveredFolderId = -1
-                                        } else {
-                                            if (drawerItem is DrawerItem.App) {
-                                                coroutineScope.launch {
-                                                    shortcuts = getShortcuts(drawerItem.appModel.packageName)
-                                                    showMenu = true
-                                                }
+                                        } else if (folderToDrop != -1) {
+                                            if (categoryToDrop != null) {
+                                                onFolderMove(folderToDrop, categoryToDrop)
                                             }
                                         }
-                                        isDragConfirmed = false
-                                    },
-                                    onDragCancel = {
                                         dragInfo.isDragging = false
                                         dragInfo.draggableItem = null
+                                        dragInfo.draggableFolderId = -1
                                         dragInfo.hoveredCategory = null
                                         dragInfo.hoveredApp = null
-                                        isDragConfirmed = false
+                                        dragInfo.hoveredFolderId = -1
+                                    } else {
+                                        if (drawerItem is DrawerItem.App) {
+                                            coroutineScope.launch {
+                                                shortcuts = getShortcuts(drawerItem.appModel.packageName)
+                                                showMenu = true
+                                            }
+                                        }
                                     }
-                                )
-                            }
-                    ) {
-                        // HOVER DETECTION FOR MERGE
-                        if (dragInfo.isDragging) {
-                            val globalTouchPos = dragInfo.dragPosition + dragInfo.dragOffset
-                            val itemSizePx = with(density) { 80.dp.toPx() } // Standard grid item size
-                            val isPointInItem = globalTouchPos.x >= itemPosition.x && globalTouchPos.x <= itemPosition.x + itemSizePx &&
-                                                globalTouchPos.y >= itemPosition.y && globalTouchPos.y <= itemPosition.y + itemSizePx
-                            
-                            if (isPointInItem) {
-                                if (drawerItem is DrawerItem.App && dragInfo.draggableItem?.packageName != drawerItem.appModel.packageName) {
-                                    dragInfo.hoveredApp = drawerItem.appModel
-                                } else if (drawerItem is DrawerItem.Folder && dragInfo.draggableFolderId != drawerItem.id) {
-                                    dragInfo.hoveredFolderId = drawerItem.id
-                                }
-                            } else {
-                                if (drawerItem is DrawerItem.App && dragInfo.hoveredApp?.packageName == drawerItem.appModel.packageName) {
+                                    isDragConfirmed = false
+                                },
+                                onDragCancel = {
+                                    dragInfo.isDragging = false
+                                    dragInfo.draggableItem = null
+                                    dragInfo.hoveredCategory = null
                                     dragInfo.hoveredApp = null
-                                } else if (drawerItem is DrawerItem.Folder && dragInfo.hoveredFolderId == drawerItem.id) {
-                                    dragInfo.hoveredFolderId = -1
+                                    isDragConfirmed = false
+                                }
+                            )
+                        }
+                ) {
+                    // HOVER DETECTION FOR MERGE
+                    if (dragInfo.isDragging) {
+                        val globalTouchPos = dragInfo.dragPosition + dragInfo.dragOffset
+                        val itemSizePx = with(density) { 80.dp.toPx() } // Standard grid item size
+                        val isPointInItem = globalTouchPos.x >= itemPosition.x && globalTouchPos.x <= itemPosition.x + itemSizePx &&
+                                            globalTouchPos.y >= itemPosition.y && globalTouchPos.y <= itemPosition.y + itemSizePx
+                        
+                        if (isPointInItem) {
+                            if (drawerItem is DrawerItem.App && dragInfo.draggableItem?.packageName != drawerItem.appModel.packageName) {
+                                dragInfo.hoveredApp = drawerItem.appModel
+                            } else if (drawerItem is DrawerItem.Folder && dragInfo.draggableFolderId != drawerItem.id) {
+                                dragInfo.hoveredFolderId = drawerItem.id
+                            }
+                        } else {
+                            if (drawerItem is DrawerItem.App && dragInfo.hoveredApp?.packageName == drawerItem.appModel.packageName) {
+                                dragInfo.hoveredApp = null
+                            } else if (drawerItem is DrawerItem.Folder && dragInfo.hoveredFolderId == drawerItem.id) {
+                                dragInfo.hoveredFolderId = -1
+                            }
+                        }
+                    }
+
+                    val isHoveredByDrag = dragInfo.isDragging && (
+                        dragInfo.hoveredApp?.packageName == (drawerItem as? DrawerItem.App)?.appModel?.packageName ||
+                        dragInfo.hoveredFolderId == (drawerItem as? DrawerItem.Folder)?.id
+                    )
+
+                    when (drawerItem) {
+                        is DrawerItem.App -> {
+                            Box(
+                                modifier = Modifier.graphicsLayer {
+                                    scaleX = if (isHoveredByDrag) 1.1f else 1f
+                                    scaleY = if (isHoveredByDrag) 1.1f else 1f
+                                }
+                            ) {
+                                AppItem(
+                                    app = drawerItem.appModel,
+                                    sharedTransitionScope = sharedTransitionScope,
+                                    animatedVisibilityScope = animatedVisibilityScope,
+                                    useMonochrome = useMonochrome,
+                                    iconPackPackageName = iconPackPackageName,
+                                    isHidden = drawerItem.appModel.packageName in hiddenPackages,
+                                    hasNotification = showNotificationDots && drawerItem.appModel.packageName in activeNotifications.keys,
+                                    notificationCount = activeNotifications[drawerItem.appModel.packageName] ?: 0,
+                                    showLabel = showLabel,
+                                    sharedElementKeyPrefix = "drawer",
+                                    isLongClickEnabled = false,
+                                    onLongClick = null,
+                                    refreshTrigger = refreshTrigger,
+                                    getShortcuts = getShortcuts,
+                                    onShortcutClick = onShortcutClick,
+                                    onHideToggle = { onHideToggle(drawerItem.appModel.packageName, drawerItem.appModel.packageName in hiddenPackages) }
+                                ) { options ->
+                                    onAppClick(drawerItem.appModel.packageName, options)
+                                }
+
+                                if (showMenu) {
+                                    AppContextMenu(
+                                        expanded = true,
+                                        onDismissRequest = { showMenu = false },
+                                        packageName = drawerItem.appModel.packageName,
+                                        label = drawerItem.appModel.label,
+                                        shortcuts = shortcuts,
+                                        onShortcutClick = onShortcutClick,
+                                        onHideToggle = { onHideToggle(drawerItem.appModel.packageName, drawerItem.appModel.packageName in hiddenPackages) }
+                                    )
                                 }
                             }
                         }
-
-                        val isHoveredByDrag = dragInfo.isDragging && (
-                            dragInfo.hoveredApp?.packageName == (drawerItem as? DrawerItem.App)?.appModel?.packageName ||
-                            dragInfo.hoveredFolderId == (drawerItem as? DrawerItem.Folder)?.id
-                        )
-
-                        when (drawerItem) {
-                            is DrawerItem.App -> {
-                                Box(
-                                    modifier = Modifier.graphicsLayer {
-                                        scaleX = if (isHoveredByDrag) 1.1f else 1f
-                                        scaleY = if (isHoveredByDrag) 1.1f else 1f
-                                    }
-                                ) {
-                                    AppItem(
-                                        app = drawerItem.appModel,
-                                        sharedTransitionScope = sharedTransitionScope,
-                                        animatedVisibilityScope = animatedVisibilityScope,
-                                        useMonochrome = useMonochrome,
-                                        iconPackPackageName = iconPackPackageName,
-                                        isHidden = drawerItem.appModel.packageName in hiddenPackages,
-                                        hasNotification = showNotificationDots && drawerItem.appModel.packageName in activeNotifications.keys,
-                                        notificationCount = activeNotifications[drawerItem.appModel.packageName] ?: 0,
-                                        showLabel = showLabel,
-                                        sharedElementKeyPrefix = "drawer",
-                                        isLongClickEnabled = false,
-                                        onLongClick = null,
-                                        refreshTrigger = refreshTrigger,
-                                        getShortcuts = getShortcuts,
-                                        onShortcutClick = onShortcutClick,
-                                        onHideToggle = { onHideToggle(drawerItem.appModel.packageName, drawerItem.appModel.packageName in hiddenPackages) }
-                                    ) { options ->
-                                        onAppClick(drawerItem.appModel.packageName, options)
-                                    }
-
-                                    if (showMenu) {
-                                        AppContextMenu(
-                                            expanded = true,
-                                            onDismissRequest = { showMenu = false },
-                                            packageName = drawerItem.appModel.packageName,
-                                            label = drawerItem.appModel.label,
-                                            shortcuts = shortcuts,
-                                            onShortcutClick = onShortcutClick,
-                                            onHideToggle = { onHideToggle(drawerItem.appModel.packageName, drawerItem.appModel.packageName in hiddenPackages) }
-                                        )
-                                    }
+                        is DrawerItem.Folder -> {
+                            Box(
+                                modifier = Modifier.graphicsLayer {
+                                    scaleX = if (isHoveredByDrag) 1.1f else 1f
+                                    scaleY = if (isHoveredByDrag) 1.1f else 1f
                                 }
-                            }
-                            is DrawerItem.Folder -> {
-                                Box(
-                                    modifier = Modifier.graphicsLayer {
-                                        scaleX = if (isHoveredByDrag) 1.1f else 1f
-                                        scaleY = if (isHoveredByDrag) 1.1f else 1f
-                                    }
-                                ) {
-                                    FolderItem(
-                                        label = drawerItem.label,
-                                        apps = drawerItem.apps,
-                                        useMonochrome = useMonochrome,
-                                        showLabel = showLabel,
-                                        onHapticFeedback = onHapticFeedback,
-                                        onClick = { 
-                                            if (dragInfo.draggableItem == null && dragInfo.draggableFolderId == -1) {
-                                                onFolderClick(drawerItem.id)
-                                            }
+                            ) {
+                                FolderItem(
+                                    label = drawerItem.label,
+                                    apps = drawerItem.apps,
+                                    useMonochrome = useMonochrome,
+                                    showLabel = showLabel,
+                                    onHapticFeedback = onHapticFeedback,
+                                    onClick = { 
+                                        if (dragInfo.draggableItem == null && dragInfo.draggableFolderId == -1) {
+                                            onFolderClick(drawerItem.id)
                                         }
-                                    )
-                                }
+                                    }
+                                )
                             }
                         }
                     }

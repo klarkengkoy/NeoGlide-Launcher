@@ -6,8 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.samidevstudio.neoglide.data.local.entity.HomeAppEntity
 import com.samidevstudio.neoglide.data.repository.AppRepository
 import com.samidevstudio.neoglide.data.repository.HomeRepository
+import com.samidevstudio.neoglide.data.repository.HorizontalAnchor
 import com.samidevstudio.neoglide.data.repository.SearchRepository
 import com.samidevstudio.neoglide.data.repository.UserPreferencesRepository
+import com.samidevstudio.neoglide.data.repository.VerticalAnchor
 import com.samidevstudio.neoglide.domain.model.AppCategory
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.domain.model.AppShortcut
@@ -45,6 +47,13 @@ class DrawerViewModel @Inject constructor(
     val webSuggestions = _webSuggestions.asStateFlow()
 
     private val preferences = userPreferencesRepository.userPreferencesFlow
+
+    private val _selectedCategory = MutableStateFlow<AppCategory?>(null)
+    val selectedCategory = _selectedCategory.asStateFlow()
+
+    fun selectCategory(category: AppCategory?) {
+        _selectedCategory.value = category
+    }
 
     private val _refreshTrigger = MutableStateFlow(0)
     val refreshTrigger = _refreshTrigger.asStateFlow()
@@ -115,6 +124,88 @@ class DrawerViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
+
+    val gridItems: StateFlow<List<DrawerItem?>> = combine(
+        categorizedApps,
+        _selectedCategory,
+        preferences
+    ) { categorized, selected, prefs ->
+        val items = categorized[selected] ?: emptyList()
+        if (items.isEmpty()) return@combine emptyList<DrawerItem?>()
+
+        val columns = 4 // Could be dynamic in future
+        
+        val folders = items.filterIsInstance<DrawerItem.Folder>().sortedBy { it.label }
+        val apps = items.filterIsInstance<DrawerItem.App>().sortedBy { it.appModel.label }
+        
+        val verticalAnchor = prefs.verticalAnchor
+        val horizontalAnchor = prefs.horizontalAnchor
+
+        val totalContentCount = items.size
+        val numRows = (totalContentCount + columns - 1) / columns
+        val rem = totalContentCount % columns
+        val placeholdersCount = if (rem > 0) columns - rem else 0
+
+        val contentSlots = mutableListOf<Pair<Int, Int>>()
+        val totalGridSlots = numRows * columns
+
+        for (index in 0 until totalGridSlots) {
+            val isP = when {
+                verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.LEFT -> index >= totalContentCount
+                verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.RIGHT -> {
+                    val lastRowStart = (numRows - 1) * columns
+                    index >= lastRowStart && index < lastRowStart + placeholdersCount
+                }
+                verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.LEFT -> {
+                    index >= rem && index < rem + placeholdersCount
+                }
+                verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.RIGHT -> {
+                    index < placeholdersCount
+                }
+                else -> false
+            }
+            if (!isP) {
+                contentSlots.add(index / columns to index % columns)
+            }
+        }
+        
+        val sortedContentSlots = contentSlots.sortedWith(compareBy { (r, c) ->
+            val rowDist = if (verticalAnchor == VerticalAnchor.TOP) r else (numRows - 1 - r)
+            val colDist = if (horizontalAnchor == HorizontalAnchor.LEFT) c else (columns - 1 - c)
+            rowDist * 100 + colDist
+        })
+        
+        val folderAssignedSlots = sortedContentSlots.take(folders.size).sortedWith(compareBy({ it.first }, { it.second }))
+        val appAssignedSlots = sortedContentSlots.drop(folders.size).sortedWith(compareBy({ it.first }, { it.second }))
+        
+        val slotToItem = mutableMapOf<Pair<Int, Int>, DrawerItem>()
+        folderAssignedSlots.forEachIndexed { i, slot -> slotToItem[slot] = folders[i] }
+        appAssignedSlots.forEachIndexed { i, slot -> slotToItem[slot] = apps[i] }
+        
+        val result = mutableListOf<DrawerItem?>()
+        for (index in 0 until totalGridSlots) {
+            val isP = when {
+                verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.LEFT -> index >= totalContentCount
+                verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.RIGHT -> {
+                    val lastRowStart = (numRows - 1) * columns
+                    index >= lastRowStart && index < lastRowStart + placeholdersCount
+                }
+                verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.LEFT -> {
+                    index >= rem && index < rem + placeholdersCount
+                }
+                verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.RIGHT -> {
+                    index < placeholdersCount
+                }
+                else -> false
+            }
+            if (isP) {
+                result.add(null)
+            } else {
+                result.add(slotToItem[index / columns to index % columns])
+            }
+        }
+        result
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
         _searchQuery
