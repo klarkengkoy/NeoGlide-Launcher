@@ -10,5 +10,6 @@ data class AppEntity(
     val category: String,
     val isFavorite: Boolean = false,
     val installTime: Long,
-    val lastUsedTime: Long = 0L
+    val lastUsedTime: Long = 0L,
+    val dominantHue: Float? = null
 )

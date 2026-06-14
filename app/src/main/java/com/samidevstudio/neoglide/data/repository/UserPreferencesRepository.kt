@@ -12,7 +12,7 @@ import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "user_preferences")
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "neo_user_prefs_v1")
 
 enum class CategoryBarType {
     LEFT, RIGHT, BOTTOM, NONE
@@ -47,7 +47,7 @@ enum class HorizontalAnchor {
 }
 
 data class UserPreferences(
-    val categoryBarType: CategoryBarType,
+    val categoryBarType: CategoryBarType = CategoryBarType.BOTTOM,
     val useMonochromeIcons: Boolean = false,
     val hiddenPackages: Set<String> = emptySet(),
     val showHiddenApps: Boolean = false,
@@ -60,10 +60,11 @@ data class UserPreferences(
     val lockLayout: Boolean = false,
     val doubleTapToSleep: Boolean = false,
     val swipeDownForNotifications: Boolean = true,
-    val verticalAnchor: VerticalAnchor = VerticalAnchor.BOTTOM,
-    val horizontalAnchor: HorizontalAnchor = HorizontalAnchor.RIGHT,
+    val verticalAnchor: VerticalAnchor = VerticalAnchor.TOP,
+    val horizontalAnchor: HorizontalAnchor = HorizontalAnchor.LEFT,
     val iconPackPackageName: String? = null,
     val hapticsEnabled: Boolean = true,
+    val isSortReverse: Boolean = false,
     val isFirstInstallRun: Boolean = true
 )
 
@@ -89,6 +90,7 @@ class UserPreferencesRepository @Inject constructor(
         val HORIZONTAL_ANCHOR = stringPreferencesKey("horizontal_anchor")
         val ICON_PACK_PACKAGE_NAME = stringPreferencesKey("icon_pack_package_name")
         val HAPTICS_ENABLED = booleanPreferencesKey("haptics_enabled")
+        val IS_SORT_REVERSE = booleanPreferencesKey("is_sort_reverse")
         val IS_FIRST_INSTALL_RUN = booleanPreferencesKey("is_first_install_run")
     }
 
@@ -101,8 +103,8 @@ class UserPreferencesRepository @Inject constructor(
             }
         }
         .map { preferences ->
-            val categoryBarTypeStr = preferences[PreferencesKeys.CATEGORY_BAR_TYPE] ?: CategoryBarType.RIGHT.name
-            val categoryBarType = try { CategoryBarType.valueOf(categoryBarTypeStr) } catch (_: Exception) { CategoryBarType.RIGHT }
+            val categoryBarTypeStr = preferences[PreferencesKeys.CATEGORY_BAR_TYPE] ?: CategoryBarType.BOTTOM.name
+            val categoryBarType = try { CategoryBarType.valueOf(categoryBarTypeStr) } catch (_: Exception) { CategoryBarType.BOTTOM }
             
             val sortingModeStr = preferences[PreferencesKeys.SORTING_MODE] ?: SortingMode.ALPHABETICAL.name
             val sortingMode = try { SortingMode.valueOf(sortingModeStr) } catch (_: Exception) { SortingMode.ALPHABETICAL }
@@ -110,11 +112,7 @@ class UserPreferencesRepository @Inject constructor(
             val gridSizeStr = preferences[PreferencesKeys.GRID_SIZE] ?: GridSize.GRID_5X5.name
             val gridSize = try { GridSize.valueOf(gridSizeStr) } catch (_: Exception) { GridSize.GRID_5X5 }
 
-            val appLabelModeStr = preferences[PreferencesKeys.APP_LABEL_MODE] ?: run {
-                // Migration logic for old boolean setting
-                val oldShowLabels = preferences[booleanPreferencesKey("show_icon_labels")] ?: true
-                if (oldShowLabels) AppLabelMode.BOTH.name else AppLabelMode.NONE.name
-            }
+            val appLabelModeStr = preferences[PreferencesKeys.APP_LABEL_MODE] ?: AppLabelMode.BOTH.name
             val appLabelMode = try { AppLabelMode.valueOf(appLabelModeStr) } catch (_: Exception) { AppLabelMode.BOTH }
 
             val searchProviderStr = preferences[PreferencesKeys.SEARCH_PROVIDER] ?: SearchProvider.GOOGLE.name
@@ -123,25 +121,13 @@ class UserPreferencesRepository @Inject constructor(
             val dotModeStr = preferences[PreferencesKeys.NOTIFICATION_DOT_MODE] ?: NotificationDotMode.BOTH.name
             val dotMode = try { NotificationDotMode.valueOf(dotModeStr) } catch (_: Exception) { NotificationDotMode.BOTH }
 
-            val verticalAnchorStr = preferences[PreferencesKeys.VERTICAL_ANCHOR] ?: run {
-                // Migration from DRAWER_ANCHOR or SIDE if exists
-                val oldAnchor = preferences[stringPreferencesKey("drawer_anchor")]
-                when {
-                    oldAnchor == "SIDE" -> VerticalAnchor.TOP.name
-                    oldAnchor != null -> oldAnchor
-                    else -> {
-                        val oldIsBottom = preferences[booleanPreferencesKey("is_bottom_anchored")] ?: true
-                        if (oldIsBottom) VerticalAnchor.BOTTOM.name else VerticalAnchor.TOP.name
-                    }
-                }
-            }
-            val verticalAnchor = try { 
-                val value = VerticalAnchor.valueOf(verticalAnchorStr)
-                if (verticalAnchorStr == "SIDE") VerticalAnchor.TOP else value
-            } catch (_: Exception) { VerticalAnchor.BOTTOM }
+            val verticalAnchorStr = preferences[PreferencesKeys.VERTICAL_ANCHOR] ?: VerticalAnchor.TOP.name
+            val verticalAnchor = try { VerticalAnchor.valueOf(verticalAnchorStr) } catch (_: Exception) { VerticalAnchor.TOP }
 
-            val horizontalAnchorStr = preferences[PreferencesKeys.HORIZONTAL_ANCHOR] ?: HorizontalAnchor.RIGHT.name
-            val horizontalAnchor = try { HorizontalAnchor.valueOf(horizontalAnchorStr) } catch (_: Exception) { HorizontalAnchor.RIGHT }
+            val horizontalAnchorStr = preferences[PreferencesKeys.HORIZONTAL_ANCHOR] ?: HorizontalAnchor.LEFT.name
+            val horizontalAnchor = try { HorizontalAnchor.valueOf(horizontalAnchorStr) } catch (_: Exception) { HorizontalAnchor.LEFT }
+
+            android.util.Log.d("NeoGlidePrefs", "Loaded Prefs (v1): categoryBar=$categoryBarType, vAnchor=$verticalAnchor, hAnchor=$horizontalAnchor")
 
             UserPreferences(
                 categoryBarType = categoryBarType,
@@ -161,6 +147,7 @@ class UserPreferencesRepository @Inject constructor(
                 horizontalAnchor = horizontalAnchor,
                 iconPackPackageName = preferences[PreferencesKeys.ICON_PACK_PACKAGE_NAME],
                 hapticsEnabled = preferences[PreferencesKeys.HAPTICS_ENABLED] ?: true,
+                isSortReverse = preferences[PreferencesKeys.IS_SORT_REVERSE] ?: false,
                 isFirstInstallRun = preferences[PreferencesKeys.IS_FIRST_INSTALL_RUN] ?: true
             )
         }
@@ -247,6 +234,10 @@ class UserPreferencesRepository @Inject constructor(
 
     suspend fun updateHapticsEnabled(enabled: Boolean) {
         context.dataStore.edit { preferences -> preferences[PreferencesKeys.HAPTICS_ENABLED] = enabled }
+    }
+
+    suspend fun updateIsSortReverse(reverse: Boolean) {
+        context.dataStore.edit { preferences -> preferences[PreferencesKeys.IS_SORT_REVERSE] = reverse }
     }
 
     suspend fun setFirstInstallRun(isFirst: Boolean) {

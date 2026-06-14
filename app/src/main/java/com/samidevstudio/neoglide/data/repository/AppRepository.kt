@@ -15,6 +15,7 @@ import com.samidevstudio.neoglide.domain.model.AppCategory
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.domain.model.AppShortcut
 import com.samidevstudio.neoglide.ui.utils.IconLoader
+import com.samidevstudio.neoglide.ui.utils.PaletteUtils
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -37,30 +38,36 @@ class AppRepository @Inject constructor(
         warmUpJob?.cancel()
         warmUpJob = scope.launch(Dispatchers.Default) {
             val apps = appDao.getAllAppsList()
+            if (apps.isEmpty()) return@launch
             
             // Priority 1: First 12 apps (likely what's visible on screen)
+            // Sequential loading with small delays to prioritize UI frames
             apps.take(12).forEach { app ->
                 if (!isActive) return@launch
-                launch { iconLoader.loadIcon(app.packageName, useMonochrome = false) }
+                iconLoader.loadIcon(app.packageName, useMonochrome = false)
+                delay(20) 
             }
             yield()
 
-            // Priority 2: Next 48 apps (immediate glide range)
-            apps.drop(12).take(48).chunked(12).forEach { chunk ->
+            // Priority 2: Next 36 apps (immediate glide range)
+            // Load in small chunks with breathing room
+            apps.drop(12).take(36).chunked(4).forEach { chunk ->
                 if (!isActive) return@launch
                 chunk.forEach { app ->
                     launch { iconLoader.loadIcon(app.packageName, useMonochrome = false) }
                 }
-                delay(15) // Minimal delay to keep CPU free for frames
+                delay(150) 
             }
+            yield()
 
             // Priority 3: The rest (deeper storage)
-            apps.drop(60).chunked(50).forEach { chunk ->
+            // Very slow background filling to ensure zero impact on interaction
+            apps.drop(48).chunked(10).forEach { chunk ->
                 if (!isActive) return@launch
                 chunk.forEach { app ->
                     launch { iconLoader.loadIcon(app.packageName, useMonochrome = false) }
                 }
-                delay(150) // Longer delay for background filling
+                delay(400) 
             }
         }
     }
@@ -91,7 +98,8 @@ class AppRepository @Inject constructor(
                 createAppEntity(
                     app = info.applicationInfo,
                     existingLastUsedTime = existing?.lastUsedTime ?: 0L,
-                    existingCategory = if (forceRecategorize) null else existing?.category
+                    existingCategory = if (forceRecategorize) null else existing?.category,
+                    existingHue = existing?.dominantHue
                 )
             }
             .distinctBy { it.packageName }
@@ -119,7 +127,8 @@ class AppRepository @Inject constructor(
                 appDao.insertApp(createAppEntity(
                     app = info.applicationInfo,
                     existingLastUsedTime = existing?.lastUsedTime ?: 0L,
-                    existingCategory = existing?.category
+                    existingCategory = existing?.category,
+                    existingHue = existing?.dominantHue
                 ))
             } else {
                 appDao.deleteAppByPackageName(packageName)
@@ -147,19 +156,29 @@ class AppRepository @Inject constructor(
     private fun createAppEntity(
         app: ApplicationInfo, 
         existingLastUsedTime: Long = 0L,
-        existingCategory: String? = null
+        existingCategory: String? = null,
+        existingHue: Float? = null
     ): AppEntity {
         val installTime = try {
             packageManager.getPackageInfo(app.packageName, 0).firstInstallTime
         } catch (_: Exception) {
             System.currentTimeMillis()
         }
+        
+        val hue = existingHue ?: try {
+            val icon = packageManager.getApplicationIcon(app)
+            PaletteUtils.extractDominantHue(icon)
+        } catch (_: Exception) {
+            0f
+        }
+
         return AppEntity(
             packageName = app.packageName,
             label = packageManager.getApplicationLabel(app).toString(),
             category = existingCategory ?: categorizeApp(app).name,
             installTime = installTime,
-            lastUsedTime = existingLastUsedTime
+            lastUsedTime = existingLastUsedTime,
+            dominantHue = hue
         )
     }
 
@@ -361,7 +380,9 @@ class AppRepository @Inject constructor(
             label = label,
             category = AppCategory.fromString(category),
             isFavorite = isFavorite,
-            lastUsedTime = lastUsedTime
+            lastUsedTime = lastUsedTime,
+            installTime = installTime,
+            dominantHue = dominantHue ?: 0f
         )
     }
 

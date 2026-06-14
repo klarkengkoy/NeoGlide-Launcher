@@ -23,7 +23,6 @@ object DatabaseModule {
             NeoGlideDatabase::class.java,
             NeoGlideDatabase.DATABASE_NAME
         )
-            .addMigrations(NeoGlideDatabase.MIGRATION_6_7)
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
     }

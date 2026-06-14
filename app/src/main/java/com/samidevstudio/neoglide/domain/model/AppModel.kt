@@ -5,7 +5,9 @@ data class AppModel(
     val label: String,
     val category: AppCategory,
     val isFavorite: Boolean = false,
-    val lastUsedTime: Long = 0L
+    val lastUsedTime: Long = 0L,
+    val installTime: Long = 0L,
+    val dominantHue: Float = 0f
 )
 
 data class AppShortcut(

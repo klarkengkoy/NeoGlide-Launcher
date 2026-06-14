@@ -2,8 +2,6 @@ package com.samidevstudio.neoglide.data.local
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
 import com.samidevstudio.neoglide.data.local.dao.AppDao
 import com.samidevstudio.neoglide.data.local.dao.FolderDao
 import com.samidevstudio.neoglide.data.local.dao.HomeAppDao
@@ -22,7 +20,7 @@ import com.samidevstudio.neoglide.data.local.entity.WidgetEntity
         FolderEntity::class,
         FolderAppEntity::class,
     ],
-    version = 7,
+    version = 1,
     exportSchema = false
 )
 abstract class NeoGlideDatabase : RoomDatabase() {
@@ -33,11 +31,5 @@ abstract class NeoGlideDatabase : RoomDatabase() {
 
     companion object {
         const val DATABASE_NAME = "neoglide_launcher_db"
-
-        val MIGRATION_6_7 = object : Migration(6, 7) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE folders ADD COLUMN category TEXT DEFAULT NULL")
-            }
-        }
     }
 }
