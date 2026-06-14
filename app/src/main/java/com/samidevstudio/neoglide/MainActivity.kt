@@ -25,9 +25,15 @@ import com.samidevstudio.neoglide.ui.navigation.toEntries
 import com.samidevstudio.neoglide.ui.theme.NeoGlideLauncherTheme
 import com.samidevstudio.neoglide.ui.utils.HapticEngine
 import com.samidevstudio.neoglide.ui.utils.LocalHapticEngine
+import com.samidevstudio.neoglide.ui.utils.IconCache
+import com.samidevstudio.neoglide.ui.utils.LocalIconCache
+import com.samidevstudio.neoglide.ui.utils.IconLoader
+import com.samidevstudio.neoglide.ui.utils.LocalIconLoader
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import com.samidevstudio.neoglide.data.repository.WidgetRepository
+import com.samidevstudio.neoglide.data.repository.AppRepository
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.CompositionLocalProvider
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -46,6 +52,9 @@ class MainActivity : FragmentActivity() {
 
     @Inject lateinit var widgetRepository: WidgetRepository
     @Inject lateinit var hapticEngine: HapticEngine
+    @Inject lateinit var iconCache: IconCache
+    @Inject lateinit var iconLoader: IconLoader
+    @Inject lateinit var appRepository: AppRepository
     
     private val homeViewModel: HomeViewModel by viewModels()
     private val drawerViewModel: DrawerViewModel by viewModels()
@@ -55,6 +64,12 @@ class MainActivity : FragmentActivity() {
             homeViewModel.triggerIconRefresh()
             drawerViewModel.triggerIconRefresh()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Warm up icons as soon as the user looks at the app
+        appRepository.warmUpIcons(iconLoader, lifecycleScope)
     }
 
     override fun onStart() {
@@ -74,6 +89,10 @@ class MainActivity : FragmentActivity() {
         super.onStop()
         widgetRepository.stopListening()
         unregisterReceiver(iconRefreshReceiver)
+        
+        // Stop warm-up and clear cache to be a "Good Neighbor"
+        appRepository.stopWarmUp()
+        iconCache.clear()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -131,7 +150,11 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            CompositionLocalProvider(LocalHapticEngine provides hapticEngine) {
+            CompositionLocalProvider(
+                LocalHapticEngine provides hapticEngine,
+                LocalIconCache provides iconCache,
+                LocalIconLoader provides iconLoader
+            ) {
                 NeoGlideLauncherTheme {
                     val navigationState = rememberNavigationState(
                         startRoute = HomeRoute,

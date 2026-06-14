@@ -14,6 +14,7 @@ import com.samidevstudio.neoglide.data.local.entity.AppEntity
 import com.samidevstudio.neoglide.domain.model.AppCategory
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.domain.model.AppShortcut
+import com.samidevstudio.neoglide.ui.utils.IconLoader
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -29,6 +30,45 @@ class AppRepository @Inject constructor(
 ) {
     private val packageManager: PackageManager = context.packageManager
     private val launcherApps: LauncherApps = context.getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
+
+    private var warmUpJob: Job? = null
+
+    fun warmUpIcons(iconLoader: IconLoader, scope: CoroutineScope) {
+        warmUpJob?.cancel()
+        warmUpJob = scope.launch(Dispatchers.Default) {
+            val apps = appDao.getAllAppsList()
+            
+            // Priority 1: First 12 apps (likely what's visible on screen)
+            apps.take(12).forEach { app ->
+                if (!isActive) return@launch
+                launch { iconLoader.loadIcon(app.packageName, useMonochrome = false) }
+            }
+            yield()
+
+            // Priority 2: Next 48 apps (immediate glide range)
+            apps.drop(12).take(48).chunked(12).forEach { chunk ->
+                if (!isActive) return@launch
+                chunk.forEach { app ->
+                    launch { iconLoader.loadIcon(app.packageName, useMonochrome = false) }
+                }
+                delay(15) // Minimal delay to keep CPU free for frames
+            }
+
+            // Priority 3: The rest (deeper storage)
+            apps.drop(60).chunked(50).forEach { chunk ->
+                if (!isActive) return@launch
+                chunk.forEach { app ->
+                    launch { iconLoader.loadIcon(app.packageName, useMonochrome = false) }
+                }
+                delay(150) // Longer delay for background filling
+            }
+        }
+    }
+
+    fun stopWarmUp() {
+        warmUpJob?.cancel()
+        warmUpJob = null
+    }
 
     val allApps: Flow<List<AppModel>> = appDao.getAllApps().map { entities ->
         entities.map { entity ->
