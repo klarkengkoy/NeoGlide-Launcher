@@ -48,7 +48,6 @@ sealed class HomeItem {
         override val column: Float,
         override val spanX: Float,
         override val spanY: Float,
-        val isCustom: Boolean = false, // New flag for internal widgets like Dock
     ) : HomeItem()
 
     data class Folder(
@@ -92,59 +91,38 @@ class HomeViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            // Self-healing check for mandatory internal widgets (Dock) on startup
-            ensureInternalWidgetsProvisioned()
-            
-            // Also react to reset signals via the preference flag
+            // Check for first install provisioning
             userPreferencesRepository.userPreferencesFlow
                 .map { it.isFirstInstallRun }
                 .distinctUntilChanged()
                 .collect { isFirst ->
                     if (isFirst) {
-                        ensureInternalWidgetsProvisioned()
+                        // Wait for database to be ready before provisioning
+                        appRepository.isDatabaseReady.first { it }
+                        provisionDefaultHomeApps()
                     }
                 }
         }
-        viewModelScope.launch {
-            // Refresh apps on startup
-            appRepository.refreshApps()
-        }
     }
 
-    private suspend fun ensureInternalWidgetsProvisioned() {
-        // Double check DB to prevent accidental duplicates
-        // Use a small timeout to ensure we don't block if the DB is under heavy load/initialization
-        try {
-            withTimeout(2000L) {
-                val existing = widgetRepository.allWidgets.first()
-                if (existing.none { (it.providerPackage == "internal") && (it.providerClass == "dock") }) {
-                    provisionDefaultDock()
-                }
+    private suspend fun provisionDefaultHomeApps() {
+        val coreApps = appRepository.getCoreAppsForProvisioning()
+        if (coreApps.isNotEmpty()) {
+            val offset = (5 - coreApps.size) / 2f
+            coreApps.forEachIndexed { index, packageName ->
+                homeRepository.addHomeApp(
+                    com.samidevstudio.neoglide.data.local.entity.HomeAppEntity(
+                        packageName = packageName,
+                        row = 99f, // Sentinel value for adaptive bottom snapping
+                        column = index.toFloat() + offset
+                    )
+                )
             }
-        } catch (e: Exception) {
-            android.util.Log.e("HomeViewModel", "Failed to check/provision internal widgets", e)
         }
-    }
-
-    private suspend fun provisionDefaultDock() {
-        // Provision internal Dock (Floating placeholder: 99.5f)
-        val dockId = widgetRepository.allocateWidgetId()
-        widgetRepository.addWidget(
-            WidgetEntity(
-                widgetId = dockId,
-                providerPackage = "internal",
-                providerClass = "dock",
-                label = "Dock",
-                row = 99.5f,
-                column = 0f,
-                spanX = 5f,
-                spanY = 1f
-            )
-        )
-        // Only clear the first install flag if we actually successfully provisioned (or checked)
-        // though we check DB directly now, it's good to keep for other things.
         userPreferencesRepository.setFirstInstallRun(isFirst = false)
     }
+
+
 
     val activeNotifications: StateFlow<Map<String, Int>> = NeoGlideNotificationListener.activeNotifications
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
@@ -180,8 +158,7 @@ class HomeViewModel @Inject constructor(
                 row = widget.row,
                 column = widget.column,
                 spanX = widget.spanX,
-                spanY = widget.spanY,
-                isCustom = widget.providerPackage == "internal"
+                spanY = widget.spanY
             )
         }
         
@@ -200,18 +177,7 @@ class HomeViewModel @Inject constructor(
         appItems + widgetItems + folderItems
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val dockApps: StateFlow<List<AppModel>> = combine(
-        appRepository.allApps,
-        appRepository.allApps.map { appRepository.getDefaultDockApps() }
-    ) { apps, defaultDockPkgs ->
-        apps.asSequence()
-            .filter { it.packageName in defaultDockPkgs }
-            .sortedBy { defaultDockPkgs.indexOf(it.packageName) }
-            .toList()
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val widgets: StateFlow<List<WidgetEntity>> = widgetRepository.allWidgets
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val allApps: StateFlow<List<AppModel>> = appRepository.allApps
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -242,13 +208,8 @@ class HomeViewModel @Inject constructor(
 
     // WIDGET PICKER STATE
     private val _pendingWidgetRow = MutableStateFlow(0f)
-    val pendingWidgetRow = _pendingWidgetRow.asStateFlow()
-
     private val _pendingWidgetCol = MutableStateFlow(0f)
-    val pendingWidgetCol = _pendingWidgetCol.asStateFlow()
-
     private val _pendingWidgetInfo = MutableStateFlow<android.appwidget.AppWidgetProviderInfo?>(null)
-    val pendingWidgetInfo = _pendingWidgetInfo.asStateFlow()
 
     fun setPendingWidgetPosition(row: Float, col: Float) {
         _pendingWidgetRow.value = row
@@ -385,12 +346,6 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun addWidget(widget: WidgetEntity) {
-        viewModelScope.launch {
-            widgetRepository.addWidget(widget)
-        }
-    }
-
     fun removeWidget(widgetId: Int) {
         viewModelScope.launch {
             widgetRepository.removeWidget(widgetId)
@@ -419,7 +374,12 @@ class HomeViewModel @Inject constructor(
 
     fun completeWidgetConfiguration(widgetId: Int) {
         viewModelScope.launch {
-            val info = appWidgetManager.getAppWidgetInfo(widgetId) ?: return@launch
+            // Safety: Ensure we don't try to query info for IDs that aren't real system widgets
+            val info = try {
+                appWidgetManager.getAppWidgetInfo(widgetId)
+            } catch (_: Exception) {
+                null
+            } ?: return@launch
             
             // Refined span calculation using standard 70dp cell formula (supports up to 5 cols)
             val spanX = ((info.minWidth + 30) / 70).coerceIn(1, 5).toFloat()
@@ -503,23 +463,13 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun removeAppFromFolder(folderId: Int, packageName: String) {
-        viewModelScope.launch {
-            homeRepository.removeAppFromFolder(folderId, packageName)
-        }
-    }
-
     fun removeAppFromFolder(folderId: Int, packageName: String, targetRow: Float, targetCol: Float) {
         viewModelScope.launch {
             // Find AppModel across all current apps to ensure we have valid data on rerun
             val appModel = allApps.value.find { it.packageName == packageName } ?: run {
-                android.util.Log.e("HomeViewModel", "removeAppFromFolder FAILED: AppModel not found for $packageName. allApps size: ${allApps.value.size}")
                 // If it's not in allApps, try the database directly as a fallback
                 appRepository.allApps.first().find { it.packageName == packageName }
-            } ?: run {
-                android.util.Log.e("HomeViewModel", "removeAppFromFolder CRITICAL: App not found in database for $packageName")
-                return@launch
-            }
+            } ?: return@launch
 
             // PREVENT dropping back into the same folder
             val sourceFolder = homeItems.value.find { it.id == folderId && it is HomeItem.Folder }
@@ -547,8 +497,6 @@ class HomeViewModel @Inject constructor(
                 ignoreUniqueKey = sourceFolder?.uniqueKey
             )
             
-            android.util.Log.d("HomeViewModel", "removeAppFromFolder: pkg=$packageName, target=($targetRow, $targetCol), collision=$collisionResult")
-
             if (collisionResult is CollisionResult.None) {
                 homeRepository.removeAppFromFolder(folderId, packageName, targetRow, targetCol)
             } else {

@@ -49,6 +49,9 @@ import androidx.core.net.toUri
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.samidevstudio.neoglide.data.repository.*
+import kotlinx.coroutines.launch
+import kotlin.math.max
+import kotlin.math.min
 import com.samidevstudio.neoglide.domain.model.AppCategory
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.domain.model.AppShortcut
@@ -62,8 +65,8 @@ import com.samidevstudio.neoglide.ui.settings.SettingsViewModel
 import com.samidevstudio.neoglide.ui.utils.HapticEngine
 import com.samidevstudio.neoglide.ui.utils.rememberHapticFeedback
 import com.samidevstudio.neoglide.ui.utils.toIcon
+import com.samidevstudio.neoglide.data.repository.*
 import kotlinx.coroutines.launch
-import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 
@@ -204,7 +207,7 @@ fun DrawerScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = selectedCategory?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Categoryless",
+                        text = selectedCategory?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Apps",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold,
@@ -271,7 +274,7 @@ fun DrawerScreen(
                     }
                 }
 
-                androidx.compose.animation.AnimatedVisibility(
+                AnimatedVisibility(
                     visible = isSearchActive,
                     enter = scaleIn(
                         animationSpec = tween(400),
@@ -289,14 +292,16 @@ fun DrawerScreen(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
                         ) {
                             BasicTextField(
                                 value = searchQuery,
                                 onValueChange = { viewModel.onSearchQueryChanged(it) },
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(36.dp)
+                                    .height(40.dp)
                                     .focusRequester(focusRequester),
                                 textStyle = MaterialTheme.typography.bodyMedium.copy(
                                     color = MaterialTheme.colorScheme.onSurface
@@ -335,6 +340,8 @@ fun DrawerScreen(
                                 }
                             )
                             
+                            Spacer(modifier = Modifier.width(8.dp))
+
                             IconButton(onClick = { 
                                 isSearchActive = false
                                 viewModel.onSearchQueryChanged("")
@@ -381,6 +388,7 @@ fun DrawerScreen(
                             filteredApps = filteredApps,
                             recentlyUsedApps = if (searchQuery.isBlank()) recentlyUsedApps else emptyList(),
                             webSuggestions = webSuggestions,
+                            searchProviderName = preferences.searchProvider.displayName,
                             modifier = Modifier.fillMaxSize(),
                             sharedTransitionScope = sharedTransitionScope,
                             animatedVisibilityScope = animatedVisibilityScope,
@@ -397,8 +405,11 @@ fun DrawerScreen(
                                 if (isHidden) viewModel.unhideApp(packageName) else viewModel.hideApp(packageName)
                             }
                         ) { query ->
-                            val intent = Intent(Intent.ACTION_VIEW, "https://www.google.com/search?q=$query".toUri())
-                            context.startActivity(intent)
+                            val provider = preferences.searchProvider
+                            if (provider != SearchProvider.LOCAL_ONLY) {
+                                val intent = Intent(Intent.ACTION_VIEW, "${provider.searchUrl}$query".toUri())
+                                context.startActivity(intent)
+                            }
                         }
                     } else {
 
@@ -431,8 +442,11 @@ fun DrawerScreen(
                                 }
 
                                 Column(modifier = Modifier.weight(1f)) {
-                                        AppGrid(
-                                            items = gridItems,
+                                    val currentGridItems = remember(gridItems, selectedCategory) {
+                                        gridItems[selectedCategory] ?: emptyList()
+                                    }
+                                    AppGrid(
+                                            items = currentGridItems,
                                             columns = 4,
                                             onFolderClick = { expandedFolderId = it },
                                             bottomPadding = if (showCategoryBar && orientation == CategoryOrientation.HORIZONTAL_BOTTOM) 8.dp else 20.dp,
@@ -1010,8 +1024,6 @@ fun AppGrid(
     onFolderMove: (Int, AppCategory) -> Unit = { _, _ -> },
     onAppClick: (String, android.os.Bundle?) -> Unit
 ) {
-    android.util.Log.d("NeoGlideDrawer", "AppGrid Composable: vAnchor=$verticalAnchor, items=${items.size}")
-    
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
         reverseLayout = false,
@@ -1265,6 +1277,7 @@ fun AppGrid(
 fun SearchResults(
     filteredApps: List<AppModel>,
     webSuggestions: List<String>,
+    searchProviderName: String,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     onAppClick: (String, android.os.Bundle?) -> Unit,
@@ -1364,27 +1377,38 @@ fun SearchResults(
         if (webSuggestions.isNotEmpty()) {
             item {
                 Text(
-                    text = "Web Suggestions",
+                    text = "$searchProviderName Suggestions",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = 4.dp)
                 )
             }
-            items(webSuggestions) { suggestion ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onWebSearch(suggestion) }
-                        .padding(vertical = 12.dp, horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text(
-                        text = suggestion,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    webSuggestions.forEach { suggestion ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { onWebSearch(suggestion) }
+                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = suggestion,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
                 }
             }
         }

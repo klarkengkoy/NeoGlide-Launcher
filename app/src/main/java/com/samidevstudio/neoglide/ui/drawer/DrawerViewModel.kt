@@ -165,18 +165,16 @@ class DrawerViewModel @Inject constructor(
         initialValue = emptyList()
     )
 
-    val gridItems: StateFlow<List<DrawerItem?>> = combine(
+    val gridItems: StateFlow<Map<AppCategory?, List<DrawerItem?>>> = combine(
         categorizedApps,
-        _selectedCategory,
-        preferences
-    ) { categorized, selected, prefs ->
-        val items = categorized[selected] ?: emptyList()
-        if (items.isEmpty()) return@combine emptyList<DrawerItem?>()
 
+        preferences
+    ) { categorized, prefs ->
         val columns = 4 
-        
         val sortingMode = prefs.sortingMode
         val isReverse = prefs.isSortReverse
+        val verticalAnchor = prefs.verticalAnchor
+        val horizontalAnchor = prefs.horizontalAnchor
 
         val baseComparator = when (sortingMode) {
             com.samidevstudio.neoglide.data.repository.SortingMode.ALPHABETICAL -> compareBy<AppModel> { it.label.lowercase() }
@@ -184,98 +182,95 @@ class DrawerViewModel @Inject constructor(
             com.samidevstudio.neoglide.data.repository.SortingMode.LAST_USED -> compareByDescending<AppModel> { it.lastUsedTime }.thenBy { it.label.lowercase() }
             com.samidevstudio.neoglide.data.repository.SortingMode.ICON_COLOR -> compareBy<AppModel> { it.dominantHue }.thenBy { it.label.lowercase() }
         }
-
         val finalComparator = if (isReverse) baseComparator.reversed() else baseComparator
 
-        val folders = items.filterIsInstance<DrawerItem.Folder>().sortedBy { it.label }
-        val apps = items.filterIsInstance<DrawerItem.App>()
-            .map { it.appModel }
-            .sortedWith(finalComparator)
-            .map { DrawerItem.App(it) }
-        
-        val verticalAnchor = prefs.verticalAnchor
-        val horizontalAnchor = prefs.horizontalAnchor
+        categorized.mapValues { (_, items) ->
+            if (items.isEmpty()) return@mapValues emptyList<DrawerItem?>()
 
-        android.util.Log.d("NeoGlideDrawer", "Calculating Grid: vAnchor=$verticalAnchor, hAnchor=$horizontalAnchor, items=${items.size}")
+            val folders = items.filterIsInstance<DrawerItem.Folder>().sortedBy { it.label }
+            val apps = items.filterIsInstance<DrawerItem.App>()
+                .map { it.appModel }
+                .sortedWith(finalComparator)
+                .map { DrawerItem.App(it) }
 
-        val totalContentCount = items.size
-        val numRows = (totalContentCount + columns - 1) / columns
-        val rem = totalContentCount % columns
-        val placeholdersCount = if (rem > 0) columns - rem else 0
+            val totalContentCount = items.size
+            val numRows = (totalContentCount + columns - 1) / columns
+            val rem = totalContentCount % columns
+            val placeholdersCount = if (rem > 0) columns - rem else 0
 
-        val contentSlots = mutableListOf<Pair<Int, Int>>()
-        val totalGridSlots = numRows * columns
+            val contentSlots = mutableListOf<Pair<Int, Int>>()
+            val totalGridSlots = numRows * columns
 
-        for (index in 0 until totalGridSlots) {
-            val isP = when {
-                verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.LEFT -> index >= totalContentCount
-                verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.RIGHT -> {
-                    val lastRowStart = (numRows - 1) * columns
-                    index >= lastRowStart && index < lastRowStart + placeholdersCount
+            for (index in 0 until totalGridSlots) {
+                val isP = when {
+                    verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.LEFT -> index >= totalContentCount
+                    verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.RIGHT -> {
+                        val lastRowStart = (numRows - 1) * columns
+                        index >= lastRowStart && index < lastRowStart + placeholdersCount
+                    }
+                    verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.LEFT -> {
+                        index >= rem && index < rem + placeholdersCount
+                    }
+                    verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.RIGHT -> {
+                        index < placeholdersCount
+                    }
+                    else -> false
                 }
-                verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.LEFT -> {
-                    index >= rem && index < rem + placeholdersCount
+                if (!isP) {
+                    contentSlots.add(index / columns to index % columns)
                 }
-                verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.RIGHT -> {
-                    index < placeholdersCount
+            }
+            
+            val sortedContentSlots = contentSlots.sortedWith(compareBy { (r, c) ->
+                val rowDist = if (verticalAnchor == VerticalAnchor.TOP) r else (numRows - 1 - r)
+                val colDist = if (horizontalAnchor == HorizontalAnchor.LEFT) c else (columns - 1 - c)
+                rowDist * 100 + colDist
+            })
+            
+            val folderAssignedSlots = sortedContentSlots.take(folders.size).sortedWith(compareBy({ it.first }, { it.second }))
+            val appAssignedSlots = sortedContentSlots.drop(folders.size).sortedWith(compareBy({ it.first }, { it.second }))
+            
+            val slotToItem = mutableMapOf<Pair<Int, Int>, DrawerItem>()
+            folderAssignedSlots.forEachIndexed { i, slot -> slotToItem[slot] = folders[i] }
+            appAssignedSlots.forEachIndexed { i, slot -> slotToItem[slot] = apps[i] }
+            
+            val result = mutableListOf<DrawerItem?>()
+            for (index in 0 until totalGridSlots) {
+                val isP = when {
+                    verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.LEFT -> index >= totalContentCount
+                    verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.RIGHT -> {
+                        val lastRowStart = (numRows - 1) * columns
+                        index >= lastRowStart && index < lastRowStart + placeholdersCount
+                    }
+                    verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.LEFT -> {
+                        index >= rem && index < rem + placeholdersCount
+                    }
+                    verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.RIGHT -> {
+                        index < placeholdersCount
+                    }
+                    else -> false
                 }
-                else -> false
+                if (isP) {
+                    result.add(null)
+                } else {
+                    result.add(slotToItem[index / columns to index % columns])
+                }
             }
-            if (isP) {
-                android.util.Log.v("NeoGlideDrawer", "Index $index is Placeholder")
-            }
-            if (!isP) {
-                contentSlots.add(index / columns to index % columns)
-            }
+            result
         }
-        
-        val sortedContentSlots = contentSlots.sortedWith(compareBy { (r, c) ->
-            val rowDist = if (verticalAnchor == VerticalAnchor.TOP) r else (numRows - 1 - r)
-            val colDist = if (horizontalAnchor == HorizontalAnchor.LEFT) c else (columns - 1 - c)
-            rowDist * 100 + colDist
-        })
-        
-        val folderAssignedSlots = sortedContentSlots.take(folders.size).sortedWith(compareBy({ it.first }, { it.second }))
-        val appAssignedSlots = sortedContentSlots.drop(folders.size).sortedWith(compareBy({ it.first }, { it.second }))
-        
-        val slotToItem = mutableMapOf<Pair<Int, Int>, DrawerItem>()
-        folderAssignedSlots.forEachIndexed { i, slot -> slotToItem[slot] = folders[i] }
-        appAssignedSlots.forEachIndexed { i, slot -> slotToItem[slot] = apps[i] }
-        
-        val result = mutableListOf<DrawerItem?>()
-        for (index in 0 until totalGridSlots) {
-            val isP = when {
-                verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.LEFT -> index >= totalContentCount
-                verticalAnchor == VerticalAnchor.TOP && horizontalAnchor == HorizontalAnchor.RIGHT -> {
-                    val lastRowStart = (numRows - 1) * columns
-                    index >= lastRowStart && index < lastRowStart + placeholdersCount
-                }
-                verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.LEFT -> {
-                    index >= rem && index < rem + placeholdersCount
-                }
-                verticalAnchor == VerticalAnchor.BOTTOM && horizontalAnchor == HorizontalAnchor.RIGHT -> {
-                    index < placeholdersCount
-                }
-                else -> false
-            }
-            if (isP) {
-                result.add(null)
-            } else {
-                result.add(slotToItem[index / columns to index % columns])
-            }
-        }
-        result
     }.flowOn(Dispatchers.Default)
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     init {
-        _searchQuery
-            .debounce(300)
-            .filter { it.isNotBlank() }
-            .onEach { query ->
-                val suggestions = searchRepository.getWebSuggestions(query)
-                _webSuggestions.value = suggestions
-            }.launchIn(viewModelScope)
+        combine(_searchQuery, preferences) { query, prefs ->
+            query to prefs.searchProvider
+        }
+        .debounce(300)
+        .filter { (query, provider) -> query.isNotBlank() && provider != com.samidevstudio.neoglide.data.repository.SearchProvider.LOCAL_ONLY }
+        .onEach { (query, _) ->
+            val suggestions = searchRepository.getWebSuggestions(query)
+            _webSuggestions.value = suggestions
+        }.launchIn(viewModelScope)
     }
 
     fun onSearchQueryChanged(query: String) {

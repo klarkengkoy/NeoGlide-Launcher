@@ -515,9 +515,10 @@ fun HomeScreen(
                                     modifier = Modifier
                                         .onGloballyPositioned { itemCoords = it }
                                         .offset {
+                                            val adaptiveRow = if (item.row >= 99f) (maxRows - 1).toFloat() else item.row
                                             androidx.compose.ui.unit.IntOffset(
                                                 (unitWidthPx * item.column).roundToInt(),
-                                                (topOffsetPx + unitHeightPx * item.row).roundToInt()
+                                                (topOffsetPx + unitHeightPx * adaptiveRow).roundToInt()
                                             )
                                         }
                                         .size(unitWidth, unitHeight)
@@ -538,9 +539,10 @@ fun HomeScreen(
 
                                                         // Use Bit-Perfect Initialization for Zero-Jump
                                                         grabPoint = offset
+                                                        val initialAdaptiveRow = if (item.row >= 99f) (maxRows - 1).toFloat() else item.row
                                                         dragOffset = androidx.compose.ui.geometry.Offset(
                                                             unitWidthPx * item.column,
-                                                            topOffsetPx + unitHeightPx * item.row
+                                                            topOffsetPx + unitHeightPx * initialAdaptiveRow
                                                         )
                                                         
                                                         dragTargetBounds = calculateTargetBounds(dragOffset + grabPoint, 1f, 1f)
@@ -639,9 +641,10 @@ fun HomeScreen(
                                     modifier = Modifier
                                         .onGloballyPositioned { itemCoords = it }
                                         .offset {
+                                            val adaptiveRow = if (item.row >= 99f) (maxRows - 1).toFloat() else item.row
                                             androidx.compose.ui.unit.IntOffset(
                                                 (unitWidthPx * item.column).roundToInt(),
-                                                (topOffsetPx + unitHeightPx * item.row).roundToInt()
+                                                (topOffsetPx + unitHeightPx * adaptiveRow).roundToInt()
                                             )
                                         }
                                         .size(unitWidth, unitHeight)
@@ -661,9 +664,10 @@ fun HomeScreen(
 
                                                         // Use Bit-Perfect Initialization for Zero-Jump
                                                         grabPoint = offset
+                                                        val initialAdaptiveRow = if (item.row >= 99f) (maxRows - 1).toFloat() else item.row
                                                         dragOffset = androidx.compose.ui.geometry.Offset(
                                                             unitWidthPx * item.column,
-                                                            topOffsetPx + unitHeightPx * item.row
+                                                            topOffsetPx + unitHeightPx * initialAdaptiveRow
                                                         )
 
                                                         dragTargetBounds = calculateTargetBounds(dragOffset + grabPoint, 1f, 1f)
@@ -737,7 +741,7 @@ fun HomeScreen(
                             }
                             is HomeItem.Widget -> {
                                 val isCurrentEditing = editingWidgetId == item.id
-                                val dockApps by viewModel.dockApps.collectAsStateWithLifecycle()
+                            
 
                                 NeoGlideWidgetHost(
                                     widgetId = item.id,
@@ -813,31 +817,13 @@ fun HomeScreen(
                                         dragTargetBounds = RectBounds(r, c, sx, sy)
                                     },
                                     onResize = { newRow, newCol, newSpanX, newSpanY ->
-                                        // Normal move
-                                        if (item.isCustom) {
-                                            // Handle fixed-dimension widget (Internal Widgets like Dock)
-                                            val widthChanged = newSpanX != item.spanX
-                                            val heightChanged = newSpanY != item.spanY
-                                            if (widthChanged || heightChanged) {
-                                                val message = when {
-                                                    widthChanged && heightChanged -> "This widget has a fixed size"
-                                                    widthChanged -> "This widget has a fixed width"
-                                                    else -> "This widget has a fixed height"
-                                                }
-                                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                                                viewModel.updateWidgetBounds(item.id, item.row, item.column, item.spanX, item.spanY)
-                                            } else {
-                                                viewModel.updateWidgetBounds(item.id, newRow.coerceAtLeast(0f), newCol, newSpanX, newSpanY)
-                                            }
-                                        } else {
-                                            viewModel.updateWidgetBounds(
-                                                item.id,
-                                                newRow.coerceIn(0f, (maxRows - newSpanY).coerceAtLeast(0f)),
-                                                newCol.coerceIn(0f, (4f - newSpanX).coerceAtLeast(0f)),
-                                                newSpanX,
-                                                newSpanY
-                                            )
-                                        }
+                                        viewModel.updateWidgetBounds(
+                                            item.id,
+                                            newRow.coerceIn(0f, (maxRows - newSpanY).coerceAtLeast(0f)),
+                                            newCol.coerceIn(0f, (4f - newSpanX).coerceAtLeast(0f)),
+                                            newSpanX,
+                                            newSpanY
+                                        )
                                         // RETAIN editingWidgetId as requested
                                         editingWidgetId = item.id
                                         dragTargetBounds = null
@@ -856,59 +842,7 @@ fun HomeScreen(
                                         }
                                     }
 
-                                    if (item.isCustom) {
-                                        // RENDER INTERNAL WIDGET CONTENT
-                                        val widget = item.widgetEntity
-                                        if (widget.providerClass == "dock") {
-                                            // RENDER DOCK CONTENT
-                                            Box(
-                                                modifier = Modifier.fillMaxSize(),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                // Visual Background
-                                                Surface(
-                                                    modifier = Modifier.fillMaxSize(),
-                                                    shape = RoundedCornerShape(24.dp),
-                                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                                                ) {}
 
-                                                Row(
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
-                                                ) {
-                                                    dockApps.forEach { app ->
-                                                        AppItem(
-                                                            app = app,
-                                                            sharedTransitionScope = sharedTransitionScope,
-                                                            animatedVisibilityScope = animatedVisibilityScope,
-                                                            useMonochrome = preferences.useMonochromeIcons,
-                                                            iconPackPackageName = preferences.iconPackPackageName,
-                                                            isHidden = app.packageName in preferences.hiddenPackages,
-                                                            hasNotification = (preferences.notificationDotMode == NotificationDotMode.APP_ICON ||
-                                                                    preferences.notificationDotMode == NotificationDotMode.BOTH) &&
-                                                                    app.packageName in activeNotifications.keys,
-                                                            notificationCount = activeNotifications[app.packageName] ?: 0,
-                                                            showLabel = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
-                                                            sharedElementKeyPrefix = "dock",
-                                                            refreshTrigger = refreshTrigger,
-                                                            getShortcuts = { viewModel.getShortcuts(it) },
-                                                            onShortcutClick = { viewModel.launchShortcut(it) },
-                                                            onHideToggle = {
-                                                                if (app.packageName in preferences.hiddenPackages) {
-                                                                    viewModel.unhideApp(app.packageName)
-                                                                } else {
-                                                                    viewModel.hideApp(app.packageName)
-                                                                }
-                                                            },
-                                                            modifier = Modifier.weight(1f)
-                                                        ) { options ->
-                                                            viewModel.launchApp(app.packageName, options)
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
