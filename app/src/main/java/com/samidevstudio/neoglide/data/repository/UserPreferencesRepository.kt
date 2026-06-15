@@ -26,8 +26,12 @@ enum class GridSize {
     GRID_4X5, GRID_5X5, GRID_6X6
 }
 
-enum class SearchProvider {
-    GOOGLE, DUCKDUCKGO, LOCAL_ONLY
+enum class SearchProvider(val searchUrl: String, val displayName: String) {
+    GOOGLE("https://www.google.com/search?q=", "Google"),
+    DUCKDUCKGO("https://duckduckgo.com/?q=", "DuckDuckGo"),
+    BRAVE("https://search.brave.com/search?q=", "Brave"),
+    ECOSIA("https://www.ecosia.org/search?q=", "Ecosia"),
+    LOCAL_ONLY("", "Local Only")
 }
 
 enum class NotificationDotMode {
@@ -65,6 +69,7 @@ data class UserPreferences(
     val iconPackPackageName: String? = null,
     val hapticsEnabled: Boolean = true,
     val isSortReverse: Boolean = false,
+    val isPremium: Boolean = false,
     val isFirstInstallRun: Boolean = true
 )
 
@@ -91,6 +96,7 @@ class UserPreferencesRepository @Inject constructor(
         val ICON_PACK_PACKAGE_NAME = stringPreferencesKey("icon_pack_package_name")
         val HAPTICS_ENABLED = booleanPreferencesKey("haptics_enabled")
         val IS_SORT_REVERSE = booleanPreferencesKey("is_sort_reverse")
+        val IS_PREMIUM = booleanPreferencesKey("is_premium")
         val IS_FIRST_INSTALL_RUN = booleanPreferencesKey("is_first_install_run")
     }
 
@@ -127,8 +133,6 @@ class UserPreferencesRepository @Inject constructor(
             val horizontalAnchorStr = preferences[PreferencesKeys.HORIZONTAL_ANCHOR] ?: HorizontalAnchor.LEFT.name
             val horizontalAnchor = try { HorizontalAnchor.valueOf(horizontalAnchorStr) } catch (_: Exception) { HorizontalAnchor.LEFT }
 
-            android.util.Log.d("NeoGlidePrefs", "Loaded Prefs (v1): categoryBar=$categoryBarType, vAnchor=$verticalAnchor, hAnchor=$horizontalAnchor")
-
             UserPreferences(
                 categoryBarType = categoryBarType,
                 useMonochromeIcons = preferences[PreferencesKeys.USE_MONOCHROME_ICONS] ?: false,
@@ -148,6 +152,7 @@ class UserPreferencesRepository @Inject constructor(
                 iconPackPackageName = preferences[PreferencesKeys.ICON_PACK_PACKAGE_NAME],
                 hapticsEnabled = preferences[PreferencesKeys.HAPTICS_ENABLED] ?: true,
                 isSortReverse = preferences[PreferencesKeys.IS_SORT_REVERSE] ?: false,
+                isPremium = preferences[PreferencesKeys.IS_PREMIUM] ?: false,
                 isFirstInstallRun = preferences[PreferencesKeys.IS_FIRST_INSTALL_RUN] ?: true
             )
         }
@@ -238,6 +243,10 @@ class UserPreferencesRepository @Inject constructor(
 
     suspend fun updateIsSortReverse(reverse: Boolean) {
         context.dataStore.edit { preferences -> preferences[PreferencesKeys.IS_SORT_REVERSE] = reverse }
+    }
+
+    suspend fun updateIsPremium(isPremium: Boolean) {
+        context.dataStore.edit { preferences -> preferences[PreferencesKeys.IS_PREMIUM] = isPremium }
     }
 
     suspend fun setFirstInstallRun(isFirst: Boolean) {

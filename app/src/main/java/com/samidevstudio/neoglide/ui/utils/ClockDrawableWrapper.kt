@@ -8,7 +8,6 @@ import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.LayerDrawable
 import android.os.Build
-import android.util.Log
 import androidx.annotation.RequiresApi
 import java.util.Calendar
 
@@ -22,19 +21,15 @@ class ClockDrawableWrapper(
 
     private val foreground = baseIcon.foreground as? LayerDrawable
     private val background = baseIcon.background
-    private val TAG = "ClockDrawableWrapper"
 
     override fun draw(canvas: Canvas) {
         // Draw background
         if (background != null) {
             background.bounds = bounds
             background.draw(canvas)
-        } else {
-            Log.w(TAG, "Background is null")
         }
 
         if (foreground == null) {
-            Log.w(TAG, "Foreground is null or not a LayerDrawable")
             baseIcon.foreground?.let {
                 it.bounds = bounds
                 it.draw(canvas)

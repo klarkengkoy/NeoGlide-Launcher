@@ -43,6 +43,7 @@ fun SettingsSheet(
 ) {
     val context = LocalContext.current
     val preferences by viewModel.userPreferences.collectAsStateWithLifecycle()
+    val isPremium = preferences.isPremium
     val hapticFeedback = rememberHapticFeedback(preferences)
     val isNotifEnabled by viewModel.isNotificationServiceEnabled.collectAsStateWithLifecycle()
     val isAuthForHidden by viewModel.isUserAuthenticatedForHiddenApps.collectAsStateWithLifecycle()
@@ -59,7 +60,9 @@ fun SettingsSheet(
     val pendingResetAction = remember { mutableStateOf<ResetAction?>(null) }
 
     val showHiddenAppsWithAuth = {
-        if (isAuthForHidden) {
+        if (!isPremium) {
+            activeDialog = "premium"
+        } else if (isAuthForHidden) {
             activeDialog = "hidden_apps"
         } else {
             BiometricHelper.showBiometricPrompt(
@@ -112,9 +115,22 @@ fun SettingsSheet(
         "sorting" -> SortingSettingsDialog(
             currentMode = preferences.sortingMode,
             isReverse = preferences.isSortReverse,
+            isPremium = isPremium,
             onDismiss = { activeDialog = null },
-            onSelectMode = { viewModel.setSortingMode(it) },
-            onToggleReverse = { viewModel.setIsSortReverse(it) }
+            onSelectMode = { 
+                if (!isPremium && it != SortingMode.ALPHABETICAL) {
+                    activeDialog = "premium"
+                } else {
+                    viewModel.setSortingMode(it)
+                }
+            },
+            onToggleReverse = { 
+                if (!isPremium && it) {
+                    activeDialog = "premium"
+                } else {
+                    viewModel.setIsSortReverse(it) 
+                }
+            }
         )
         "grid" -> SelectionDialog(
             title = "Home screen grid",
@@ -131,16 +147,17 @@ fun SettingsSheet(
             onDismiss = { activeDialog = null },
             onAction = { pendingResetAction.value = it }
         )
-        "search" -> SelectionDialog(
-            title = "Search provider",
-            description = "Choose which engine to use for web search suggestions.",
-            options = listOf(
-                DialogOption("Google", SearchProvider.GOOGLE, preferences.searchProvider == SearchProvider.GOOGLE),
-                DialogOption("DuckDuckGo", SearchProvider.DUCKDUCKGO, preferences.searchProvider == SearchProvider.DUCKDUCKGO),
-                DialogOption("Local Only", SearchProvider.LOCAL_ONLY, preferences.searchProvider == SearchProvider.LOCAL_ONLY)
-            ),
+        "search" -> SearchSettingsDialog(
+            currentProvider = preferences.searchProvider,
+            isPremium = isPremium,
             onDismiss = { activeDialog = null },
-            onSelect = { viewModel.setSearchProvider(it as SearchProvider) }
+            onSelect = { provider ->
+                if (!isPremium && (provider == SearchProvider.DUCKDUCKGO || provider == SearchProvider.BRAVE || provider == SearchProvider.ECOSIA)) {
+                    activeDialog = "premium"
+                } else {
+                    viewModel.setSearchProvider(provider)
+                }
+            }
         )
         "notif" -> SelectionDialog(
             title = "Notification dots",
@@ -169,6 +186,11 @@ fun SettingsSheet(
             onDismiss = { activeDialog = null },
             viewModel = viewModel
         )
+        "premium" -> PremiumFeaturesDialog(
+            isPremium = isPremium,
+            onDismiss = { activeDialog = null },
+            onUpgrade = { viewModel.setIsPremium(true) }
+        )
     }
     
     if (pendingResetAction.value != null) {
@@ -187,7 +209,7 @@ fun SettingsSheet(
                 TextButton(
                     onClick = {
                         when (pendingResetAction.value) {
-                            ResetAction.CLEAR_ICON_CACHE -> viewModel.clearIconCache()
+                            ResetAction.REFRESH_APP_ICONS -> viewModel.refreshAppIcons()
                             ResetAction.RESET_HOME -> viewModel.resetHomeScreen()
                             ResetAction.RESET_DRAWER -> viewModel.resetAppDrawer()
                             ResetAction.DELETE_HOME_FOLDERS -> viewModel.deleteHomeFolders()
@@ -237,7 +259,23 @@ fun SettingsSheet(
                 }
 
                 item {
-                    SettingsGroup(title = "APPLICATION DRAWER") {
+                    SettingsGroup(title = "DEVELOPER TOOLS (TEMPORARY)") {
+                        ToggleSettingsItem(
+                            icon = Icons.Default.BugReport,
+                            title = "Premium Toggle",
+                            checked = isPremium,
+                            onCheckedChange = { viewModel.setIsPremium(it) }
+                        )
+                        SettingsItem(
+                            icon = Icons.Default.Home,
+                            title = "Set Default Launcher",
+                            onClick = { viewModel.openDefaultLauncherSettings() }
+                        )
+                    }
+                }
+
+                item {
+                    SettingsGroup(title = "DRAWER & NAVIGATION") {
                         SettingsItem(
                             icon = Icons.Default.ViewStream,
                             title = "Category bar",
@@ -261,19 +299,21 @@ fun SettingsSheet(
                         SettingsItem(
                             icon = Icons.Default.SortByAlpha,
                             title = "Sorting",
+                            isPremium = !isPremium,
                             onClick = { activeDialog = "sorting" },
                             trailing = { ValueLabel(getSortingLabel(preferences.sortingMode)) }
                         )
                         SettingsItem(
                             icon = Icons.Default.VisibilityOff,
                             title = "Hidden apps",
+                            isPremium = !isPremium,
                             onClick = { showHiddenAppsWithAuth() }
                         )
                     }
                 }
 
                 item {
-                    SettingsGroup(title = "HOME SCREEN") {
+                    SettingsGroup(title = "INTERACTION & LAYOUT") {
                         SettingsItem(
                             icon = Icons.Default.Smartphone, 
                             title = "Home grid", 
@@ -287,11 +327,6 @@ fun SettingsSheet(
                             onHapticFeedback = hapticFeedback,
                             onCheckedChange = { viewModel.setLockLayout(it) }
                         )
-                    }
-                }
-
-                item {
-                    SettingsGroup(title = "SYSTEM & FEEDBACK") {
                         ToggleSettingsItem(
                             icon = Icons.Default.Vibration,
                             title = "Haptic feedback",
@@ -303,7 +338,7 @@ fun SettingsSheet(
                 }
 
                 item {
-                    SettingsGroup(title = "GLOBAL") {
+                    SettingsGroup(title = "ADVANCED") {
                         SettingsItem(
                             icon = Icons.Default.Notifications,
                             title = "Notifications",
@@ -312,8 +347,9 @@ fun SettingsSheet(
                         SettingsItem(
                             icon = Icons.Default.Search, 
                             title = "Search provider", 
+                            isPremium = !isPremium,
                             onClick = { activeDialog = "search" },
-                            trailing = { ValueLabel(preferences.searchProvider.name.formatLabel()) }
+                            trailing = { ValueLabel(preferences.searchProvider.displayName) }
                         )
                         SettingsItem(
                             icon = Icons.Default.FontDownload,
@@ -323,50 +359,40 @@ fun SettingsSheet(
                         SettingsItem(
                             icon = Icons.Default.Wallpaper, 
                             title = "Wallpaper", 
-                            onClick = { }
+                            onClick = { viewModel.openWallpaperSettings() }
                         )
                         SettingsItem(
                             icon = Icons.Default.Palette, 
                             title = "Appearance", 
-                            onClick = { }
-                        )
-                        SettingsItem(
-                            icon = Icons.Default.Backup, 
-                            title = "Backup", 
-                            onClick = { }
-                        )
-                    }
-                }
-
-                item {
-                    SettingsGroup(title = "OTHER") {
-                        SettingsItem(
-                            icon = Icons.Default.WorkspacePremium, 
-                            title = "Premium features", 
-                            onClick = { }, 
-                            trailing = { Icon(Icons.Default.WorkspacePremium, null, tint = MaterialTheme.colorScheme.tertiary) }
-                        )
-                        SettingsItem(
-                            icon = Icons.Default.VerifiedUser, 
-                            title = "Security and privacy", 
-                            onClick = { }
+                            onClick = { viewModel.openAppearanceSettings() }
                         )
                         SettingsItem(
                             icon = Icons.Default.Build, 
                             title = "Troubleshooting", 
                             onClick = { activeDialog = "trouble" }
                         )
+                    }
+                }
+
+                item {
+                    SettingsGroup(title = "SUPPORT & INFO") {
                         SettingsItem(
-                            icon = Icons.Default.RateReview, 
-                            title = "Review NeoGlide", 
-                            onClick = { }
+                            icon = Icons.Default.WorkspacePremium, 
+                            title = "Premium features", 
+                            onClick = { activeDialog = "premium" }, 
+                            trailing = { 
+                                if (isPremium) {
+                                    ValueLabel("Active")
+                                } else {
+                                    PremiumBadge()
+                                }
+                            }
                         )
                         SettingsItem(
                             icon = Icons.Default.Info,
                             title = "About NeoGlide Launcher",
-                            // TODO: Finalize Legal & Compliance info in AboutDialog before marking as Completed
                             onClick = { activeDialog = "about" },
-                            trailing = { Text("v1.0-neo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            trailing = { Text("Version 1.0.0", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         )
                     }
                 }
@@ -392,7 +418,7 @@ private fun getSortingDescription(mode: SortingMode, isReverse: Boolean): String
     SortingMode.ALPHABETICAL -> if (isReverse) "Reverse Z to A organization." else "Standard A to Z organization."
     SortingMode.INSTALL_TIME -> if (isReverse) "Oldest applications first." else "Newest applications first."
     SortingMode.LAST_USED -> if (isReverse) "Least used apps first. Defaults to Z-A." else "Most used apps first. Defaults to A-Z."
-    SortingMode.ICON_COLOR -> if (isReverse) "Black icons, then reverse spectrum, then white." else "White icons, then color spectrum, then grayscale."
+    SortingMode.ICON_COLOR -> if (isReverse) "White icons first, then black, grayscale, and reverse spectrum." else "Vibrant colors first, then grayscale, black, and white icons."
 }
 
 
@@ -903,11 +929,118 @@ fun AboutDialog(onDismiss: () -> Unit) {
     )
 }
 
+@Composable
+fun PremiumFeaturesDialog(
+    isPremium: Boolean,
+    onDismiss: () -> Unit,
+    onUpgrade: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.WorkspacePremium, null, tint = MaterialTheme.colorScheme.tertiary)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("NeoGlide Premium")
+            }
+        },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    text = if (isPremium) "Thank you for supporting NeoGlide! You have unlocked all premium features." 
+                           else "Unlock the full potential of NeoGlide Launcher with a one-time premium purchase.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                PremiumFeatureItem(
+                    title = "Privacy Vault",
+                    description = "Hide sensitive apps and protect them with biometric security (Fingerprint/PIN).",
+                    icon = Icons.Default.VisibilityOff
+                )
+                PremiumFeatureItem(
+                    title = "Advanced Sorting",
+                    description = "Sort your apps by Installation Time, Last Used, Icon Color, or Reverse Alphabetical.",
+                    icon = Icons.Default.SortByAlpha
+                )
+                PremiumFeatureItem(
+                    title = "Custom Search",
+                    description = "Use DuckDuckGo or other privacy-focused search providers.",
+                    icon = Icons.Default.Search
+                )
+                PremiumFeatureItem(
+                    title = "Backup & Sync (Planned)",
+                    description = "Save your layout to Google Drive using Android's Handoff API.",
+                    icon = Icons.Default.CloudSync
+                )
+                PremiumFeatureItem(
+                    title = "Infinite Customization (V2)",
+                    description = "Custom grid sizes, widget stacks, monochrome icons, and custom icon shapes.",
+                    icon = Icons.Default.Palette
+                )
+            }
+        },
+        confirmButton = {
+            if (!isPremium) {
+                Button(
+                    onClick = { 
+                        onUpgrade()
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
+                ) {
+                    Text("Unlock Everything")
+                }
+            } else {
+                TextButton(onClick = onDismiss) { Text("Done") }
+            }
+        },
+        dismissButton = {
+            if (!isPremium) {
+                TextButton(onClick = onDismiss) { Text("Maybe later") }
+            }
+        }
+    )
+}
+
+@Composable
+private fun PremiumFeatureItem(
+    title: String,
+    description: String,
+    icon: ImageVector
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Icon(
+            icon, 
+            contentDescription = null, 
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(24.dp).padding(top = 2.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Column {
+            Text(text = title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text(
+                text = description, 
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SortingSettingsDialog(
     currentMode: SortingMode,
     isReverse: Boolean,
+    isPremium: Boolean,
     onDismiss: () -> Unit,
     onSelectMode: (SortingMode) -> Unit,
     onToggleReverse: (Boolean) -> Unit
@@ -948,10 +1081,19 @@ fun SortingSettingsDialog(
                 ) {
                     SortingMode.entries.forEach { mode ->
                         val label = getSortingLabel(mode)
+                        val isPremiumMode = mode != SortingMode.ALPHABETICAL
                         FilterChip(
                             selected = currentMode == mode,
                             onClick = { onSelectMode(mode) },
-                            label = { Text(label) },
+                            label = { 
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(label)
+                                    if (isPremiumMode && !isPremium) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        PremiumBadge()
+                                    }
+                                }
+                            },
                             leadingIcon = if (currentMode == mode) {
                                 { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
                             } else null,
@@ -979,11 +1121,18 @@ fun SortingSettingsDialog(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            text = "Reverse Order",
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.weight(1f)
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Reverse Order",
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                if (!isPremium) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    PremiumBadge()
+                                }
+                            }
+                        }
                         Switch(
                             checked = isReverse,
                             onCheckedChange = { onToggleReverse(it) },
@@ -1020,13 +1169,13 @@ fun AnchorSettingsDialog(
     var selectedHorizontal by remember { mutableStateOf(horizontalAnchor) }
 
     val verticalDescription = when (selectedVertical) {
-        VerticalAnchor.TOP -> "Standard look. Application stack aligns to the top of the screen."
-        VerticalAnchor.BOTTOM -> "Ergonomic layout. Application stack aligns to the bottom for easier one-handed reach."
+        VerticalAnchor.TOP -> "Standard familiar look when paired with Left Anchor. Apps align to the top. Folders are placed at the top for consistent organization."
+        VerticalAnchor.BOTTOM -> "Ergonomic layout. Apps align to the bottom for easier one-handed reach. Folders are placed at the bottom to keep your most frequent actions within the natural range of your thumb."
     }
 
     val horizontalDescription = when (selectedHorizontal) {
-        HorizontalAnchor.LEFT -> "Left-hand ergonomics. Partial rows gravitate to the left edge, closer to your thumb."
-        HorizontalAnchor.RIGHT -> "Right-hand ergonomics. Partial rows gravitate to the right edge, closer to your thumb."
+        HorizontalAnchor.LEFT -> "Left-hand ergonomics. Partial rows and folders gravitate to the left edge."
+        HorizontalAnchor.RIGHT -> "Right-hand ergonomics. Partial rows and folders gravitate to the right edge, making them more accessible for one-handed use with your right thumb."
     }
 
     AlertDialog(
@@ -1250,13 +1399,133 @@ fun CategoryBarSettingsDialog(
     )
 }
 
-data class DialogOption(val label: String, val value: Any, val isSelected: Boolean)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun SearchSettingsDialog(
+    currentProvider: SearchProvider,
+    isPremium: Boolean,
+    onDismiss: () -> Unit,
+    onSelect: (SearchProvider) -> Unit
+) {
+    var selectedProvider by remember { mutableStateOf(currentProvider) }
+
+    val description = when (selectedProvider) {
+        SearchProvider.GOOGLE -> "Unmatched speed and personalized results integrated into the Google ecosystem."
+        SearchProvider.DUCKDUCKGO -> "Search without being followed by ads. Total privacy, no profiles, and no search bubbles."
+        SearchProvider.BRAVE -> "True independence. Uses its own index to avoid Big Tech bias and algorithmic filtering."
+        SearchProvider.ECOSIA -> "Plant trees while you search. 100% of profits go to climate action and environmental impact."
+        SearchProvider.LOCAL_ONLY -> "Fastest performance. Web search is disabled to keep your focus entirely on local apps."
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("Search Provider")
+            }
+        },
+        text = {
+            Column {
+                Text(
+                    "Choose which engine to use for web search suggestions and routing.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    text = "Engine:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SearchProvider.entries.forEach { provider ->
+                        val isPremiumRequired = provider == SearchProvider.DUCKDUCKGO || 
+                                               provider == SearchProvider.BRAVE || 
+                                               provider == SearchProvider.ECOSIA
+                        
+                        FilterChip(
+                            selected = selectedProvider == provider,
+                            onClick = { selectedProvider = provider },
+                            label = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(provider.displayName)
+                                    if (isPremiumRequired && !isPremium) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        PremiumBadge()
+                                    }
+                                }
+                            },
+                            leadingIcon = if (selectedProvider == provider) {
+                                { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                            } else null,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                ) {
+                    Column(modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                    ) {
+                        Text(
+                            text = description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (selectedProvider == SearchProvider.LOCAL_ONLY)
+                                MaterialTheme.colorScheme.error
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSelect(selectedProvider)
+                    if (isPremium || !(selectedProvider == SearchProvider.DUCKDUCKGO || selectedProvider == SearchProvider.BRAVE || selectedProvider == SearchProvider.ECOSIA)) {
+                        onDismiss()
+                    }
+                }
+            ) { Text("Apply", fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+data class DialogOption(
+    val label: String, 
+    val value: Any, 
+    val isSelected: Boolean,
+    val isPremiumRequired: Boolean = false
+)
 
 @Composable
 fun SelectionDialog(
     title: String,
     description: String? = null,
     options: List<DialogOption>,
+    isPremium: Boolean = true,
     onDismiss: () -> Unit,
     autoDismiss: Boolean = true,
     onSelect: (Any) -> Unit
@@ -1291,7 +1560,13 @@ fun SelectionDialog(
                     ) {
                         RadioButton(selected = option.isSelected, onClick = null)
                         Spacer(modifier = Modifier.width(16.dp))
-                        Text(text = option.label, style = MaterialTheme.typography.bodyLarge)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(text = option.label, style = MaterialTheme.typography.bodyLarge)
+                            if (option.isPremiumRequired && !isPremium) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                PremiumBadge()
+                            }
+                        }
                     }
                 }
             }
@@ -1350,11 +1625,11 @@ fun TroubleshootingDialog(
 
                 SettingsGroup(title = "CACHE & PERFORMANCE") {
                     SettingsItem(
-                        icon = ResetAction.CLEAR_ICON_CACHE.icon,
-                        title = ResetAction.CLEAR_ICON_CACHE.label,
-                        description = ResetAction.CLEAR_ICON_CACHE.description,
+                        icon = ResetAction.REFRESH_APP_ICONS.icon,
+                        title = ResetAction.REFRESH_APP_ICONS.label,
+                        description = ResetAction.REFRESH_APP_ICONS.description,
                         showChevron = false,
-                        onClick = { onAction(ResetAction.CLEAR_ICON_CACHE) }
+                        onClick = { onAction(ResetAction.REFRESH_APP_ICONS) }
                     )
                 }
 
@@ -1376,7 +1651,7 @@ fun TroubleshootingDialog(
 }
 
 enum class ResetAction(val label: String, val description: String, val icon: ImageVector) {
-    CLEAR_ICON_CACHE("Clear Icon Cache", "Refresh cached launcher icons.", Icons.Default.Refresh),
+    REFRESH_APP_ICONS("Refresh App Icons", "Re-extract colors and icons for all apps. Useful if icons appear outdated or incorrect.", Icons.Default.Refresh),
     RESET_HOME("Reset Home Screen", "Restore the default home screen layout and dock.", Icons.Default.LayersClear),
     RESET_DRAWER("Reset App Drawer", "Clear drawer folders and reset categories.", Icons.Default.FolderDelete),
     DELETE_HOME_FOLDERS("Delete Home Folders", "Dissolve folders on home screen.", Icons.Default.DeleteSweep),
@@ -1414,6 +1689,16 @@ private fun SectionHeader(title: String) {
 }
 
 @Composable
+fun PremiumBadge() {
+    Icon(
+        Icons.Default.WorkspacePremium, 
+        null, 
+        modifier = Modifier.size(16.dp),
+        tint = MaterialTheme.colorScheme.tertiary
+    )
+}
+
+@Composable
 private fun ValueLabel(text: String) {
     Text(text = text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
 }
@@ -1442,6 +1727,7 @@ fun ToggleSettingsItem(
     icon: ImageVector,
     title: String,
     checked: Boolean,
+    isPremium: Boolean = false,
     description: String? = null,
     onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
     onCheckedChange: (Boolean) -> Unit
@@ -1459,7 +1745,13 @@ fun ToggleSettingsItem(
         Icon(icon, null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = title, style = MaterialTheme.typography.bodyLarge)
+                if (isPremium) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    PremiumBadge()
+                }
+            }
             if (description != null) {
                 Text(
                     text = description,
@@ -1483,6 +1775,7 @@ fun ToggleSettingsItem(
 fun SettingsItem(
     icon: ImageVector, 
     title: String, 
+    isPremium: Boolean = false,
     description: String? = null,
     showChevron: Boolean = true,
     onClick: (() -> Unit)? = null, 
@@ -1498,7 +1791,13 @@ fun SettingsItem(
         Icon(icon, null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text = title, style = MaterialTheme.typography.bodyLarge)
+                if (isPremium) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    PremiumBadge()
+                }
+            }
             if (description != null) {
                 Text(
                     text = description,

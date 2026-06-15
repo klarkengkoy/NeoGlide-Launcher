@@ -2,78 +2,70 @@ package com.samidevstudio.neoglide.ui.utils
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import androidx.core.graphics.ColorUtils
+import androidx.palette.graphics.Palette
 
 object PaletteUtils {
 
     /**
-     * Extracts a representative Hue value for sorting.
-     * Uses a "Most Vibrant" strategy to pick the dominant color.
-     * Maps grayscale colors to pseudo-hues for specific ordering:
-     * White (-100), Rainbow (0-360), Gray (500), Black (1000).
+     * Extracts a representative Hue value for ultra-concise sorting.
+     * Uses the Palette library to identify prominent colors.
+     * Order: Rainbow -> Brown -> Grayscale -> Black -> White.
      */
     fun extractDominantHue(drawable: Drawable?): Float {
         if (drawable == null) return 0f
         
         return try {
             val bitmap = drawableToBitmap(drawable) ?: return 0f
+            val palette = Palette.from(bitmap).generate()
             
-            // 24x24 is enough for accuracy without sacrificing performance
-            val scaled = Bitmap.createScaledBitmap(bitmap, 24, 24, false)
-            
-            var maxS = -1f
-            var hueOfMaxS = 0f
-            var totalL = 0f
-            var pixelCount = 0
+            // Priority for selecting the "representative" color
+            val swatch = palette.vibrantSwatch 
+                ?: palette.dominantSwatch 
+                ?: palette.mutedSwatch
+                ?: palette.swatches.maxByOrNull { it.population }
+                ?: return 0f
+
             val hsl = FloatArray(3)
-
-            for (x in 0 until scaled.width) {
-                for (y in 0 until scaled.height) {
-                    val color = scaled.getPixel(x, y)
-                    if (Color.alpha(color) > 160) { // Ignore semi-transparent pixels
-                        ColorUtils.colorToHSL(color, hsl)
-                        val h = hsl[0]
-                        val s = hsl[1]
-                        val l = hsl[2]
-
-                        pixelCount++
-                        totalL += l
-
-                        // Strategy: Find the most saturated (vibrant) pixel
-                        if (s > maxS) {
-                            maxS = s
-                            hueOfMaxS = h
-                        }
-                    }
-                }
-            }
-
-            if (scaled != bitmap) scaled.recycle()
+            ColorUtils.colorToHSL(swatch.rgb, hsl)
             
-            if (pixelCount == 0) return 0f
-            val avgL = totalL / pixelCount
+            val h = hsl[0]
+            val s = hsl[1]
+            val l = hsl[2]
 
             return when {
-                // Grayscale detection
-                maxS < 0.12f -> {
-                    when {
-                        avgL > 0.85f -> -100f // White
-                        avgL < 0.15f -> 1000f // Black
-                        else -> 500f         // Gray
-                    }
+                // 1. Grayscale: Low Saturation
+                s < 0.15f -> {
+                    // Range: 500 to 600. Lighter grays come first.
+                    500f + (1f - l) * 100f
                 }
-                // Near-white icons with slight saturation
-                avgL > 0.92f && maxS < 0.3f -> -100f
-                // Near-black icons with slight saturation
-                avgL < 0.1f -> 1000f
-                // Rainbow sequence
+
+                // 2. Black: Very Low Lightness
+                l < 0.15f -> {
+                    // Range: 700 to 800. Lighter blacks come first.
+                    700f + (1f - l) * 100f
+                }
+
+                // 3. White: High Lightness
+                l > 0.88f -> {
+                    // Range: 900 to 1000. Pure white comes last.
+                    900f + l * 100f
+                }
+
+                // 4. Brown: Specific Hue range with low-mid Saturation/Lightness
+                (h in 20f..45f) && s in 0.15f..0.65f && l in 0.1f..0.5f -> {
+                    // Range: 400 to 450.
+                    400f + h
+                }
+
+                // 5. Rainbow: Vibrant Colors
                 else -> {
                     // Normalize Red: Shift high-hue reds (330-360) to negative values (-30-0)
                     // so they sort together with low-hue reds at the start of the spectrum.
-                    if (hueOfMaxS > 330f) hueOfMaxS - 360f else hueOfMaxS
+                    // Range: -30 to 330.
+                    if (h > 330f) h - 360f else h
                 }
             }
         } catch (e: Exception) {

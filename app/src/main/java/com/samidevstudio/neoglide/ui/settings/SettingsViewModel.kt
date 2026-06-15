@@ -134,8 +134,14 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { preferencesRepository.updateIsSortReverse(reverse) }
     }
 
-    fun clearIconCache() {
-        // TODO: Implement icon cache clearing logic
+    fun setIsPremium(isPremium: Boolean) {
+        viewModelScope.launch { preferencesRepository.updateIsPremium(isPremium) }
+    }
+
+    fun refreshAppIcons() {
+        viewModelScope.launch {
+            appRepository.refreshApps(forceRecalculateColors = true)
+        }
     }
 
     fun resetHomeScreen() {
@@ -168,6 +174,53 @@ class SettingsViewModel @Inject constructor(
             addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(intent)
+    }
+
+    fun openWallpaperSettings() {
+        try {
+            val intent = android.content.Intent(android.content.Intent.ACTION_SET_WALLPAPER).apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            // Fallback for some devices
+            try {
+                val intent = android.content.Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS).apply {
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun openDefaultLauncherSettings() {
+        try {
+            val intent = android.content.Intent(android.provider.Settings.ACTION_HOME_SETTINGS).apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                val intent = android.content.Intent(android.provider.Settings.ACTION_SETTINGS).apply {
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun openAppearanceSettings() {
+        try {
+            // Android 12+ Wallpaper & Style intent
+            val intent = android.content.Intent("android.service.wallpaper.WallpaperService").apply {
+                component = android.content.ComponentName("com.google.android.apps.wallpaper", "com.google.android.apps.wallpaper.picker.CategoryPickerActivity")
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            // Fallback to general wallpaper settings
+            openWallpaperSettings()
+        }
     }
 
     fun resetLayout() {
