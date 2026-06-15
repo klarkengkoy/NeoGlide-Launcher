@@ -35,12 +35,14 @@ import com.samidevstudio.neoglide.data.repository.WidgetRepository
 import com.samidevstudio.neoglide.data.repository.AppRepository
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.*
-import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-
 import com.samidevstudio.neoglide.ui.drawer.DrawerViewModel
 
 @AndroidEntryPoint
@@ -60,6 +62,8 @@ class MainActivity : FragmentActivity() {
     private val homeViewModel: HomeViewModel by viewModels()
     private val drawerViewModel: DrawerViewModel by viewModels()
 
+    private var warmUpTriggerJob: Job? = null
+
     private val iconRefreshReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             homeViewModel.triggerIconRefresh()
@@ -69,8 +73,9 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Warm up icons after a short delay to ensure initial Home frame is rendered
-        lifecycleScope.launch {
+        // Deduplicate warmup triggers. Ensures if onResume flutters, we only run once.
+        warmUpTriggerJob?.cancel()
+        warmUpTriggerJob = lifecycleScope.launch {
             delay(300)
             appRepository.warmUpIcons(iconLoader, lifecycleScope)
         }
@@ -111,7 +116,11 @@ class MainActivity : FragmentActivity() {
         } else if (requestCode == REQUEST_BIND_WIDGET) {
             val widgetId = data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1) ?: -1
             if (resultCode == RESULT_OK && widgetId != -1) {
-                val info = homeViewModel.appWidgetManager.getAppWidgetInfo(widgetId)
+                val info = try {
+                    homeViewModel.appWidgetManager.getAppWidgetInfo(widgetId)
+                } catch (_: Exception) {
+                    null
+                }
                 if (info?.configure != null) {
                     startWidgetConfig(widgetId)
                 } else {
@@ -140,19 +149,30 @@ class MainActivity : FragmentActivity() {
                 REQUEST_WIDGET_CONFIG,
                 null
             )
-        } catch (e: Exception) {
-            android.util.Log.e("MainActivity", "Failed to start widget config", e)
+        } catch (_: Exception) {
             homeViewModel.cancelWidgetConfiguration(widgetId)
         }
     }
 
     @OptIn(ExperimentalSharedTransitionApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
-        // Removed forced delay
+        val startTime = System.currentTimeMillis()
+        val splashScreen = installSplashScreen()
+        
+        splashScreen.setKeepOnScreenCondition {
+            val elapsed = System.currentTimeMillis() - startTime
+            val stillShowing = elapsed < 2500
+            stillShowing
+        }
         
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Start app refresh immediately on cold start
+        lifecycleScope.launch {
+            appRepository.refreshApps()
+        }
+
         setContent {
             CompositionLocalProvider(
                 LocalHapticEngine provides hapticEngine,
@@ -160,33 +180,35 @@ class MainActivity : FragmentActivity() {
                 LocalIconLoader provides iconLoader
             ) {
                 NeoGlideLauncherTheme {
-                    val navigationState = rememberNavigationState(
-                        startRoute = HomeRoute,
-                        topLevelRoutes = setOf(HomeRoute),
-                    )
-                    val navigator = remember { Navigator(navigationState) }
-                    
-                    SharedTransitionLayout {
-                        val entryProvider = entryProvider<NavKey> {
-                            entry<HomeRoute> {
-                                HomeScreen(
-                                    sharedTransitionScope = this@SharedTransitionLayout,
-                                )
-                            }
-                            entry<AppDetailRoute> { key ->
-                                AppDetailScreen(
-                                    packageName = key.packageName,
-                                    label = "App Name",
-                                    sharedTransitionScope = this@SharedTransitionLayout,
-                                    animatedVisibilityScope = LocalNavAnimatedContentScope.current,
-                                )
-                            }
-                        }
-
-                        NavDisplay(
-                            entries = navigationState.toEntries(entryProvider),
-                            onBack = { navigator.goBack() },
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        val navigationState = rememberNavigationState(
+                            startRoute = HomeRoute,
+                            topLevelRoutes = setOf(HomeRoute),
                         )
+                        val navigator = remember { Navigator(navigationState) }
+                        
+                        SharedTransitionLayout {
+                            val entryProvider = entryProvider<NavKey> {
+                                entry<HomeRoute> {
+                                    HomeScreen(
+                                        sharedTransitionScope = this@SharedTransitionLayout,
+                                    )
+                                }
+                                entry<AppDetailRoute> { key ->
+                                    AppDetailScreen(
+                                        packageName = key.packageName,
+                                        label = "App Name",
+                                        sharedTransitionScope = this@SharedTransitionLayout,
+                                        animatedVisibilityScope = LocalNavAnimatedContentScope.current,
+                                    )
+                                }
+                            }
+
+                            NavDisplay(
+                                entries = navigationState.toEntries(entryProvider),
+                                onBack = { navigator.goBack() },
+                            )
+                        }
                     }
                 }
             }
@@ -195,10 +217,5 @@ class MainActivity : FragmentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        val isHomeIntent = intent.action == Intent.ACTION_MAIN && 
-                          intent.hasCategory(Intent.CATEGORY_HOME)
-        if (isHomeIntent) {
-            // Re-center or reset home view if needed
-        }
     }
 }
