@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
 import androidx.core.net.toUri
+
 import com.samidevstudio.neoglide.data.local.dao.AppDao
 import com.samidevstudio.neoglide.data.local.dao.FolderDao
 import com.samidevstudio.neoglide.data.local.entity.AppEntity
@@ -33,41 +34,70 @@ class AppRepository @Inject constructor(
     private val launcherApps: LauncherApps = context.getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
 
     private var warmUpJob: Job? = null
+    
+    private val _isCriticalWarmUpFinished = MutableStateFlow(false)
+    val isCriticalWarmUpFinished: StateFlow<Boolean> = _isCriticalWarmUpFinished.asStateFlow()
+
+    private val _isDatabaseReady = MutableStateFlow(false)
+    val isDatabaseReady: StateFlow<Boolean> = _isDatabaseReady.asStateFlow()
 
     fun warmUpIcons(iconLoader: IconLoader, scope: CoroutineScope) {
         warmUpJob?.cancel()
+        _isCriticalWarmUpFinished.value = false
         warmUpJob = scope.launch(Dispatchers.Default) {
+            // Wait for the first database refresh to complete if it hasn't already
+            if (!_isDatabaseReady.value) {
+                _isDatabaseReady.first { it }
+            }
+
             val apps = appDao.getAllAppsList()
-            if (apps.isEmpty()) return@launch
+            
+            if (apps.isEmpty()) {
+                _isCriticalWarmUpFinished.value = true
+                return@launch
+            }
             
             // Priority 1: First 12 apps (likely what's visible on screen)
-            // Sequential loading with small delays to prioritize UI frames
-            apps.take(12).forEach { app ->
-                if (!isActive) return@launch
+            apps.take(12).forEachIndexed { index, app ->
+                if (!isActive) {
+                    return@launch
+                }
                 iconLoader.loadIcon(app.packageName, useMonochrome = false)
                 delay(20) 
             }
             yield()
 
             // Priority 2: Next 36 apps (immediate glide range)
-            // Load in small chunks with breathing room
-            apps.drop(12).take(36).chunked(4).forEach { chunk ->
-                if (!isActive) return@launch
+            val priority2Apps = apps.drop(12).take(36)
+            priority2Apps.chunked(4).forEachIndexed { chunkIndex, chunk ->
+                if (!isActive) {
+                    return@launch
+                }
                 chunk.forEach { app ->
-                    launch { iconLoader.loadIcon(app.packageName, useMonochrome = false) }
+                    launch { 
+                        iconLoader.loadIcon(app.packageName, useMonochrome = false)
+                    }
                 }
                 delay(150) 
             }
+            
+            // Critical warm-up (what user sees immediately) is done
+            _isCriticalWarmUpFinished.value = true
             yield()
 
             // Priority 3: The rest (deeper storage)
-            // Very slow background filling to ensure zero impact on interaction
-            apps.drop(48).chunked(10).forEach { chunk ->
-                if (!isActive) return@launch
-                chunk.forEach { app ->
-                    launch { iconLoader.loadIcon(app.packageName, useMonochrome = false) }
+            if (apps.size > 48) {
+                apps.drop(48).chunked(10).forEachIndexed { chunkIndex, chunk ->
+                    if (!isActive) {
+                        return@launch
+                    }
+                    chunk.forEach { app ->
+                        launch { 
+                            iconLoader.loadIcon(app.packageName, useMonochrome = false)
+                        }
+                    }
+                    delay(400) 
                 }
-                delay(400) 
             }
         }
     }
@@ -83,7 +113,10 @@ class AppRepository @Inject constructor(
         }
     }
 
-    suspend fun refreshApps(forceRecategorize: Boolean = false) = withContext(Dispatchers.IO) {
+    suspend fun refreshApps(
+        forceRecategorize: Boolean = false,
+        forceRecalculateColors: Boolean = false
+    ) = withContext(Dispatchers.IO) {
         val userHandle = android.os.Process.myUserHandle()
         val activityList = launcherApps.getActivityList(null, userHandle)
         
@@ -99,7 +132,7 @@ class AppRepository @Inject constructor(
                     app = info.applicationInfo,
                     existingLastUsedTime = existing?.lastUsedTime ?: 0L,
                     existingCategory = if (forceRecategorize) null else existing?.category,
-                    existingHue = existing?.dominantHue
+                    existingHue = if (forceRecalculateColors) null else existing?.dominantHue
                 )
             }
             .distinctBy { it.packageName }
@@ -113,6 +146,7 @@ class AppRepository @Inject constructor(
             }
         }
         appDao.insertApps(appEntities)
+        _isDatabaseReady.value = true
     }
 
     suspend fun updatePackage(packageName: String) = withContext(Dispatchers.IO) {
@@ -238,43 +272,73 @@ class AppRepository @Inject constructor(
         }
     }
 
-    suspend fun getDefaultDockApps(): List<String> = withContext(Dispatchers.IO) {
-        val dockPackages = mutableListOf<String>()
+
+
+
+
+    suspend fun getCoreAppsForProvisioning(): List<String> = withContext(Dispatchers.IO) {
+        val packages = mutableListOf<String>()
 
         // 1. Browser
         val browserIntent = Intent(Intent.ACTION_VIEW, "https://www.google.com".toUri())
-        findDefaultPackage(browserIntent)?.let { if (it !in dockPackages) dockPackages.add(it) }
+        findDefaultPackage(browserIntent)?.let { if (it !in packages) packages.add(it) }
 
         // 2. Phone
         val phoneIntent = Intent(Intent.ACTION_DIAL)
-        findDefaultPackage(phoneIntent)?.let { if (it !in dockPackages) dockPackages.add(it) }
+        findDefaultPackage(phoneIntent)?.let { if (it !in packages) packages.add(it) }
 
         // 3. Messages
         val messagesIntent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_APP_MESSAGING) }
-        findDefaultPackage(messagesIntent)?.let { if (it !in dockPackages) dockPackages.add(it) }
+        findDefaultPackage(messagesIntent)?.let { if (it !in packages) packages.add(it) }
 
         // 4. Camera
         val cameraIntent = Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)
-        findDefaultPackage(cameraIntent)?.let { if (it !in dockPackages) dockPackages.add(it) }
+        findDefaultPackage(cameraIntent)?.let { if (it !in packages) packages.add(it) }
 
-        // Fallbacks if we still have less than 4 apps (rare on Pixel)
-        if (dockPackages.size < 4) {
-            val fallbacks = listOf(
-                "com.android.chrome",
-                "com.google.android.dialer",
-                "com.google.android.apps.messaging",
-                "com.google.android.GoogleCamera",
-                "com.brave.browser"
-            )
-            for (pkg in fallbacks) {
-                if (dockPackages.size >= 4) break
-                if (pkg !in dockPackages && packageManager.getLaunchIntentForPackage(pkg) != null) {
-                    dockPackages.add(pkg)
+        // 5. AI Slot Logic
+        val googleApp = "com.google.android.googlequicksearchbox"
+        val geminiApp = "com.google.android.apps.bard"
+        
+        val defaultAssistant = findDefaultPackage(Intent(Intent.ACTION_ASSIST))
+        
+        val aiPackage = when {
+            // Case 1: Default is Google App -> Try upgrade to Gemini
+            defaultAssistant == googleApp -> {
+                if (packageManager.getLaunchIntentForPackage(geminiApp) != null) geminiApp else googleApp
+            }
+            // Case 2: Default is something else (Alexa, ChatGPT set as default, etc.)
+            defaultAssistant != null -> defaultAssistant
+            // Case 3: No default set -> Look for Gemini, then Google
+            else -> {
+                if (packageManager.getLaunchIntentForPackage(geminiApp) != null) {
+                    geminiApp
+                } else if (packageManager.getLaunchIntentForPackage(googleApp) != null) {
+                    googleApp
+                } else {
+                    null
                 }
             }
         }
 
-        dockPackages.take(4)
+        aiPackage?.let { if (it !in packages) packages.add(it) }
+
+        // Final sanity check for core 4 apps if any were missed by intents
+        if (packages.size < 4) {
+            val coreFallbacks = listOf(
+                "com.android.chrome",
+                "com.google.android.dialer",
+                "com.google.android.apps.messaging",
+                "com.google.android.GoogleCamera"
+            )
+            for (pkg in coreFallbacks) {
+                if (packages.size >= 4) break
+                if (pkg !in packages && packageManager.getLaunchIntentForPackage(pkg) != null) {
+                    packages.add(pkg)
+                }
+            }
+        }
+        
+        packages
     }
 
     private fun findDefaultPackage(intent: Intent): String? {
@@ -283,7 +347,6 @@ class AppRepository @Inject constructor(
         return if (pkg != null && pkg != "android" && packageManager.getLaunchIntentForPackage(pkg) != null) {
             pkg
         } else {
-            // If resolveActivity fails, try querying all activities and pick the first non-system one
             val resolved = packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
             resolved.firstOrNull { it.activityInfo.packageName != "android" && packageManager.getLaunchIntentForPackage(it.activityInfo.packageName) != null }
                 ?.activityInfo?.packageName

@@ -7,7 +7,6 @@ import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Process
-import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -20,7 +19,6 @@ class IconLoader @Inject constructor(
     @ApplicationContext private val context: Context,
     private val iconCache: IconCache
 ) {
-    private val TAG = "IconLoader"
     private val launcherApps = context.getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
     private val pm = context.packageManager
 
@@ -76,8 +74,7 @@ class IconLoader @Inject constructor(
                                             resources.getDrawable(iconResId)
                                         }
                                     }
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "Error loading calendar icon for $packageName", e)
+                                } catch (_: Exception) {
                                 }
                             }
                         } else if (metaData.containsKey(CALENDAR_LEVEL_METADATA)) {
@@ -112,8 +109,7 @@ class IconLoader @Inject constructor(
                 } else {
                     null to false
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error loading icon for $packageName", e)
+            } catch (_: Exception) {
                 null to false
             }
         }
