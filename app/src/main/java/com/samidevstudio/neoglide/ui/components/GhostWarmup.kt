@@ -1,49 +1,56 @@
 package com.samidevstudio.neoglide.ui.components
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import com.samidevstudio.neoglide.domain.model.AppModel
+import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun GhostWarmup(
-    apps: List<AppModel>
+    apps: List<AppModel>,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope
 ) {
     if (apps.isEmpty()) return
 
-    LaunchedEffect(Unit) {
-        android.util.Log.d("NeoGlideSplash", "Ghost UI Warmup started for ${apps.size} apps")
+    // recycling index to touch every app icon/item without a massive composition
+    var currentAppIndex by remember { mutableIntStateOf(-1) }
+
+    LaunchedEffect(apps) {
+        // Touch every app one-by-one to trigger JIT and GPU uploads
+        for (i in apps.indices) {
+            currentAppIndex = i
+            // Minimal delay to ensure each one gets a "draw" pass without blocking the main thread
+            delay(10) 
+        }
+        
+        currentAppIndex = -1
     }
 
-    // Render an invisible 1px grid to force JIT and GPU uploads
+    // Render a tiny invisible slot that swaps through all apps
     Box(
         modifier = Modifier
             .size(1.dp)
             .alpha(0.01f)
     ) {
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(1),
-            modifier = Modifier.size(1.dp)
-        ) {
-            items(apps) { app ->
-                AppIcon(
-                    packageName = app.packageName,
-                    contentDescription = null
+        if (currentAppIndex != -1 && currentAppIndex < apps.size) {
+            val app = apps[currentAppIndex]
+            key(app.packageName) {
+                AppItem(
+                    app = app,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    onClick = { }
                 )
             }
         }
-    }
-
-    SideEffect {
-        // This will run on every recomposition, but after the first one we know we've "touched" the UI
-        android.util.Log.v("NeoGlideSplash", "Ghost UI Warmup pass completed")
     }
 }
