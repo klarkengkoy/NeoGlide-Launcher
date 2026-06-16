@@ -2,7 +2,13 @@ package com.samidevstudio.neoglide.data.repository
 
 import android.content.Context
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.*
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -23,7 +29,32 @@ enum class SortingMode {
 }
 
 enum class GridSize {
-    GRID_4X5, GRID_5X5, GRID_6X6
+    SMALL, MEDIUM, LARGE;
+
+    val targetCellWidthDp: Int
+        get() = when (this) {
+            SMALL -> 66
+            MEDIUM -> 80
+            LARGE -> 95
+        }
+
+    val iconSizeDp: Int
+        get() = when (this) {
+            SMALL -> 48
+            MEDIUM -> 56
+            LARGE -> 64
+        }
+
+    val fontSizeSp: Int
+        get() = when (this) {
+            SMALL -> 11
+            MEDIUM -> 13
+            LARGE -> 15
+        }
+
+    fun getColumnCount(availableWidthDp: Float): Int {
+        return (availableWidthDp / targetCellWidthDp).toInt().coerceAtLeast(3)
+    }
 }
 
 enum class SearchProvider(val searchUrl: String, val displayName: String) {
@@ -57,7 +88,7 @@ data class UserPreferences(
     val showHiddenApps: Boolean = false,
     val lastDefaultPromptTime: Long = 0L,
     val sortingMode: SortingMode = SortingMode.ALPHABETICAL,
-    val gridSize: GridSize = GridSize.GRID_5X5,
+    val gridSize: GridSize = GridSize.MEDIUM,
     val appLabelMode: AppLabelMode = AppLabelMode.BOTH,
     val searchProvider: SearchProvider = SearchProvider.GOOGLE,
     val notificationDotMode: NotificationDotMode = NotificationDotMode.BOTH,
@@ -115,8 +146,13 @@ class UserPreferencesRepository @Inject constructor(
             val sortingModeStr = preferences[PreferencesKeys.SORTING_MODE] ?: SortingMode.ALPHABETICAL.name
             val sortingMode = try { SortingMode.valueOf(sortingModeStr) } catch (_: Exception) { SortingMode.ALPHABETICAL }
 
-            val gridSizeStr = preferences[PreferencesKeys.GRID_SIZE] ?: GridSize.GRID_5X5.name
-            val gridSize = try { GridSize.valueOf(gridSizeStr) } catch (_: Exception) { GridSize.GRID_5X5 }
+            val gridSizeStr = preferences[PreferencesKeys.GRID_SIZE] ?: GridSize.MEDIUM.name
+            val gridSize = when (gridSizeStr) {
+                "GRID_4X5" -> GridSize.LARGE
+                "GRID_5X5" -> GridSize.MEDIUM
+                "GRID_6X6" -> GridSize.SMALL
+                else -> try { GridSize.valueOf(gridSizeStr) } catch (_: Exception) { GridSize.MEDIUM }
+            }
 
             val appLabelModeStr = preferences[PreferencesKeys.APP_LABEL_MODE] ?: AppLabelMode.BOTH.name
             val appLabelMode = try { AppLabelMode.valueOf(appLabelModeStr) } catch (_: Exception) { AppLabelMode.BOTH }
