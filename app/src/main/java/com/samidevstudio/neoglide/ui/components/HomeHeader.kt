@@ -4,13 +4,20 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Calendar
+import java.util.Locale
+import kotlin.time.Duration.Companion.seconds
 
 @Composable
 fun HomeHeader(modifier: Modifier = Modifier) {
@@ -20,7 +27,7 @@ fun HomeHeader(modifier: Modifier = Modifier) {
         while (true) {
             calendar = Calendar.getInstance()
             val secondsUntilNextMinute = 60 - calendar[Calendar.SECOND]
-            delay(secondsUntilNextMinute * 1000L)
+            delay(secondsUntilNextMinute.seconds)
         }
     }
 

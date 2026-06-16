@@ -3,33 +3,33 @@ package com.samidevstudio.neoglide.ui.components
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.samidevstudio.neoglide.ui.utils.LocalIconCache
-import com.samidevstudio.neoglide.ui.utils.IconLoader
 import com.samidevstudio.neoglide.ui.utils.LocalIconLoader
-import androidx.compose.runtime.remember
-
-import androidx.compose.foundation.Image
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.painter.Painter
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 
 @Composable
 fun rememberDrawablePainter(drawable: Drawable?): Painter {
@@ -57,6 +57,7 @@ fun AppIcon(
     packageName: String,
     contentDescription: String?,
     modifier: Modifier = Modifier,
+    size: androidx.compose.ui.unit.Dp = 56.dp,
     useMonochrome: Boolean = false,
     iconPackPackageName: String? = null,
     refreshTrigger: Int = 0, // Used to force re-fetch from LauncherApps
@@ -87,7 +88,7 @@ fun AppIcon(
 
     Box(
         modifier = modifier
-            .size(56.dp)
+            .size(size)
             .clip(CircleShape)
             .background(
                 if (isActuallyMonochrome) colorScheme.primaryContainer 
@@ -98,7 +99,9 @@ fun AppIcon(
         val imageModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && (iconData is AdaptiveIconDrawable)) {
             Modifier.fillMaxSize()
         } else {
-            Modifier.size(if (isActuallyMonochrome) 38.dp else 52.dp)
+            // Scale internal icon based on total size
+            val internalSize = if (isActuallyMonochrome) (size.value * 0.68f).dp else (size.value * 0.93f).dp
+            Modifier.size(internalSize)
         }
 
         if (iconData != null) {

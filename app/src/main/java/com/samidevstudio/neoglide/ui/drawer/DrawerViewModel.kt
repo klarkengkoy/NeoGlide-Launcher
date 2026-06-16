@@ -18,7 +18,22 @@ import com.samidevstudio.neoglide.service.NeoGlideNotificationListener
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -92,9 +107,9 @@ class DrawerViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val categorizedApps: StateFlow<Map<AppCategory?, List<DrawerItem>>> = combine(
-        appRepository.allApps,
-        homeRepository.allDrawerFolders,
-        preferences
+        appRepository.allApps.distinctUntilChanged(),
+        homeRepository.allDrawerFolders.distinctUntilChanged(),
+        preferences.distinctUntilChanged()
     ) { apps, folders, prefs ->
         val filteredApps = apps.filter { it.packageName !in prefs.hiddenPackages || prefs.showHiddenApps }
         val appsMap = filteredApps.associateBy { it.packageName }
@@ -144,10 +159,32 @@ class DrawerViewModel @Inject constructor(
         initialValue = emptyMap()
     )
 
+    val categoryNotifications: StateFlow<Map<AppCategory?, Pair<Boolean, Int>>> = combine(
+        categorizedApps,
+        activeNotifications
+    ) { categorized, notifications ->
+        categorized.mapValues { (category, items) ->
+            if (category == null) {
+                notifications.isNotEmpty() to notifications.values.sum()
+            } else {
+                val appPackages = items.flatMap { item ->
+                    when (item) {
+                        is DrawerItem.App -> listOf(item.appModel.packageName)
+                        is DrawerItem.Folder -> item.apps.map { it.packageName }
+                    }
+                }.toSet()
+                val hasNotif = appPackages.any { it in notifications.keys }
+                val count = notifications.filter { it.key in appPackages }.values.sum()
+                hasNotif to count
+            }
+        }
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     val filteredApps: StateFlow<List<AppModel>> = combine(
-        appRepository.allApps,
+        appRepository.allApps.distinctUntilChanged(),
         _searchQuery,
-        preferences
+        preferences.distinctUntilChanged()
     ) { apps, query, prefs ->
         if (query.isBlank()) {
             emptyList()

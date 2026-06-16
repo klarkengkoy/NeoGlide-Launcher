@@ -1,13 +1,27 @@
 package com.samidevstudio.neoglide.ui.components
 
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -16,21 +30,28 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
@@ -72,6 +93,7 @@ fun FolderExpansion(
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: (String) -> Unit = {},
     onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
+    isLocked: Boolean = false,
     onAppDragStart: (AppModel, androidx.compose.ui.geometry.Offset, androidx.compose.ui.geometry.Offset) -> Unit = { _, _, _ -> },
     onAppDrag: (androidx.compose.ui.geometry.Offset) -> Unit = {},
     onAppDragOut: (AppModel, androidx.compose.ui.geometry.Offset, androidx.compose.ui.geometry.Offset) -> Unit = { _, _, _ -> },
@@ -86,6 +108,7 @@ fun FolderExpansion(
     var rootCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
     var showMenu by remember { mutableStateOf(false) }
     val density = LocalDensity.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val focusManager = LocalFocusManager.current
 
     Box(
@@ -125,8 +148,10 @@ fun FolderExpansion(
                         BasicTextField(
                             value = currentLabel,
                             onValueChange = {
-                                currentLabel = it
-                                onLabelChange(it)
+                                if (!isLocked) {
+                                    currentLabel = it
+                                    onLabelChange(it)
+                                }
                             },
                             textStyle = TextStyle(
                                 color = MaterialTheme.colorScheme.onSurface,
@@ -136,13 +161,24 @@ fun FolderExpansion(
                             ),
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                             singleLine = true,
+                            enabled = !isLocked,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(if (isLocked) Modifier.clickable { 
+                                    android.widget.Toast.makeText(context, "Locked from launcher settings", android.widget.Toast.LENGTH_SHORT).show()
+                                } else Modifier)
                         )
 
                         Box(modifier = Modifier.align(Alignment.CenterEnd)) {
-                            IconButton(onClick = { showMenu = true }) {
+                            IconButton(onClick = { 
+                                if (!isLocked) {
+                                    showMenu = true 
+                                } else {
+                                    android.widget.Toast.makeText(context, "Locked from launcher settings", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }) {
                                 Icon(
                                     imageVector = Icons.Default.MoreVert,
                                     contentDescription = "Options",
@@ -251,59 +287,69 @@ fun FolderExpansion(
                                     .pointerInput(app.packageName) {
                                         detectDragGesturesAfterLongPress(
                                             onDragStart = { offset ->
-                                                onHapticFeedback(HapticEngine.HapticType.LONG_PRESS)
-                                                draggingApp = app
-                                                accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
-                                                isDragConfirmed = false
-                                                
-                                                // offset is the touch point relative to the item (0..size)
-                                                // This IS the grabPoint.
-                                                grabPoint = offset 
-                                                
-                                                // Standardize dragOffset to TOP-LEFT of the icon in Window coordinates
-                                                val touchWindow = itemCoords?.localToWindow(offset) ?: androidx.compose.ui.geometry.Offset.Zero
-                                                dragOffset = touchWindow - offset
+                                                if (!isLocked) {
+                                                    onHapticFeedback(HapticEngine.HapticType.LONG_PRESS)
+                                                    draggingApp = app
+                                                    accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
+                                                    isDragConfirmed = false
+                                                    
+                                                    // offset is the touch point relative to the item (0..size)
+                                                    // This IS the grabPoint.
+                                                    grabPoint = offset 
+                                                    
+                                                    // Standardize dragOffset to TOP-LEFT of the icon in Window coordinates
+                                                    val touchWindow = itemCoords?.localToWindow(offset) ?: androidx.compose.ui.geometry.Offset.Zero
+                                                    dragOffset = touchWindow - offset
+                                                } else {
+                                                    android.widget.Toast.makeText(context, "Locked from launcher settings", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
                                             },
                                             onDrag = { change, amount ->
-                                                change.consume()
-                                                accumulatedDrag += amount
-                                                dragOffset += amount
+                                                if (!isLocked) {
+                                                    change.consume()
+                                                    accumulatedDrag += amount
+                                                    dragOffset += amount
 
-                                                if (!isDragConfirmed && accumulatedDrag.getDistance() > with(density) { 10.dp.toPx() }) {
-                                                    isDragConfirmed = true
-                                                    onHapticFeedback(HapticEngine.HapticType.DRAG_START)
-                                                    onAppDragStart(app, dragOffset, grabPoint)
-                                                }
+                                                    if (!isDragConfirmed && accumulatedDrag.getDistance() > with(density) { 10.dp.toPx() }) {
+                                                        isDragConfirmed = true
+                                                        onHapticFeedback(HapticEngine.HapticType.DRAG_START)
+                                                        onAppDragStart(app, dragOffset, grabPoint)
+                                                    }
 
-                                                if (isDragConfirmed) {
-                                                    onAppDrag(amount)
+                                                    if (isDragConfirmed) {
+                                                        onAppDrag(amount)
 
-                                                    // Introduce a slop/threshold before collapsing the folder
-                                                    val movement = accumulatedDrag.getDistance()
-                                                    val slop = with(density) { 24.dp.toPx() }
+                                                        // Introduce a slop/threshold before collapsing the folder
+                                                        val movement = accumulatedDrag.getDistance()
+                                                        val slop = with(density) { 24.dp.toPx() }
 
-                                                    if (movement > slop && draggingApp != null && !isDraggedOut) {
-                                                        // Collapse only after meaningful movement
-                                                        isDraggedOut = true
-                                                        onAppDragOut(app, dragOffset, amount)
+                                                        if (movement > slop && draggingApp != null && !isDraggedOut) {
+                                                            // Collapse only after meaningful movement
+                                                            isDraggedOut = true
+                                                            onAppDragOut(app, dragOffset, amount)
+                                                        }
                                                     }
                                                 }
                                             },
                                             onDragEnd = {
-                                                if (isDragConfirmed) {
-                                                    onHapticFeedback(HapticEngine.HapticType.DRAG_END)
-                                                    // Only collapse if we actually dragged out
-                                                    onAppDragEnd()
-                                                } else {
-                                                    showAppMenu = true
-                                                    // Don't call onAppDragEnd() here yet, let the menu show
+                                                if (!isLocked) {
+                                                    if (isDragConfirmed) {
+                                                        onHapticFeedback(HapticEngine.HapticType.DRAG_END)
+                                                        // Only collapse if we actually dragged out
+                                                        onAppDragEnd()
+                                                    } else {
+                                                        showAppMenu = true
+                                                        // Don't call onAppDragEnd() here yet, let the menu show
+                                                    }
                                                 }
                                                 draggingApp = null
                                                 isDraggedOut = false
                                                 isDragConfirmed = false
                                             },
                                             onDragCancel = {
-                                                onAppDragCancel()
+                                                if (!isLocked) {
+                                                    onAppDragCancel()
+                                                }
                                                 draggingApp = null
                                                 isDraggedOut = false
                                                 isDragConfirmed = false
