@@ -7,8 +7,8 @@ import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import androidx.core.net.toUri
-
 import com.samidevstudio.neoglide.data.local.dao.AppDao
 import com.samidevstudio.neoglide.data.local.dao.FolderDao
 import com.samidevstudio.neoglide.data.local.entity.AppEntity
@@ -18,10 +18,23 @@ import com.samidevstudio.neoglide.domain.model.AppShortcut
 import com.samidevstudio.neoglide.ui.utils.IconLoader
 import com.samidevstudio.neoglide.ui.utils.PaletteUtils
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.time.Duration.Companion.milliseconds
 
 @Singleton
 class AppRepository @Inject constructor(
@@ -35,16 +48,13 @@ class AppRepository @Inject constructor(
 
     private var warmUpJob: Job? = null
     
-    private val _isCriticalWarmUpFinished = MutableStateFlow(false)
-    val isCriticalWarmUpFinished: StateFlow<Boolean> = _isCriticalWarmUpFinished.asStateFlow()
-
-    private val _isDatabaseReady = MutableStateFlow(false)
+c    private val _isDatabaseReady = MutableStateFlow(value = false)
     val isDatabaseReady: StateFlow<Boolean> = _isDatabaseReady.asStateFlow()
 
     fun warmUpIcons(iconLoader: IconLoader, scope: CoroutineScope) {
         warmUpJob?.cancel()
-        _isCriticalWarmUpFinished.value = false
         warmUpJob = scope.launch(Dispatchers.Default) {
+            Log.d("NeoGlideInit", "Step 5: Starting icon warm-up sequence...")
             // Wait for the first database refresh to complete if it hasn't already
             if (!_isDatabaseReady.value) {
                 _isDatabaseReady.first { it }
@@ -53,23 +63,22 @@ class AppRepository @Inject constructor(
             val apps = appDao.getAllAppsList()
             
             if (apps.isEmpty()) {
-                _isCriticalWarmUpFinished.value = true
                 return@launch
             }
             
             // Priority 1: First 12 apps (likely what's visible on screen)
-            apps.take(12).forEachIndexed { index, app ->
+            apps.take(12).forEach { app ->
                 if (!isActive) {
                     return@launch
                 }
                 iconLoader.loadIcon(app.packageName, useMonochrome = false)
-                delay(20) 
+                delay(20.milliseconds) 
             }
             yield()
 
             // Priority 2: Next 36 apps (immediate glide range)
-            val priority2Apps = apps.drop(12).take(36)
-            priority2Apps.chunked(4).forEachIndexed { chunkIndex, chunk ->
+            val priority2Apps = apps.asSequence().drop(12).take(36).toList()
+            priority2Apps.chunked(4).forEach { chunk ->
                 if (!isActive) {
                     return@launch
                 }
@@ -78,16 +87,16 @@ class AppRepository @Inject constructor(
                         iconLoader.loadIcon(app.packageName, useMonochrome = false)
                     }
                 }
-                delay(150) 
+                delay(150.milliseconds) 
             }
             
             // Critical warm-up (what user sees immediately) is done
-            _isCriticalWarmUpFinished.value = true
+            Log.d("NeoGlideInit", "Step 5: Critical warm-up complete (First 12 icons).")
             yield()
 
             // Priority 3: The rest (deeper storage)
             if (apps.size > 48) {
-                apps.drop(48).chunked(10).forEachIndexed { chunkIndex, chunk ->
+                apps.drop(48).chunked(10).forEach { chunk ->
                     if (!isActive) {
                         return@launch
                     }
@@ -96,9 +105,10 @@ class AppRepository @Inject constructor(
                             iconLoader.loadIcon(app.packageName, useMonochrome = false)
                         }
                     }
-                    delay(400) 
+                    delay(400.milliseconds) 
                 }
             }
+            Log.d("NeoGlideInit", "Step 5: Full icon warm-up finished (Processed ${apps.size} apps).")
         }
     }
 
@@ -115,8 +125,9 @@ class AppRepository @Inject constructor(
 
     suspend fun refreshApps(
         forceRecategorize: Boolean = false,
-        forceRecalculateColors: Boolean = false
+        forceRecalculateColors: Boolean = false,
     ) = withContext(Dispatchers.IO) {
+        Log.d("NeoGlideInit", "Step 3: Starting app database refresh...")
         val userHandle = android.os.Process.myUserHandle()
         val activityList = launcherApps.getActivityList(null, userHandle)
         
@@ -147,6 +158,7 @@ class AppRepository @Inject constructor(
         }
         appDao.insertApps(appEntities)
         _isDatabaseReady.value = true
+        Log.d("NeoGlideInit", "Step 3: App database refresh complete (Total: ${appEntities.size} apps).")
     }
 
     suspend fun updatePackage(packageName: String) = withContext(Dispatchers.IO) {
@@ -158,12 +170,14 @@ class AppRepository @Inject constructor(
             if (activities.isNotEmpty()) {
                 val info = activities[0]
                 val existing = appDao.getAppByPackageName(packageName)
-                appDao.insertApp(createAppEntity(
-                    app = info.applicationInfo,
-                    existingLastUsedTime = existing?.lastUsedTime ?: 0L,
-                    existingCategory = existing?.category,
-                    existingHue = existing?.dominantHue
-                ))
+                appDao.insertApp(
+                    createAppEntity(
+                        app = info.applicationInfo,
+                        existingLastUsedTime = existing?.lastUsedTime ?: 0L,
+                        existingCategory = existing?.category,
+                        existingHue = existing?.dominantHue
+                    )
+                )
             } else {
                 appDao.deleteAppByPackageName(packageName)
                 homeRepository.cleanupPackage(packageName)
@@ -332,7 +346,7 @@ class AppRepository @Inject constructor(
             )
             for (pkg in coreFallbacks) {
                 if (packages.size >= 4) break
-                if (pkg !in packages && packageManager.getLaunchIntentForPackage(pkg) != null) {
+                if ((pkg !in packages) && (packageManager.getLaunchIntentForPackage(pkg) != null)) {
                     packages.add(pkg)
                 }
             }
@@ -425,7 +439,7 @@ class AppRepository @Inject constructor(
                 ApplicationInfo.CATEGORY_PRODUCTIVITY -> AppCategory.UTILITIES
                 else -> null
             }
-            if (category != null) return category
+            category?.let { return it }
         }
         
         // Fallback for system apps if not caught by metadata or known list

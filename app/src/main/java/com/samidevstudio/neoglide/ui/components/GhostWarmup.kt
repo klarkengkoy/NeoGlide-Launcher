@@ -5,12 +5,19 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import com.samidevstudio.neoglide.domain.model.AppModel
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -29,7 +36,7 @@ fun GhostWarmup(
         for (i in apps.indices) {
             currentAppIndex = i
             // Minimal delay to ensure each one gets a "draw" pass without blocking the main thread
-            delay(10) 
+            delay(10.milliseconds) 
         }
         
         currentAppIndex = -1
