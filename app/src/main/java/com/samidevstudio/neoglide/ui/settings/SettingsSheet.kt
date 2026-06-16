@@ -2,7 +2,23 @@ package com.samidevstudio.neoglide.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -11,10 +27,65 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.*
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Anchor
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.FolderDelete
+import androidx.compose.material.icons.filled.FolderOff
+import androidx.compose.material.icons.filled.FontDownload
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LayersClear
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SortByAlpha
+import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.material.icons.filled.ViewStream
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Wallpaper
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.WorkspacePremium
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -22,18 +93,26 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.samidevstudio.neoglide.data.repository.*
+import com.samidevstudio.neoglide.data.repository.AppLabelMode
+import com.samidevstudio.neoglide.data.repository.CategoryBarType
+import com.samidevstudio.neoglide.data.repository.GridSize
+import com.samidevstudio.neoglide.data.repository.HorizontalAnchor
+import com.samidevstudio.neoglide.data.repository.NotificationDotMode
+import com.samidevstudio.neoglide.data.repository.SearchProvider
+import com.samidevstudio.neoglide.data.repository.SortingMode
+import com.samidevstudio.neoglide.data.repository.VerticalAnchor
 import com.samidevstudio.neoglide.ui.components.AppIcon
 import com.samidevstudio.neoglide.ui.utils.HapticEngine
 import com.samidevstudio.neoglide.ui.utils.rememberHapticFeedback
-import java.util.*
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,6 +127,20 @@ fun SettingsSheet(
     val isNotifEnabled by viewModel.isNotificationServiceEnabled.collectAsStateWithLifecycle()
     val isAuthForHidden by viewModel.isUserAuthenticatedForHiddenApps.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // Observe lifecycle to refresh permissions when returning from system settings
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.checkNotificationPermission()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     // Reset authentication when the settings sheet is closed
     DisposableEffect(Unit) {
@@ -68,7 +161,7 @@ fun SettingsSheet(
             BiometricHelper.showBiometricPrompt(
                 activity = context as FragmentActivity,
                 onSuccess = {
-                    viewModel.setUserAuthenticatedForHiddenApps(true)
+                    viewModel.setUserAuthenticatedForHiddenApps(authenticated = true)
                     activeDialog = "hidden_apps"
                 },
                 onNoSecurityEnrolled = {
@@ -85,10 +178,12 @@ fun SettingsSheet(
             title = { Text("Unprotected Vault") },
             text = { Text("Your device has no lock set. Anyone can access this vault. Are you sure you want to continue without security?") },
             confirmButton = {
-                TextButton(onClick = { 
-                    viewModel.setUserAuthenticatedForHiddenApps(true)
-                    activeDialog = "hidden_apps" 
-                }) { Text("Continue") }
+                TextButton(
+                    onClick = {
+                        viewModel.setUserAuthenticatedForHiddenApps(authenticated = true)
+                        activeDialog = "hidden_apps"
+                    }
+                ) { Text("Continue") }
             },
             dismissButton = {
                 TextButton(onClick = {
@@ -118,7 +213,7 @@ fun SettingsSheet(
             isPremium = isPremium,
             onDismiss = { activeDialog = null },
             onSelectMode = { 
-                if (!isPremium && it != SortingMode.ALPHABETICAL) {
+                if ((!isPremium) && (it != SortingMode.ALPHABETICAL)) {
                     activeDialog = "premium"
                 } else {
                     viewModel.setSortingMode(it)
@@ -132,16 +227,10 @@ fun SettingsSheet(
                 }
             }
         )
-        "grid" -> SelectionDialog(
-            title = "Home screen grid",
-            description = "Customize the number of rows and columns on your home screen.",
-            options = listOf(
-                DialogOption("4 x 5 (Standard)", GridSize.GRID_4X5, preferences.gridSize == GridSize.GRID_4X5),
-                DialogOption("5 x 5 (Dense)", GridSize.GRID_5X5, preferences.gridSize == GridSize.GRID_5X5),
-                DialogOption("6 x 6 (Expert)", GridSize.GRID_6X6, preferences.gridSize == GridSize.GRID_6X6)
-            ),
+        "grid" -> GridSettingsDialog(
+            currentSize = preferences.gridSize,
             onDismiss = { activeDialog = null },
-            onSelect = { viewModel.setGridSize(it as GridSize) }
+            onSelect = { viewModel.setGridSize(it) }
         )
         "trouble" -> TroubleshootingDialog(
             onDismiss = { activeDialog = null },
@@ -234,9 +323,7 @@ fun SettingsSheet(
         )
     }
 
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        viewModel.checkNotificationPermission()
-    }
+    // Removed redundant LaunchedEffect as LifecycleObserver handles ON_RESUME
     
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -315,10 +402,10 @@ fun SettingsSheet(
                 item {
                     SettingsGroup(title = "INTERACTION & LAYOUT") {
                         SettingsItem(
-                            icon = Icons.Default.Smartphone, 
-                            title = "Home grid", 
+                            icon = Icons.Default.GridView, 
+                            title = "Home Screen Layout", 
                             onClick = { activeDialog = "grid" },
-                            trailing = { ValueLabel(preferences.gridSize.name.split("_").last()) }
+                            trailing = { ValueLabel(preferences.gridSize.name.lowercase().replaceFirstChar { it.uppercase() }) }
                         ) 
                         ToggleSettingsItem(
                             icon = Icons.Default.Lock,
@@ -583,7 +670,7 @@ fun AppLabelSettingsDialog(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.FontDownload, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(12.dp))
-                Text("App Names")
+                Text("App Labels")
             }
         },
         text = {
@@ -602,7 +689,7 @@ fun AppLabelSettingsDialog(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
-                            text = "Display names on:",
+                            text = "Display labels on:",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
@@ -659,8 +746,15 @@ fun AppLabelSettingsDialog(
                 
                 Spacer(modifier = Modifier.height(12.dp))
                 
+                val labelDescription = when (labelMode) {
+                    AppLabelMode.BOTH -> "Labels are visible on both Home Screen and App Drawer for maximum clarity."
+                    AppLabelMode.HOME_ONLY -> "Labels are only shown on the Home Screen. App Drawer remains clean and icon-focused."
+                    AppLabelMode.DRAWER_ONLY -> "Labels are only shown in the App Drawer. Home Screen icons remain minimal without text."
+                    AppLabelMode.NONE -> "All application labels are hidden for the most minimalist and clean experience."
+                }
+
                 Text(
-                    text = "Toggling these will instantly hide or show labels on your icons. You can mix and match for a cleaner workspace.",
+                    text = labelDescription,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
@@ -1535,9 +1629,9 @@ fun SelectionDialog(
         title = { Text(title) },
         text = {
             Column {
-                if (description != null) {
+                description?.let { desc ->
                     Text(
-                        text = description,
+                        text = desc,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 16.dp)
@@ -1572,6 +1666,127 @@ fun SelectionDialog(
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun GridSettingsDialog(
+    currentSize: GridSize,
+    onDismiss: () -> Unit,
+    onSelect: (GridSize) -> Unit
+) {
+    var selectedSize by remember { mutableStateOf(currentSize) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.GridView, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("Home Screen Layout")
+            }
+        },
+        text = {
+            Column {
+                Text(
+                    "Choose how many apps and widgets fit on your home screen. Density and icon size adjust automatically.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(
+                    text = "Density & Icon Size:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                androidx.compose.foundation.layout.FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    GridSize.entries.forEach { size ->
+                        FilterChip(
+                            selected = selectedSize == size,
+                            onClick = { 
+                                selectedSize = size
+                            },
+                            label = { Text(size.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                            leadingIcon = if (selectedSize == size) {
+                                { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                            } else null,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Text(
+                            text = when (selectedSize) {
+                                GridSize.SMALL -> "Compact layout with 48dp icons and smaller text. Fits the most items on one screen."
+                                GridSize.MEDIUM -> "Standard layout with 56dp icons. Balanced density for most users."
+                                GridSize.LARGE -> "Comfortable layout with 64dp icons and larger text. Ideal for easy visibility."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                if (selectedSize.ordinal > currentSize.ordinal) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Warning, 
+                                null, 
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Caution: Switching to a lower density (Larger icons) may remove items that no longer fit.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSelect(selectedSize)
+                    onDismiss()
+                }
+            ) { Text("Apply", fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
     )
 }
 
