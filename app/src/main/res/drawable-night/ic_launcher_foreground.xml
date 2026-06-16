@@ -11,13 +11,10 @@
         android:scaleX="0.85"
         android:scaleY="0.85"
         android:translateY="25">
-        <!-- Themed version using Alpha for depth preservation -->
-
-        <!-- Line 1 – Thickest -->
+        <!-- Line 1 – brightest, thickest -->
         <path
             android:pathData="M 160,271 C 260,221 360,211 520,221"
-            android:strokeColor="#000000"
-            android:strokeAlpha="1.0"
+            android:strokeColor="#F0F0F0"
             android:strokeWidth="28"
             android:strokeLineCap="round"
             android:fillColor="@android:color/transparent" />
@@ -25,8 +22,7 @@
         <!-- Line 2 -->
         <path
             android:pathData="M 160,311 C 270,291 370,271 520,291"
-            android:strokeColor="#000000"
-            android:strokeAlpha="0.8"
+            android:strokeColor="#C0C0C0"
             android:strokeWidth="20"
             android:strokeLineCap="round"
             android:fillColor="@android:color/transparent" />
@@ -34,8 +30,7 @@
         <!-- Line 3 -->
         <path
             android:pathData="M 160,346 C 280,321 380,301 520,341"
-            android:strokeColor="#000000"
-            android:strokeAlpha="0.6"
+            android:strokeColor="#909090"
             android:strokeWidth="14"
             android:strokeLineCap="round"
             android:fillColor="@android:color/transparent" />
@@ -43,17 +38,15 @@
         <!-- Line 4 -->
         <path
             android:pathData="M 190,381 C 300,366 400,356 510,371"
-            android:strokeColor="#000000"
-            android:strokeAlpha="0.4"
+            android:strokeColor="#606060"
             android:strokeWidth="9"
             android:strokeLineCap="round"
             android:fillColor="@android:color/transparent" />
 
-        <!-- Line 5 – Thinnest -->
+        <!-- Line 5 – darkest, thinnest -->
         <path
             android:pathData="M 230,409 C 330,399 410,396 490,406"
-            android:strokeColor="#000000"
-            android:strokeAlpha="0.2"
+            android:strokeColor="#404040"
             android:strokeWidth="5"
             android:strokeLineCap="round"
             android:fillColor="@android:color/transparent" />
