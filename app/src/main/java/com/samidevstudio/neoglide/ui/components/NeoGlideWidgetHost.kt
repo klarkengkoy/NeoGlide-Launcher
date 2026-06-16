@@ -2,39 +2,49 @@ package com.samidevstudio.neoglide.ui.components
 
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
-import androidx.compose.animation.core.*
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.changedToDown
-import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
-import kotlin.math.roundToInt
 import com.samidevstudio.neoglide.ui.utils.HapticEngine
+import kotlin.math.roundToInt
 
 enum class Handle { NONE, TOP, BOTTOM, LEFT, RIGHT, MOVE }
 
@@ -47,6 +57,7 @@ private data class WidgetBounds(
 
 @Composable
 fun NeoGlideWidgetHost(
+    modifier: Modifier = Modifier,
     widgetId: Int,
     appWidgetHost: AppWidgetHost,
     appWidgetManager: AppWidgetManager,
@@ -54,11 +65,12 @@ fun NeoGlideWidgetHost(
     column: Float,
     spanX: Float,
     spanY: Float,
+    columns: Int = 5,
+    maxRows: Int = 10,
     unitWidth: Dp,
     unitHeight: Dp,
     isEditing: Boolean,
     isBlocked: Boolean = false,
-    modifier: Modifier = Modifier,
     onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
     onDragStart: () -> Unit = {},
     onResizeStart: () -> Unit = {},
@@ -142,8 +154,10 @@ fun NeoGlideWidgetHost(
                 sx = (base.spanX + dx).coerceAtLeast(0.5f)
             }
             Handle.MOVE -> {
-                c = base.col + (dragDeltaX / unitWidthPx)
-                r = base.row + (dragDeltaY / unitHeightPx)
+                val dx = dragDeltaX / unitWidthPx
+                val dy = dragDeltaY / unitHeightPx
+                c = (base.col + dx).coerceIn(0f, (columns.toFloat() - base.spanX).coerceAtLeast(0f))
+                r = (base.row + dy).coerceIn(0f, (maxRows.toFloat() - base.spanY).coerceAtLeast(0f))
             }
             Handle.NONE -> {}
         }
@@ -222,7 +236,7 @@ fun NeoGlideWidgetHost(
 
                                 currentOnResize(
                                     finalRow.coerceAtLeast(0f),
-                                    finalCol.coerceAtLeast(0f).coerceAtMost(5f - base.spanX),
+                                    finalCol.coerceAtLeast(0f).coerceAtMost(columns.toFloat() - base.spanX),
                                     base.spanX,
                                     base.spanY
                                 )
@@ -272,13 +286,19 @@ fun NeoGlideWidgetHost(
                         }
                     },
                     update = { view ->
-                        val w = ((unitWidth * visualRect[2]) - 8.dp).value.toInt()
-                        val h = ((unitHeight * visualRect[3]) - 8.dp).value.toInt()
+                        // Flickering Fix: Only update size when we snap to half-grid
+                        // This prevents requesting the widget to redraw for every pixel of drag
+                        val snapW = (visualRect[2] * 2).roundToInt() / 2f
+                        val snapH = (visualRect[3] * 2).roundToInt() / 2f
+                        
+                        val w = ((unitWidth * snapW) - 8.dp).value.toInt()
+                        val h = ((unitHeight * snapH) - 8.dp).value.toInt()
                         view.updateAppWidgetSize(null, w, h, w, h)
                     },
                     modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(24.dp))
                 )
-            } else if (content != null) {
+            }
+else if (content != null) {
                 content()
             }
 
@@ -314,12 +334,10 @@ fun NeoGlideWidgetHost(
 
                                         currentOnResize(
                                             finalRow.coerceAtLeast(0f),
-                                            finalCol.coerceAtLeast(0f).coerceAtMost(5f - base.spanX),
+                                            finalCol.coerceAtLeast(0f).coerceAtMost(columns.toFloat() - base.spanX),
                                             base.spanX,
                                             base.spanY
                                         )
-                                    } else {
-                                        currentOnLongClick()
                                     }
                                     activeHandle = Handle.NONE
                                     dragDeltaX = 0f
@@ -340,10 +358,9 @@ fun NeoGlideWidgetHost(
                                     dragDeltaX += dragAmount.x
                                     dragDeltaY += dragAmount.y
 
-                                    if (!isDragConfirmed && accumulatedDrag.getDistance() > with(density) { 10.dp.toPx() }) {
+                                    if (!isDragConfirmed && accumulatedDrag.getDistance() > with(density) { 5.dp.toPx() }) {
                                         isDragConfirmed = true
                                         onHapticFeedback(HapticEngine.HapticType.DRAG_START)
-                                        currentOnDragStart()
                                         activeHandle = Handle.MOVE
                                     }
                                 }
@@ -352,7 +369,7 @@ fun NeoGlideWidgetHost(
                 )
 
                 // TOP HANDLE
-                ResizeHandle(Alignment.TopCenter, Modifier.fillMaxWidth().height(32.dp), unitWidth, unitHeight, visualRect) { h, d, e ->
+                ResizeHandle(Alignment.TopCenter, Modifier.align(Alignment.TopCenter).zIndex(2f), unitWidth, unitHeight, visualRect, activeHandle == Handle.TOP) { h, d, e ->
                     if (e) {
                         val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                         val finalSpanY = ((base.spanY - dragDeltaY / unitHeightPx) * 2).roundToInt() / 2f
@@ -371,7 +388,7 @@ fun NeoGlideWidgetHost(
                 }
 
                 // BOTTOM HANDLE
-                ResizeHandle(Alignment.BottomCenter, Modifier.fillMaxWidth().height(32.dp), unitWidth, unitHeight, visualRect) { h, d, e ->
+                ResizeHandle(Alignment.BottomCenter, Modifier.align(Alignment.BottomCenter).zIndex(2f), unitWidth, unitHeight, visualRect, activeHandle == Handle.BOTTOM) { h, d, e ->
                     if (e) {
                         val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                         val finalSpanY = ((base.spanY + dragDeltaY / unitHeightPx) * 2).roundToInt() / 2f
@@ -388,7 +405,7 @@ fun NeoGlideWidgetHost(
                 }
 
                 // LEFT HANDLE
-                ResizeHandle(Alignment.CenterStart, Modifier.fillMaxHeight().width(32.dp), unitWidth, unitHeight, visualRect) { h, d, e ->
+                ResizeHandle(Alignment.CenterStart, Modifier.align(Alignment.CenterStart).zIndex(2f), unitWidth, unitHeight, visualRect, activeHandle == Handle.LEFT) { h, d, e ->
                     if (e) {
                         val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                         val finalSpanX = ((base.spanX - dragDeltaX / unitWidthPx) * 2).roundToInt() / 2f
@@ -407,7 +424,7 @@ fun NeoGlideWidgetHost(
                 }
 
                 // RIGHT HANDLE
-                ResizeHandle(Alignment.CenterEnd, Modifier.fillMaxHeight().width(32.dp), unitWidth, unitHeight, visualRect) { h, d, e ->
+                ResizeHandle(Alignment.CenterEnd, Modifier.align(Alignment.CenterEnd).zIndex(2f), unitWidth, unitHeight, visualRect, activeHandle == Handle.RIGHT) { h, d, e ->
                     if (e) {
                         val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
                         val finalSpanX = ((base.spanX + dragDeltaX / unitWidthPx) * 2).roundToInt() / 2f
@@ -434,6 +451,7 @@ fun BoxScope.ResizeHandle(
     unitWidth: Dp,
     unitHeight: Dp,
     visualRect: FloatArray,
+    isActive: Boolean,
     onDrag: (Handle, androidx.compose.ui.geometry.Offset, Boolean) -> Unit
 ) {
     val handle = when(alignment) {
@@ -444,11 +462,22 @@ fun BoxScope.ResizeHandle(
         else -> Handle.NONE
     }
 
+    val isHorizontal = handle == Handle.LEFT || handle == Handle.RIGHT
+    // Constrain handle length to 40% of the span or 48dp minimum, ensuring corner space
+    val handleLength = if (isHorizontal) {
+        (unitHeight * visualRect[3] * 0.4f).coerceAtLeast(48.dp)
+    } else {
+        (unitWidth * visualRect[2] * 0.4f).coerceAtLeast(48.dp)
+    }
+
     val currentOnDrag by rememberUpdatedState(onDrag)
 
     Box(
         modifier = modifier
-            .align(alignment)
+            .size(
+                width = if (isHorizontal) 32.dp else handleLength,
+                height = if (isHorizontal) handleLength else 32.dp
+            )
             .pointerInput(handle) {
                 detectDragGestures(
                     onDragEnd = { currentOnDrag(handle, androidx.compose.ui.geometry.Offset.Zero, true) },
@@ -459,21 +488,12 @@ fun BoxScope.ResizeHandle(
                     }
                 )
             },
-        contentAlignment = when(alignment) {
-            Alignment.TopCenter -> Alignment.TopCenter
-            Alignment.BottomCenter -> Alignment.BottomCenter
-            Alignment.CenterStart -> Alignment.CenterStart
-            Alignment.CenterEnd -> Alignment.CenterEnd
-            else -> Alignment.Center
-        }
+        contentAlignment = Alignment.Center
     ) {
-        val isHorizontal = handle == Handle.LEFT || handle == Handle.RIGHT
-        val handleLength = if (isHorizontal) (unitHeight * visualRect[3] * 0.3f).coerceAtLeast(48.dp) else (unitWidth * visualRect[2] * 0.3f).coerceAtLeast(48.dp)
-
         Surface(
             modifier = Modifier.size(width = if (isHorizontal) 6.dp else handleLength, height = if (isHorizontal) handleLength else 6.dp),
             shape = CircleShape,
-            color = Color.White,
+            color = if (isActive) MaterialTheme.colorScheme.primary else Color.White,
             shadowElevation = 2.dp
         ) {}
     }

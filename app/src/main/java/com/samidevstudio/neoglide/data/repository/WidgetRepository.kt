@@ -3,7 +3,6 @@ package com.samidevstudio.neoglide.data.repository
 import android.appwidget.AppWidgetHost
 import com.samidevstudio.neoglide.data.local.dao.WidgetDao
 import com.samidevstudio.neoglide.data.local.entity.WidgetEntity
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
