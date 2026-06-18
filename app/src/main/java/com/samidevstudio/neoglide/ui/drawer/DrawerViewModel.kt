@@ -1,11 +1,13 @@
 package com.samidevstudio.neoglide.ui.drawer
 
+import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.samidevstudio.neoglide.data.local.entity.HomeAppEntity
 import com.samidevstudio.neoglide.data.repository.AppRepository
 import com.samidevstudio.neoglide.data.repository.CategoryBarType
+import com.samidevstudio.neoglide.data.repository.CategoryRepository
 import com.samidevstudio.neoglide.data.repository.HomeRepository
 import com.samidevstudio.neoglide.data.repository.HorizontalAnchor
 import com.samidevstudio.neoglide.data.repository.SearchRepository
@@ -49,6 +51,7 @@ sealed class DrawerItem {
 
 sealed class DrawerUiEvent {
     data class ShowToast(val message: String) : DrawerUiEvent()
+    data class FolderCreated(val folderId: Int) : DrawerUiEvent()
 }
 
 @OptIn(FlowPreview::class)
@@ -58,6 +61,7 @@ class DrawerViewModel @Inject constructor(
     private val searchRepository: SearchRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val homeRepository: HomeRepository,
+    private val categoryRepository: CategoryRepository,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -75,6 +79,9 @@ class DrawerViewModel @Inject constructor(
 
     private val _webSuggestions = MutableStateFlow<List<String>>(emptyList())
     val webSuggestions = _webSuggestions.asStateFlow()
+
+    val userPreferences: StateFlow<com.samidevstudio.neoglide.data.repository.UserPreferences> = userPreferencesRepository.userPreferencesFlow
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), com.samidevstudio.neoglide.data.repository.UserPreferences())
 
     private val preferences = userPreferencesRepository.userPreferencesFlow
 
@@ -109,8 +116,9 @@ class DrawerViewModel @Inject constructor(
     val categorizedApps: StateFlow<Map<AppCategory?, List<DrawerItem>>> = combine(
         appRepository.allApps.distinctUntilChanged(),
         homeRepository.allDrawerFolders.distinctUntilChanged(),
+        categoryRepository.allCategories.distinctUntilChanged(),
         preferences.distinctUntilChanged()
-    ) { apps, folders, prefs ->
+    ) { apps, folders, customCatEntities, prefs ->
         val filteredApps = apps.filter { it.packageName !in prefs.hiddenPackages || prefs.showHiddenApps }
         val appsMap = filteredApps.associateBy { it.packageName }
         
@@ -130,7 +138,7 @@ class DrawerViewModel @Inject constructor(
             // Map to null key for consistency with selectedCategory being null
             mapOf(null to (unifiedFolders + appItems))
         } else {
-            // CATEGORIZED MODE: Only show folders belonging to standard categories
+            // CATEGORIZED MODE
             val appItems = filteredApps
                 .filter { it.category != AppCategory.FOLDER }
                 .map { app ->
@@ -148,8 +156,58 @@ class DrawerViewModel @Inject constructor(
                     category to DrawerItem.Folder(folderWithApps.folder.id, folderWithApps.folder.label, folderApps)
                 }
             
-            val grouped = (appItems + folderItems).groupBy({ it.first as AppCategory? }, { it.second })
-            grouped
+            val baseGrouped = (appItems + folderItems).groupBy({ it.first as AppCategory? }, { it.second })
+            
+            // Map custom entities to AppCategory instances with correct icons
+            val dbCustomCats = customCatEntities.associate { 
+                it.name to AppCategory(it.name, isCustom = true, iconName = it.iconName)
+            }
+
+            val finalGrouped = mutableMapOf<AppCategory?, List<DrawerItem>>()
+            
+            // 1. First, populate with built-ins from baseGrouped
+            baseGrouped.forEach { (cat, items) ->
+                if (cat == null || !cat.isCustom) {
+                    finalGrouped[cat] = items
+                }
+            }
+
+            // 2. Add DB custom categories (using their DB icon, even if baseGrouped used a shell)
+            dbCustomCats.forEach { (name, dbCat) ->
+                // Try to find items in baseGrouped using any instance with this name
+                val items = baseGrouped.entries.find { it.key?.name == name }?.value ?: emptyList()
+                finalGrouped[dbCat] = items
+            }
+
+            // 3. Add enabled built-in categories that are empty
+            AppCategory.builtInValues.forEach { builtIn ->
+                if (builtIn.name in prefs.orderedCategories && !finalGrouped.containsKey(builtIn)) {
+                    finalGrouped[builtIn] = emptyList()
+                }
+            }
+            
+            // 4. Handle HIDDEN category explicitly based on prefs
+            if (prefs.showHiddenApps && !finalGrouped.containsKey(AppCategory.HIDDEN)) {
+                finalGrouped[AppCategory.HIDDEN] = emptyList()
+            } else if (!prefs.showHiddenApps) {
+                finalGrouped.remove(AppCategory.HIDDEN)
+            }
+
+            // 5. SORT based on prefs.orderedCategories
+            val sortedKeys = finalGrouped.keys.sortedWith(
+                compareBy<AppCategory?> { it?.name == AppCategory.OTHER.name } // OTHER always last
+                    .thenBy { cat ->
+                        val index = prefs.orderedCategories.indexOf(cat?.name)
+                        if (index == -1) Int.MAX_VALUE else index
+                    }
+                    .thenBy { it?.name ?: "" }
+            )
+            
+            val sortedMap = LinkedHashMap<AppCategory?, List<DrawerItem>>()
+            sortedKeys.forEach { key ->
+                sortedMap[key] = finalGrouped[key] ?: emptyList()
+            }
+            sortedMap
         }
         result
     }.flowOn(Dispatchers.Default)
@@ -299,6 +357,13 @@ class DrawerViewModel @Inject constructor(
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     init {
+        viewModelScope.launch {
+            preferences.map { it.orderedCategories }.distinctUntilChanged().collect {
+                // Trigger re-classification when enabled categories change
+                appRepository.reclassifyAll()
+            }
+        }
+
         combine(_searchQuery, preferences) { query, prefs ->
             query to prefs.searchProvider
         }
@@ -361,21 +426,31 @@ class DrawerViewModel @Inject constructor(
     }
 
     fun createFolder(appA: AppModel, appB: AppModel, category: AppCategory?) {
+        createFolderFromList(listOf(appA.packageName, appB.packageName), "Folder", category)
+    }
+
+    fun createFolderFromList(packageNames: List<String>, label: String, category: AppCategory?) {
         viewModelScope.launch {
+            if (packageNames.size < 2) return@launch
             val prefs = preferences.first()
             val folderCategory = if (prefs.categoryBarType == CategoryBarType.NONE) "CATEGORYLESS" else category?.name ?: "OTHER"
             
-            homeRepository.cleanupDrawerMembership(appA.packageName)
-            homeRepository.cleanupDrawerMembership(appB.packageName)
+            packageNames.forEach { homeRepository.cleanupDrawerMembership(it) }
             
-            homeRepository.createFolderFromApps(
-                appA = HomeAppEntity(id = 0, packageName = appA.packageName, row = 0f, column = 0f),
-                appB = HomeAppEntity(id = 0, packageName = appB.packageName, row = 0f, column = 0f),
-                label = "Folder",
+            val apps = packageNames.map { pkg ->
+                HomeAppEntity(id = 0, packageName = pkg, row = 0f, column = 0f)
+            }
+            
+            val newFolderId = homeRepository.createFolderWithApps(
+                apps = apps,
+                label = label,
                 category = folderCategory
             )
-            appRepository.markAppAsInFolder(appA.packageName)
-            appRepository.markAppAsInFolder(appB.packageName)
+            packageNames.forEach { appRepository.markAppAsInFolder(it) }
+            
+            if (newFolderId != -1) {
+                _uiEvent.emit(DrawerUiEvent.FolderCreated(newFolderId))
+            }
         }
     }
 
@@ -406,6 +481,74 @@ class DrawerViewModel @Inject constructor(
     fun removeAppFromFolder(folderId: Int, packageName: String) {
         viewModelScope.launch {
             homeRepository.removeAppFromFolder(folderId, packageName)
+        }
+    }
+
+    suspend fun checkCategoryCapacity(context: Context): Boolean {
+        val prefs = preferences.first()
+        val count = categorizedApps.value.keys.size + 1
+        return canFitCategories(context, prefs.categoryBarType, count)
+    }
+
+    suspend fun canSwitchToCategoryBarType(context: Context, newType: CategoryBarType): Boolean {
+        val count = categorizedApps.value.keys.size
+        return canFitCategories(context, newType, count)
+    }
+
+    private fun canFitCategories(context: Context, type: CategoryBarType, count: Int): Boolean {
+        if (type == CategoryBarType.NONE) return true
+        
+        val displayMetrics = context.resources.displayMetrics
+        val isVertical = type == CategoryBarType.LEFT || type == CategoryBarType.RIGHT
+        
+        val totalAvailable = if (isVertical) {
+            (displayMetrics.heightPixels / displayMetrics.density) * 0.9f // 90% of height
+        } else {
+            (displayMetrics.widthPixels / displayMetrics.density) - 32 // full width minus padding
+        }
+
+        if (count <= 0) return true
+        
+        // Match shrinking logic in CategorySelector:
+        // Min icon size: 24dp, Min spacing: 2dp
+        val minRequired = (count * 24) + ((count - 1) * 2)
+        return minRequired <= totalAvailable
+    }
+
+    fun addBuiltInCategory(name: String) {
+        viewModelScope.launch {
+            userPreferencesRepository.toggleCategoryEnabled(name)
+            _selectedCategory.value = AppCategory.fromString(name)
+            appRepository.reclassifyAll()
+        }
+    }
+
+    fun addCustomCategory(name: String, iconName: String?) {
+        viewModelScope.launch {
+            categoryRepository.addCategory(name, iconName)
+            userPreferencesRepository.toggleCategoryEnabled(name)
+            _selectedCategory.value = AppCategory(name, isCustom = true, iconName = iconName)
+            val movements = appRepository.reclassifyAll()
+            val totalMoved = movements.values.sumOf { it.size }
+            showToast("$totalMoved apps moved to new categories")
+        }
+    }
+
+    fun removeCustomCategory(category: AppCategory) {
+        if (!category.isCustom) {
+            // Built-in category being removed/disabled
+            viewModelScope.launch {
+                userPreferencesRepository.toggleCategoryEnabled(category.name)
+                appRepository.reclassifyAll()
+                showToast("Category removed.")
+            }
+            return
+        }
+        viewModelScope.launch {
+            categoryRepository.removeCategory(category.name)
+            userPreferencesRepository.removeCategoryFromOrder(category.name)
+            appRepository.reclassifyAll()
+            showToast("Category removed. Apps redistributed.")
         }
     }
 }

@@ -279,6 +279,9 @@ fun NeoGlideWidgetHost(
                     factory = { context ->
                         appWidgetHost.createView(context, widgetId, widgetInfo).apply {
                             setAppWidget(widgetId, widgetInfo)
+                            // REMOVE SYSTEM PADDING: Ensures launcher control over margins
+                            setPadding(0, 0, 0, 0)
+                            
                             // Initial size update (minus 8dp container padding)
                             val w = ((unitWidth * visualRect[2]) - 8.dp).value.toInt()
                             val h = ((unitHeight * visualRect[3]) - 8.dp).value.toInt()

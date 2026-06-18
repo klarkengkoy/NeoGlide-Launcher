@@ -24,6 +24,7 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -47,6 +48,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -95,12 +97,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.times
+import androidx.compose.ui.zIndex
 import androidx.core.net.toUri
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.samidevstudio.neoglide.data.repository.AppLabelMode
+import com.samidevstudio.neoglide.data.repository.BadgeStyle
 import com.samidevstudio.neoglide.data.repository.CategoryBarType
-import com.samidevstudio.neoglide.data.repository.NotificationDotMode
 import com.samidevstudio.neoglide.data.repository.SearchProvider
 import com.samidevstudio.neoglide.data.repository.UserPreferences
 import com.samidevstudio.neoglide.data.repository.VerticalAnchor
@@ -114,6 +118,7 @@ import com.samidevstudio.neoglide.ui.components.FolderItem
 import com.samidevstudio.neoglide.ui.components.SearchAppItem
 import com.samidevstudio.neoglide.ui.settings.SettingsSheet
 import com.samidevstudio.neoglide.ui.settings.SettingsViewModel
+import com.samidevstudio.neoglide.ui.theme.BadgeRed
 import com.samidevstudio.neoglide.ui.utils.HapticEngine
 import com.samidevstudio.neoglide.ui.utils.rememberHapticFeedback
 import com.samidevstudio.neoglide.ui.utils.toIcon
@@ -202,6 +207,7 @@ private fun DrawerContent(
     var showSettings by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
     var expandedFolderId by remember { mutableIntStateOf(-1) }
+    var autoFocusFolderName by remember { mutableStateOf(false) }
     var isFolderInvisibleByDrag by remember { mutableStateOf(false) }
     var showAppPicker by remember { mutableStateOf(false) }
     var pendingFolderIdForAdd by remember { mutableIntStateOf(-1) }
@@ -211,10 +217,7 @@ private fun DrawerContent(
     var drawerRootCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
 
     val categories = remember(categorizedApps) {
-        categorizedApps.keys.sortedWith(
-            compareBy<AppCategory?> { it == AppCategory.HIDDEN }
-                .thenBy { it?.name ?: "" }
-        )
+        categorizedApps.keys.toList()
     }
 
     val showCategoryBar = preferences.categoryBarType != CategoryBarType.NONE
@@ -244,8 +247,14 @@ private fun DrawerContent(
 
     LaunchedEffect(Unit) {
         viewModel.uiEvent.collect { event ->
-            if (event is DrawerUiEvent.ShowToast) {
-                Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
+            when (event) {
+                is DrawerUiEvent.ShowToast -> {
+                    Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
+                }
+                is DrawerUiEvent.FolderCreated -> {
+                    expandedFolderId = event.folderId
+                    autoFocusFolderName = true
+                }
             }
         }
     }
@@ -302,6 +311,7 @@ private fun DrawerContent(
         DrawerOverlays(
             showSettings = showSettings,
             expandedFolderId = expandedFolderId,
+            autoFocusFolderName = autoFocusFolderName,
             showAppPicker = showAppPicker,
             isFolderInvisibleByDrag = isFolderInvisibleByDrag,
             pendingFolderIdForAdd = pendingFolderIdForAdd,
@@ -320,7 +330,10 @@ private fun DrawerContent(
             drawerRootCoords = drawerRootCoords,
             refreshTrigger = refreshTrigger,
             onDismissSettings = { showSettings = false },
-            onDismissFolder = { expandedFolderId = -1 },
+            onDismissFolder = { 
+                expandedFolderId = -1
+                autoFocusFolderName = false
+            },
             onSetFolderInvisible = { isFolderInvisibleByDrag = it },
             onShowAppPicker = { showAppPicker = it },
             onSetPendingFolder = { pendingFolderIdForAdd = it }
@@ -396,7 +409,7 @@ private fun DrawerMainLayout(
                     iconPackPackageName = preferences.iconPackPackageName,
                     hiddenPackages = preferences.hiddenPackages,
                     activeNotifications = activeNotifications,
-                    notificationDotMode = preferences.notificationDotMode,
+                    badgeStyle = preferences.drawerBadgeStyle,
                     appLabelMode = preferences.appLabelMode,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
@@ -428,8 +441,9 @@ private fun DrawerMainLayout(
                                 selectedCategory = selectedCategory,
                                 orientation = orientation,
                                 barWidth = barWidth,
+                                drawerRootCoords = drawerRootCoords,
                                 categoryNotifications = categoryNotifications,
-                                showNotificationDots = preferences.notificationDotMode in listOf(NotificationDotMode.CATEGORY_BAR, NotificationDotMode.BOTH),
+                                badgeStyle = preferences.railBadgeStyle,
                                 onCategorySelected = { viewModel.selectCategory(it) },
                                 onHapticFeedback = hapticFeedback
                             )
@@ -453,7 +467,7 @@ private fun DrawerMainLayout(
                                 isLocked = preferences.lockLayout,
                                 verticalAnchor = preferences.verticalAnchor,
                                 activeNotifications = activeNotifications,
-                                showNotificationDots = preferences.notificationDotMode in listOf(NotificationDotMode.APP_ICON, NotificationDotMode.BOTH),
+                                badgeStyle = preferences.drawerBadgeStyle,
                                 showLabel = preferences.appLabelMode == AppLabelMode.DRAWER_ONLY || preferences.appLabelMode == AppLabelMode.BOTH,
                                 refreshTrigger = refreshTrigger,
                                 rootCoords = drawerRootCoords,
@@ -486,9 +500,10 @@ private fun DrawerMainLayout(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .height(64.dp),
+                                    drawerRootCoords = drawerRootCoords,
                                     onCategorySelected = { viewModel.selectCategory(it) },
                                     categoryNotifications = categoryNotifications,
-                                    showNotificationDots = preferences.notificationDotMode in listOf(NotificationDotMode.CATEGORY_BAR, NotificationDotMode.BOTH),
+                                    badgeStyle = preferences.railBadgeStyle,
                                     onHapticFeedback = hapticFeedback
                                 )
                             }
@@ -500,8 +515,9 @@ private fun DrawerMainLayout(
                                 selectedCategory = selectedCategory,
                                 orientation = orientation,
                                 barWidth = barWidth,
+                                drawerRootCoords = drawerRootCoords,
                                 categoryNotifications = categoryNotifications,
-                                showNotificationDots = preferences.notificationDotMode in listOf(NotificationDotMode.CATEGORY_BAR, NotificationDotMode.BOTH),
+                                badgeStyle = preferences.railBadgeStyle,
                                 onCategorySelected = { viewModel.selectCategory(it) },
                                 onHapticFeedback = hapticFeedback
                             )
@@ -518,6 +534,7 @@ private fun DrawerMainLayout(
 private fun DrawerOverlays(
     showSettings: Boolean,
     expandedFolderId: Int,
+    autoFocusFolderName: Boolean,
     showAppPicker: Boolean,
     isFolderInvisibleByDrag: Boolean,
     pendingFolderIdForAdd: Int,
@@ -588,6 +605,7 @@ private fun DrawerOverlays(
                         onMoveToCategory = { viewModel.moveFolderToCategory(folder.id, it) },
                         isDrawerFolder = true,
                         isLocked = preferences.lockLayout,
+                        autoFocusLabel = autoFocusFolderName,
                         currentCategory = selectedCategory,
                         allCategories = categories,
                         onLabelChange = { viewModel.updateFolderLabel(folder.id, it) },
@@ -943,8 +961,9 @@ private fun DrawerCategoryRail(
     selectedCategory: AppCategory?,
     orientation: CategoryOrientation,
     barWidth: androidx.compose.ui.unit.Dp,
+    drawerRootCoords: LayoutCoordinates? = null,
     categoryNotifications: Map<AppCategory?, Pair<Boolean, Int>>,
-    showNotificationDots: Boolean,
+    badgeStyle: BadgeStyle,
     onCategorySelected: (AppCategory?) -> Unit,
     onHapticFeedback: (HapticEngine.HapticType) -> Unit
 ) {
@@ -958,9 +977,10 @@ private fun DrawerCategoryRail(
             allCategories = categories,
             selectedCategory = selectedCategory,
             orientation = orientation,
+            drawerRootCoords = drawerRootCoords,
             onCategorySelected = onCategorySelected,
             categoryNotifications = categoryNotifications,
-            showNotificationDots = showNotificationDots,
+            badgeStyle = badgeStyle,
             onHapticFeedback = onHapticFeedback
         )
     }
@@ -977,7 +997,7 @@ private fun DrawerSearchResults(
     iconPackPackageName: String?,
     hiddenPackages: Set<String>,
     activeNotifications: Map<String, Int>,
-    notificationDotMode: NotificationDotMode,
+    badgeStyle: BadgeStyle,
     appLabelMode: AppLabelMode,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
@@ -1000,7 +1020,7 @@ private fun DrawerSearchResults(
         iconPackPackageName = iconPackPackageName,
         hiddenPackages = hiddenPackages,
         activeNotifications = activeNotifications,
-        showNotificationDots = notificationDotMode in listOf(NotificationDotMode.APP_ICON, NotificationDotMode.BOTH),
+        badgeStyle = badgeStyle,
         showLabel = appLabelMode == AppLabelMode.DRAWER_ONLY || appLabelMode == AppLabelMode.BOTH,
         getShortcuts = getShortcuts,
         onShortcutClick = onShortcutClick,
@@ -1015,148 +1035,179 @@ fun CategorySelector(
     selectedCategory: AppCategory?,
     orientation: CategoryOrientation,
     modifier: Modifier = Modifier,
+    drawerRootCoords: LayoutCoordinates? = null,
     onCategorySelected: (AppCategory?) -> Unit,
     categoryNotifications: Map<AppCategory?, Pair<Boolean, Int>> = emptyMap(),
-    showNotificationDots: Boolean = true,
+    badgeStyle: BadgeStyle = BadgeStyle.COUNT,
     onHapticFeedback: (HapticEngine.HapticType) -> Unit = {}
 ) {
     val isVertical = orientation != CategoryOrientation.HORIZONTAL_BOTTOM
     val density = androidx.compose.ui.platform.LocalDensity.current
     val dragInfo = LocalDragTargetInfo.current
-    
-    val iconSize = 40.dp
-    val defaultSpacing = 8.dp
-    
-    var containerSize by remember { mutableFloatStateOf(0f) }
-    var containerOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-    var lastHoveredIndex by remember { mutableIntStateOf(-1) }
 
-    val currentSelectedCategory by rememberUpdatedState(selectedCategory)
-    val currentAllCategories by rememberUpdatedState(allCategories)
+    BoxWithConstraints(
+        modifier = modifier
+            .then(if (!isVertical) Modifier.systemGestureExclusion() else Modifier)
+    ) {
+        val totalAvailable = if (isVertical) maxHeight else maxWidth
+        val count = allCategories.size
 
-    val handleGesture = remember(containerSize, isVertical) {
-        { offset: androidx.compose.ui.geometry.Offset ->
-            val count = currentAllCategories.size
-            if (count > 0 && containerSize > 0) {
-                val iconSizePx = with(density) { iconSize.toPx() }
-                val spacingPx = with(density) { defaultSpacing.toPx() }
-                val totalContentSize = (iconSizePx * count) + (spacingPx * (count - 1))
-                val startOffset = (containerSize - totalContentSize) / 2
-                val touchPos = if (isVertical) offset.y else offset.x
-                val relativeTouch = touchPos - startOffset
-                val itemSizeWithSpacing = iconSizePx + spacingPx
-                
-                val index = when {
-                    relativeTouch < 0 -> 0
-                    relativeTouch >= totalContentSize -> count - 1
-                    else -> (relativeTouch / itemSizeWithSpacing).toInt().coerceIn(0, count - 1)
-                }
+        var iconSize = 40.dp
+        var defaultSpacing = 8.dp
 
-                val newCategory = currentAllCategories[index]
-                if (newCategory != currentSelectedCategory) {
-                    onHapticFeedback(HapticEngine.HapticType.GRID_SNAP)
-                    onCategorySelected(newCategory)
+        if (count > 0) {
+            val requiredBase = count * 40.dp + (count - 1) * 8.dp
+            if (requiredBase > totalAvailable) {
+                val requiredWithMinSpacing = count * 40.dp + (count - 1) * 2.dp
+                if (requiredWithMinSpacing <= totalAvailable) {
+                    defaultSpacing = (totalAvailable - count * 40.dp) / (count - 1).coerceAtLeast(1)
+                    defaultSpacing = defaultSpacing.coerceIn(2.dp, 8.dp)
+                } else {
+                    defaultSpacing = 2.dp
+                    iconSize = (totalAvailable - (count - 1) * 2.dp) / count
+                    iconSize = iconSize.coerceAtLeast(24.dp)
                 }
             }
         }
-    }
 
-    val content = @Composable {
-        allCategories.forEachIndexed { index, category ->
-            val itemSizePx = with(density) { iconSize.toPx() }
-            val spacingPx = with(density) { defaultSpacing.toPx() }
-            val totalContentSize = (itemSizePx * allCategories.size) + (spacingPx * (allCategories.size - 1))
-            val centeringOffset = (containerSize - totalContentSize) / 2
-            val itemStart = centeringOffset + index * (itemSizePx + spacingPx)
-            val itemEnd = itemStart + itemSizePx
-            
-            var isHovered = false
-            if (dragInfo.isDragging) {
-                val globalTouchPos = dragInfo.dragPosition + dragInfo.dragOffset
-                val localTouchPos = if (isVertical) globalTouchPos.y - containerOffset.y else globalTouchPos.x - containerOffset.x
-                val crossAxisTouchPos = if (isVertical) globalTouchPos.x - containerOffset.x else globalTouchPos.y - containerOffset.y
-                
-                val railWidthPx = with(density) { 56.dp.toPx() }
-                isHovered = crossAxisTouchPos >= 0 && crossAxisTouchPos <= railWidthPx &&
-                                localTouchPos >= itemStart && localTouchPos <= itemEnd
-                
-                if (isHovered) {
-                    dragInfo.hoveredCategory = category
-                    if (lastHoveredIndex != index) {
+        val selectionPadding = when {
+            iconSize >= 32.dp -> 4.dp
+            iconSize >= 28.dp -> 2.dp
+            else -> 0.dp
+        }
+
+        var containerSize by remember { mutableFloatStateOf(0f) }
+        var containerLocalOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+        var lastHoveredIndex by remember { mutableIntStateOf(-1) }
+
+        val currentSelectedCategory by rememberUpdatedState(selectedCategory)
+        val currentAllCategories by rememberUpdatedState(allCategories)
+
+        val handleGesture = remember(containerSize, isVertical, iconSize, defaultSpacing) {
+            { offset: androidx.compose.ui.geometry.Offset ->
+                val itemCount = currentAllCategories.size
+                if (itemCount > 0 && containerSize > 0) {
+                    val iconSizePx = with(density) { iconSize.toPx() }
+                    val spacingPx = with(density) { defaultSpacing.toPx() }
+                    val totalContentSize = (iconSizePx * itemCount) + (spacingPx * (itemCount - 1))
+                    val startOffset = (containerSize - totalContentSize) / 2
+                    val touchPos = if (isVertical) offset.y else offset.x
+                    val relativeTouch = touchPos - startOffset
+                    val itemSizeWithSpacing = iconSizePx + spacingPx
+                    
+                    val index = when {
+                        relativeTouch < 0 -> 0
+                        relativeTouch >= totalContentSize -> itemCount - 1
+                        else -> (relativeTouch / itemSizeWithSpacing).toInt().coerceIn(0, itemCount - 1)
+                    }
+
+                    val newCategory = currentAllCategories[index]
+                    if (newCategory != currentSelectedCategory) {
                         onHapticFeedback(HapticEngine.HapticType.GRID_SNAP)
-                        lastHoveredIndex = index
+                        onCategorySelected(newCategory)
                     }
-                } else if (lastHoveredIndex == index) {
-                    if (dragInfo.hoveredCategory == category) {
-                        dragInfo.hoveredCategory = null
-                    }
-                    lastHoveredIndex = -1
                 }
             }
-            
-            val categoryNotifs = categoryNotifications[category] ?: (false to 0)
+        }
 
-            CategoryIconItem(
-                isSelected = selectedCategory == category,
-                icon = category?.toIcon() ?: Icons.Default.AllInclusive,
-                isHovered = isHovered,
-                hasNotification = categoryNotifs.first && showNotificationDots,
-                notificationCount = categoryNotifs.second,
-                size = iconSize
-            )
-            
-            if (index < allCategories.size - 1) {
-                if (isVertical) Spacer(modifier = Modifier.height(defaultSpacing))
-                else Spacer(modifier = Modifier.width(defaultSpacing))
+        val content = @Composable {
+            allCategories.forEachIndexed { index, category ->
+                val itemSizePx = with(density) { iconSize.toPx() }
+                val spacingPx = with(density) { defaultSpacing.toPx() }
+                val totalContentSize = (itemSizePx * allCategories.size) + (spacingPx * (allCategories.size - 1))
+                val centeringOffset = (containerSize - totalContentSize) / 2
+                val itemStart = centeringOffset + index * (itemSizePx + spacingPx)
+                val itemEnd = itemStart + itemSizePx
+                
+                var isHovered = false
+                if (dragInfo.isDragging) {
+                    val touchInDrawer = dragInfo.dragPosition + dragInfo.dragOffset + dragInfo.grabOffset
+                    val localTouchPos = if (isVertical) touchInDrawer.y - containerLocalOffset.y else touchInDrawer.x - containerLocalOffset.x
+                    val crossAxisTouchPos = if (isVertical) touchInDrawer.x - containerLocalOffset.x else touchInDrawer.y - containerLocalOffset.y
+                    
+                    val crossAxisLimit = with(density) { if (isVertical) 56.dp.toPx() else 64.dp.toPx() }
+                    isHovered = crossAxisTouchPos >= 0 && crossAxisTouchPos <= crossAxisLimit &&
+                                    localTouchPos >= itemStart && localTouchPos <= itemEnd
+                    
+                    if (isHovered) {
+                        dragInfo.hoveredCategory = category
+                        if (lastHoveredIndex != index) {
+                            onHapticFeedback(HapticEngine.HapticType.GRID_SNAP)
+                            lastHoveredIndex = index
+                        }
+                    } else if (lastHoveredIndex == index) {
+                        if (dragInfo.hoveredCategory == category) {
+                            dragInfo.hoveredCategory = null
+                        }
+                        lastHoveredIndex = -1
+                    }
+                }
+                
+                val categoryNotifs = categoryNotifications[category] ?: (false to 0)
+
+                CategoryIconItem(
+                    isSelected = selectedCategory == category,
+                    icon = category?.toIcon() ?: Icons.Default.AllInclusive,
+                    isHovered = isHovered,
+                    hasNotification = categoryNotifs.first && badgeStyle != BadgeStyle.NONE,
+                    notificationCount = if (badgeStyle == BadgeStyle.COUNT) categoryNotifs.second else 0,
+                    size = iconSize,
+                    selectionPadding = selectionPadding
+                )
+                
+                if (index < allCategories.size - 1) {
+                    if (isVertical) Spacer(modifier = Modifier.height(defaultSpacing))
+                    else Spacer(modifier = Modifier.width(defaultSpacing))
+                }
             }
         }
-    }
 
-    if (isVertical) {
-        Column(
-            modifier = modifier
-                .fillMaxHeight()
-                .onGloballyPositioned { 
-                    containerSize = it.size.height.toFloat()
-                    containerOffset = it.positionInWindow()
-                }
-                .pointerInput(containerSize) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        handleGesture(down.position)
-                        drag(down.id) { change ->
-                            change.consume()
-                            handleGesture(change.position)
-                        }
+        if (isVertical) {
+            Column(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .onGloballyPositioned { 
+                        containerSize = it.size.height.toFloat()
+                        containerLocalOffset = drawerRootCoords?.windowToLocal(it.positionInWindow()) ?: it.positionInWindow()
                     }
-                },
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            content()
-        }
-    } else {
-        Row(
-            modifier = modifier
-                .fillMaxWidth()
-                .onGloballyPositioned { 
-                    containerSize = it.size.width.toFloat()
-                    containerOffset = it.positionInWindow()
-                }
-                .pointerInput(containerSize) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        handleGesture(down.position)
-                        drag(down.id) { change ->
-                            change.consume()
-                            handleGesture(change.position)
+                    .pointerInput(containerSize, iconSize, defaultSpacing, allCategories.size) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            handleGesture(down.position)
+                            drag(down.id) { change ->
+                                change.consume()
+                                handleGesture(change.position)
+                            }
                         }
+                    },
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                content()
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onGloballyPositioned { 
+                        containerSize = it.size.width.toFloat()
+                        containerLocalOffset = drawerRootCoords?.windowToLocal(it.positionInWindow()) ?: it.positionInWindow()
                     }
-                },
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            content()
+                    .pointerInput(containerSize, iconSize, defaultSpacing, allCategories.size) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            handleGesture(down.position)
+                            drag(down.id) { change ->
+                                change.consume()
+                                handleGesture(change.position)
+                            }
+                        }
+                    },
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                content()
+            }
         }
     }
 }
@@ -1169,7 +1220,8 @@ private fun CategoryIconItem(
     isHovered: Boolean = false,
     hasNotification: Boolean = false,
     notificationCount: Int = 0,
-    size: androidx.compose.ui.unit.Dp = 48.dp
+    size: androidx.compose.ui.unit.Dp = 48.dp,
+    selectionPadding: androidx.compose.ui.unit.Dp = 4.dp
 ) {
     val scale by animateFloatAsState(if (isHovered) 1.2f else 1f)
     val color = if (isHovered) MaterialTheme.colorScheme.secondaryContainer else if (isSelected) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent
@@ -1181,8 +1233,7 @@ private fun CategoryIconItem(
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(16.dp))
-            .then(if (isSelected && !isHovered) Modifier.padding(4.dp) else Modifier),
+            .then(if (isSelected && !isHovered) Modifier.padding(selectionPadding) else Modifier),
         contentAlignment = Alignment.Center
     ) {
         Surface(
@@ -1197,16 +1248,16 @@ private fun CategoryIconItem(
         }
         
         if (hasNotification) {
+            val borderColor = MaterialTheme.colorScheme.surface
             if (notificationCount > 0) {
                 Box(
                     modifier = Modifier
+                        .zIndex(1f)
                         .align(Alignment.TopEnd)
-                        .offset(x = 4.dp, y = (-4).dp)
-                        .background(MaterialTheme.colorScheme.primary, CircleShape)
-                        .padding(1.dp)
-                        .background(MaterialTheme.colorScheme.surface, CircleShape)
-                        .padding(1.dp)
-                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                        .offset(x = 6.dp, y = (-6).dp)
+                        .background(borderColor, CircleShape)
+                        .padding(1.5.dp)
+                        .background(BadgeRed, CircleShape)
                         .padding(horizontal = 4.dp, vertical = 1.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -1222,10 +1273,13 @@ private fun CategoryIconItem(
             } else {
                 Box(
                     modifier = Modifier
+                        .zIndex(1f)
                         .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .size(8.dp)
-                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                        .padding(2.dp)
+                        .size(10.dp)
+                        .background(borderColor, CircleShape)
+                        .padding(1.5.dp)
+                        .background(BadgeRed, CircleShape)
                 )
             }
         }
@@ -1248,7 +1302,7 @@ fun AppGrid(
     isLocked: Boolean = false,
     verticalAnchor: VerticalAnchor = VerticalAnchor.TOP,
     activeNotifications: Map<String, Int> = emptyMap(),
-    showNotificationDots: Boolean = true,
+    badgeStyle: BadgeStyle = BadgeStyle.COUNT,
     showLabel: Boolean = true,
     refreshTrigger: Int = 0,
     rootCoords: androidx.compose.ui.layout.LayoutCoordinates? = null,
@@ -1447,8 +1501,8 @@ fun AppGrid(
                                     useMonochrome = useMonochrome,
                                     iconPackPackageName = iconPackPackageName,
                                     isHidden = drawerItem.appModel.packageName in hiddenPackages,
-                                    hasNotification = showNotificationDots && drawerItem.appModel.packageName in activeNotifications.keys,
-                                    notificationCount = activeNotifications[drawerItem.appModel.packageName] ?: 0,
+                                    hasNotification = badgeStyle != BadgeStyle.NONE && drawerItem.appModel.packageName in activeNotifications.keys,
+                                    notificationCount = if (badgeStyle == BadgeStyle.COUNT) activeNotifications[drawerItem.appModel.packageName] ?: 0 else 0,
                                     showLabel = showLabel,
                                     sharedElementKeyPrefix = "drawer",
                                     isLongClickEnabled = false,
@@ -1476,6 +1530,10 @@ fun AppGrid(
                         }
                         is DrawerItem.Folder -> {
                             val isBeingDragged = dragInfo.isDragging && dragInfo.draggableFolderId == drawerItem.id
+                            
+                            val folderNotifCount = drawerItem.apps.sumOf { activeNotifications[it.packageName] ?: 0 }
+                            val folderHasNotif = badgeStyle != BadgeStyle.NONE && drawerItem.apps.any { it.packageName in activeNotifications.keys }
+
                             Box(
                                 modifier = Modifier.graphicsLayer {
                                     alpha = if (isBeingDragged) 0f else 1f
@@ -1487,6 +1545,8 @@ fun AppGrid(
                                     useMonochrome = useMonochrome,
                                     showLabel = showLabel,
                                     isHovered = isHoveredByDrag,
+                                    hasNotification = folderHasNotif,
+                                    notificationCount = if (badgeStyle == BadgeStyle.COUNT) folderNotifCount else 0,
                                     onHapticFeedback = onHapticFeedback,
                                     onClick = { 
                                         if (dragInfo.draggableItem == null && dragInfo.draggableFolderId == -1) {
@@ -1518,7 +1578,7 @@ fun SearchResults(
     iconPackPackageName: String? = null,
     hiddenPackages: Set<String> = emptySet(),
     activeNotifications: Map<String, Int> = emptyMap(),
-    showNotificationDots: Boolean = true,
+    badgeStyle: BadgeStyle = BadgeStyle.COUNT,
     showLabel: Boolean = true,
     refreshTrigger: Int = 0,
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
@@ -1554,8 +1614,8 @@ fun SearchResults(
                                 useMonochrome = useMonochrome,
                                 iconPackPackageName = iconPackPackageName,
                                 isHidden = app.packageName in hiddenPackages,
-                                hasNotification = showNotificationDots && app.packageName in activeNotifications.keys,
-                                notificationCount = activeNotifications[app.packageName] ?: 0,
+                                hasNotification = badgeStyle != BadgeStyle.NONE && app.packageName in activeNotifications.keys,
+                                notificationCount = if (badgeStyle == BadgeStyle.COUNT) activeNotifications[app.packageName] ?: 0 else 0,
                                 showLabel = showLabel,
                                 sharedElementKeyPrefix = "recent",
                                 refreshTrigger = refreshTrigger,
@@ -1591,8 +1651,8 @@ fun SearchResults(
                     useMonochrome = useMonochrome,
                     iconPackPackageName = iconPackPackageName,
                     isHidden = app.packageName in hiddenPackages,
-                    hasNotification = showNotificationDots && app.packageName in activeNotifications.keys,
-                    notificationCount = activeNotifications[app.packageName] ?: 0,
+                    hasNotification = badgeStyle != BadgeStyle.NONE && app.packageName in activeNotifications.keys,
+                    notificationCount = if (badgeStyle == BadgeStyle.COUNT) activeNotifications[app.packageName] ?: 0 else 0,
                     showLabel = showLabel,
                     sharedElementKeyPrefix = "search",
                     refreshTrigger = refreshTrigger,

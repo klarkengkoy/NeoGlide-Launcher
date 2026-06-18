@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -100,8 +101,11 @@ fun AppContextMenu(
                                 text = label,
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
+                            Spacer(modifier = Modifier.width(16.dp))
                             Icon(
                                 Icons.Default.Info,
                                 contentDescription = "App Info",
@@ -157,30 +161,32 @@ fun AppContextMenu(
                         )
                     }
 
-                    DropdownMenuItem(
-                        text = { Text("Uninstall", color = MaterialTheme.colorScheme.error) },
-                        onClick = {
-                            onDismissRequest()
-                            try {
-                                val packageUri = Uri.fromParts("package", packageName, null)
-                                val intent = Intent(Intent.ACTION_DELETE, packageUri).apply {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
+                    if (onRemove == null) {
+                        DropdownMenuItem(
+                            text = { Text("Uninstall", color = MaterialTheme.colorScheme.error) },
+                            onClick = {
+                                onDismissRequest()
                                 try {
-                                    val intent = Intent(Intent.ACTION_UNINSTALL_PACKAGE).apply {
-                                        data = Uri.parse("package:$packageName")
+                                    val packageUri = Uri.fromParts("package", packageName, null)
+                                    val intent = Intent(Intent.ACTION_DELETE, packageUri).apply {
                                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                     }
                                     context.startActivity(intent)
-                                } catch (e2: Exception) {
-                                    android.widget.Toast.makeText(context, "Could not uninstall app", android.widget.Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    try {
+                                        val intent = Intent(Intent.ACTION_UNINSTALL_PACKAGE).apply {
+                                            data = Uri.parse("package:$packageName")
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (e2: Exception) {
+                                        android.widget.Toast.makeText(context, "Could not uninstall app", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
                                 }
-                            }
-                        },
-                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
-                    )
+                            },
+                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                        )
+                    }
                 }
             }
         }

@@ -64,7 +64,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import com.samidevstudio.neoglide.data.repository.AppLabelMode
-import com.samidevstudio.neoglide.data.repository.NotificationDotMode
+import com.samidevstudio.neoglide.data.repository.BadgeStyle
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.ui.components.AppContextMenu
 import com.samidevstudio.neoglide.ui.components.AppItem
@@ -110,28 +110,30 @@ fun HomeScreen(
     val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
     val hapticFeedback = rememberHapticFeedback(preferences)
     val shouldShowDefaultPrompt by viewModel.shouldShowDefaultPrompt.collectAsStateWithLifecycle()
+    val isSplashScreenFinished by viewModel.isSplashScreenFinished.collectAsStateWithLifecycle()
     val density = LocalDensity.current
     val context = androidx.compose.ui.platform.LocalContext.current
     var showDrawer by remember { mutableStateOf(value = false) }
-    var showSettings by remember { mutableStateOf(false) }
-    var showContextMenu by remember { mutableStateOf(false) }
-    var showWidgetMenu by remember { mutableStateOf(false) }
-    var showFolderMenu by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(value = false) }
+    var showContextMenu by remember { mutableStateOf(value = false) }
+    var showWidgetMenu by remember { mutableStateOf(value = false) }
+    var showFolderMenu by remember { mutableStateOf(value = false) }
     var showFolderMenuId by remember { mutableIntStateOf(-1) }
     var showFolderMenuLabel by remember { mutableStateOf("") }
     var contextMenuOffset by remember { mutableStateOf(DpOffset.Zero) }
     var editingWidgetId by remember { mutableIntStateOf(-1) }
-    var showAppPicker by remember { mutableStateOf(false) }
-    var showWidgetPicker by remember { mutableStateOf(false) }
+    var showAppPicker by remember { mutableStateOf(value = false) }
+    var showWidgetPicker by remember { mutableStateOf(value = false) }
     var pendingAddAppRow by remember { mutableFloatStateOf(0f) }
     var pendingAddAppCol by remember { mutableFloatStateOf(0f) }
     var pendingFolderIdForAdd by remember { mutableIntStateOf(-1) }
     var gridCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
 
     var expandedFolderId by remember { mutableIntStateOf(-1) }
+    var autoFocusFolderName by remember { mutableStateOf(value = false) }
     var draggingAppFromFolder by remember { mutableStateOf<AppModel?>(null) }
     var sourceFolderId by remember { mutableIntStateOf(-1) }
-    var isInvisibleByDrag by remember { mutableStateOf(false) }
+    var isInvisibleByDrag by remember { mutableStateOf(value = false) }
 
     // TRACK ORIGINAL POSITION FOR DRAG-FIRST LOGIC
     var originalRow by remember { mutableFloatStateOf(-1f) }
@@ -150,7 +152,7 @@ fun HomeScreen(
     var grabPoint by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var dragTargetBounds by remember { mutableStateOf<RectBounds?>(null) }
     var accumulatedDrag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-    var isDragConfirmed by remember { mutableStateOf(false) }
+    var isDragConfirmed by remember { mutableStateOf(value = false) }
 
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
@@ -178,17 +180,23 @@ fun HomeScreen(
     val homeAlpha by animateFloatAsState(
         targetValue = if (showDrawer) 0f else 1f,
         animationSpec = tween(300),
-        label = "homeAlpha"
+        label = "homeAlpha",
     )
 
-    LaunchedEffect(Unit) {
-        viewModel.checkDefaultLauncher()
+    LaunchedEffect(isSplashScreenFinished) {
+        if (isSplashScreenFinished) {
+            viewModel.checkDefaultLauncher()
+        }
     }
 
     LaunchedEffect(Unit) {
         viewModel.uiEvent.collect { event ->
             when (event) {
                 is UiEvent.ShowToast -> Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
+                is UiEvent.FolderCreated -> {
+                    expandedFolderId = event.folderId
+                    autoFocusFolderName = true
+                }
             }
         }
     }
@@ -201,6 +209,7 @@ fun HomeScreen(
             showFolderMenuId = -1
         } else if (expandedFolderId != -1) {
             expandedFolderId = -1
+            autoFocusFolderName = false
         } else if (showAppMenuPackage != null) {
             showAppMenuPackage = null
         } else if (editingWidgetId != -1) {
@@ -229,7 +238,7 @@ fun HomeScreen(
     ) {
         // FULL SCREEN FROSTED GLASS
         AnimatedVisibility(
-            visible = editingWidgetId != -1 || showFolderMenu || draggingUniqueKey != null || expandedFolderId != -1,
+            visible = (editingWidgetId != -1) || showFolderMenu || (draggingUniqueKey != null) || (expandedFolderId != -1),
             enter = fadeIn(),
             exit = fadeOut()
         ) {
@@ -267,7 +276,7 @@ fun HomeScreen(
                                 },
                                 onLongPress = { offset ->
                                     // Disable home screen menu when editing a widget
-                                    if (editingWidgetId == -1 && !preferences.lockLayout) {
+                                    if ((editingWidgetId == -1) && (!preferences.lockLayout)) {
                                         hapticFeedback(HapticEngine.HapticType.LONG_PRESS)
                                         contextMenuOffset = DpOffset(
                                             x = with(density) { offset.x.toDp() },
@@ -296,7 +305,7 @@ fun HomeScreen(
                     val unitWidthPx = with(density) { unitWidth.toPx() }
                     val unitHeightPx = with(density) { unitHeight.toPx() }
 
-                    val showLabels = preferences.appLabelMode == AppLabelMode.HOME_ONLY || preferences.appLabelMode == AppLabelMode.BOTH
+                    val showLabels = (preferences.appLabelMode == AppLabelMode.HOME_ONLY) || (preferences.appLabelMode == AppLabelMode.BOTH)
 
                     // DRAG LOGIC REFINEMENT: Update bounds in response to dragOffset changes
                     fun calculateTargetBounds(fingerPosition: androidx.compose.ui.geometry.Offset, spanX: Float = 1f, spanY: Float = 1f): RectBounds {
@@ -489,7 +498,7 @@ fun HomeScreen(
                                     sharedElementKeyPrefix = "dragging-folder",
                                     isLongClickEnabled = false,
                                     refreshTrigger = refreshTrigger,
-                                    onClick = {}
+                                    onClick = { },
                                 )
                             } else draggingItem?.let { item ->
                                 when (item) {
@@ -506,7 +515,7 @@ fun HomeScreen(
                                             sharedElementKeyPrefix = "dragging-home",
                                             isLongClickEnabled = false,
                                             refreshTrigger = refreshTrigger,
-                                            onClick = {}
+                                            onClick = { },
                                         )
                                     }
                                     is HomeItem.Folder -> {
@@ -517,7 +526,7 @@ fun HomeScreen(
                                             fontSize = preferences.gridSize.fontSizeSp.sp,
                                             useMonochrome = preferences.useMonochromeIcons,
                                             showLabel = showLabels,
-                                            onClick = {}
+                                            onClick = { },
                                         )
                                     }
                                     is HomeItem.Widget -> {
@@ -697,10 +706,11 @@ fun HomeScreen(
                                         useMonochrome = preferences.useMonochromeIcons,
                                         iconPackPackageName = preferences.iconPackPackageName,
                                         isHidden = app.packageName in preferences.hiddenPackages,
-                                        hasNotification = (preferences.notificationDotMode == NotificationDotMode.APP_ICON ||
-                                                preferences.notificationDotMode == NotificationDotMode.BOTH) &&
+                                        hasNotification = preferences.homeBadgeStyle != BadgeStyle.NONE &&
                                                 app.packageName in activeNotifications.keys,
-                                        notificationCount = activeNotifications[app.packageName] ?: 0,
+                                        notificationCount = if (preferences.homeBadgeStyle == BadgeStyle.COUNT) {
+                                            activeNotifications[app.packageName] ?: 0
+                                        } else 0,
                                         showLabel = showLabels,
                                         isHovered = hoveredUniqueKey == item.uniqueKey,
                                         isBlocked = item.uniqueKey in blockedUniqueKeys,
@@ -727,6 +737,10 @@ fun HomeScreen(
                             is HomeItem.Folder -> {
                                 val isDragging = draggingUniqueKey == item.uniqueKey
                                 
+                                val folderNotifCount = item.apps.sumOf { activeNotifications[it.packageName] ?: 0 }
+                                val folderHasNotif = preferences.homeBadgeStyle != BadgeStyle.NONE &&
+                                        item.apps.any { it.packageName in activeNotifications.keys }
+
                                 Box(
                                     modifier = Modifier
                                         .onGloballyPositioned { itemCoords = it }
@@ -825,6 +839,8 @@ fun HomeScreen(
                                         showLabel = showLabels,
                                         isHovered = hoveredUniqueKey == item.uniqueKey,
                                         isBlocked = item.uniqueKey in blockedUniqueKeys,
+                                        hasNotification = folderHasNotif,
+                                        notificationCount = if (preferences.homeBadgeStyle == BadgeStyle.COUNT) folderNotifCount else 0,
                                         onHapticFeedback = hapticFeedback,
                                         onClick = {
                                             if (draggingUniqueKey == null) {
@@ -942,9 +958,9 @@ fun HomeScreen(
                                     else -> null
                                 }
 
-                                if (targetRow != null) {
-                                    LaunchedEffect(item.id, targetRow) {
-                                        viewModel.updateWidgetBounds(item.id, targetRow, item.column, item.spanX, item.spanY, maxRows)
+                                targetRow?.let { tRow ->
+                                    LaunchedEffect(item.id, tRow) {
+                                        viewModel.updateWidgetBounds(item.id, tRow, item.column, item.spanX, item.spanY, maxRows)
                                     }
                                 }
                             }
@@ -1064,9 +1080,13 @@ fun HomeScreen(
                                 apps = expandedFolder.apps,
                                 unitWidth = unitWidth,
                                 unitHeight = unitHeight,
-                                onDismiss = { expandedFolderId = -1 },
+                                onDismiss = { 
+                                    expandedFolderId = -1
+                                    autoFocusFolderName = false
+                                },
                                 isDrawerFolder = false,
                                 isLocked = preferences.lockLayout,
+                                autoFocusLabel = autoFocusFolderName,
                                 onDissolve = { viewModel.removeFolder(expandedFolder.id) },
                                 onAddApps = {
                                     pendingFolderIdForAdd = expandedFolder.id
@@ -1108,9 +1128,10 @@ fun HomeScreen(
                                 onAppDragEnd = {
                                     hapticFeedback(HapticEngine.HapticType.DRAG_END)
                                     if (isInvisibleByDrag) {
-                                        val finalBounds = calculateTargetBounds(dragOffset)
-                                        draggingAppFromFolder?.let { app ->
-                                            viewModel.removeAppFromFolder(sourceFolderId, app.packageName, finalBounds.row, finalBounds.col)
+                                        dragTargetBounds?.let { bounds ->
+                                            draggingAppFromFolder?.let { app ->
+                                                viewModel.removeAppFromFolder(sourceFolderId, app.packageName, bounds.row, bounds.col)
+                                            }
                                         }
                                     }
                                     draggingAppFromFolder = null
@@ -1163,6 +1184,7 @@ fun HomeScreen(
                             allWidgetProviders = viewModel.appWidgetManager.installedProviders,
                             unitWidthDp = unitWidth.value,
                             unitHeightDp = unitHeight.value,
+                            maxColumns = columns,
                             onGetWidgets = { pkg -> viewModel.getWidgetsForApp(pkg) },
                             onWidgetSelected = { info ->
                                 showWidgetPicker = false

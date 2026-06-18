@@ -18,29 +18,21 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -71,6 +63,7 @@ fun WidgetPickerDialog(
     allWidgetProviders: List<AppWidgetProviderInfo>,
     unitWidthDp: Float,
     unitHeightDp: Float,
+    maxColumns: Int,
     onGetWidgets: (String) -> List<AppWidgetProviderInfo>,
     onWidgetSelected: (AppWidgetProviderInfo) -> Unit,
     onDismissRequest: () -> Unit
@@ -188,8 +181,8 @@ fun WidgetPickerDialog(
                                     var currentPair = mutableListOf<AppWidgetProviderInfo>()
                                     
                                     filteredWidgets.forEach { info ->
-                                        val (spanX, spanY) = WidgetUtils.calculateWidgetSpan(info, unitWidthDp, unitHeightDp)
-                                        val isWide = spanX.toFloat() / spanY.toFloat() >= 1.5f
+                                        val (spanX, spanY) = WidgetUtils.calculateProjectedWidgetSpan(context, info, unitWidthDp, unitHeightDp, maxColumns)
+                                        val isWide = spanX / spanY >= 1.5f
                                         
                                         if (isWide) {
                                             if (currentPair.isNotEmpty()) {
@@ -227,7 +220,8 @@ fun WidgetPickerDialog(
                                                 WidgetProviderItem(
                                                     info = info,
                                                     unitWidthDp = unitWidthDp,
-                                                    unitHeightDp = unitHeightDp
+                                                    unitHeightDp = unitHeightDp,
+                                                    maxColumns = maxColumns
                                                 ) { onWidgetSelected(info) }
                                             }
                                         }
@@ -248,13 +242,14 @@ private fun WidgetProviderItem(
     info: AppWidgetProviderInfo,
     unitWidthDp: Float,
     unitHeightDp: Float,
+    maxColumns: Int,
     onClick: () -> Unit
 ) {
     val context = LocalContext.current
     val label = info.loadLabel(context.packageManager)
     
-    val (spanX, spanY) = remember(info, unitWidthDp, unitHeightDp) { 
-        WidgetUtils.calculateWidgetSpan(info, unitWidthDp, unitHeightDp) 
+    val (spanX, spanY) = remember(info, unitWidthDp, unitHeightDp, maxColumns) { 
+        WidgetUtils.calculateProjectedWidgetSpan(context, info, unitWidthDp, unitHeightDp, maxColumns) 
     }
 
     val previewDrawable = remember(info) {
@@ -325,7 +320,7 @@ private fun WidgetProviderItem(
         )
         
         Text(
-            text = "${spanX} × ${spanY}",
+            text = "${if (spanX % 1f == 0f) spanX.toInt() else spanX} × ${if (spanY % 1f == 0f) spanY.toInt() else spanY}",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Medium

@@ -31,7 +31,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 import javax.inject.Inject
 
 sealed class HomeItem {
@@ -72,12 +71,13 @@ sealed class HomeItem {
         override val row: Float,
         override val column: Float,
         override val spanX: Float = 1f,
-        override val spanY: Float = 1f
+        override val spanY: Float = 1f,
     ) : HomeItem()
 }
 
 sealed class UiEvent {
     data class ShowToast(val message: String) : UiEvent()
+    data class FolderCreated(val folderId: Int) : UiEvent()
 }
 
 @HiltViewModel
@@ -88,7 +88,7 @@ class HomeViewModel @Inject constructor(
     private val homeRepository: HomeRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     val appWidgetManager: AppWidgetManager,
-    val appWidgetHost: AppWidgetHost
+    val appWidgetHost: AppWidgetHost,
 ) : ViewModel() {
 
     private val _uiEvent = MutableSharedFlow<UiEvent>()
@@ -103,6 +103,13 @@ class HomeViewModel @Inject constructor(
 
     private val _shouldShowDefaultPrompt = MutableStateFlow(value = false)
     val shouldShowDefaultPrompt = _shouldShowDefaultPrompt.asStateFlow()
+
+    private val _isSplashScreenFinished = MutableStateFlow(value = false)
+    val isSplashScreenFinished = _isSplashScreenFinished.asStateFlow()
+
+    fun onSplashScreenFinished() {
+        _isSplashScreenFinished.value = true
+    }
 
     private var lastAppLaunchFromDrawerTimestamp: Long = 0
 
@@ -146,7 +153,7 @@ class HomeViewModel @Inject constructor(
             // Monitor grid size and label mode for sanitization
             combine(
                 userPreferencesRepository.userPreferencesFlow.map { it.gridSize }.distinctUntilChanged(),
-                userPreferencesRepository.userPreferencesFlow.map { it.appLabelMode }.distinctUntilChanged()
+                userPreferencesRepository.userPreferencesFlow.map { it.appLabelMode }.distinctUntilChanged(),
             ) { size, labelMode -> size to labelMode }
                 .collect { (size, labelMode) ->
                     val screenWidthDp = context.resources.configuration.screenWidthDp
@@ -154,7 +161,7 @@ class HomeViewModel @Inject constructor(
                     val maxRows = 10 
                     
                     // Only sanitize if the grid actually shrank
-                    if (lastColumns != -1 && (columns < lastColumns || maxRows < lastMaxRows)) {
+                    if ((lastColumns != -1) && ((columns < lastColumns) || (maxRows < lastMaxRows))) {
                         sanitizeGridItems(columns, maxRows)
                     }
                     
@@ -262,7 +269,10 @@ class HomeViewModel @Inject constructor(
                 else -> {}
             }
         }
-        apps.filter { it.packageName !in homePackages }.sortedBy { it.label }
+        apps.asSequence()
+            .filter { it.packageName !in homePackages }
+            .sortedBy { it.label }
+            .toList()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // WIDGET PICKER STATE
@@ -281,8 +291,11 @@ class HomeViewModel @Inject constructor(
 
     val appsWithWidgets: StateFlow<List<AppModel>> = allApps.map { apps ->
         val providers = appWidgetManager.installedProviders
-        val packagesWithWidgets = providers.map { it.provider.packageName }.toSet()
-        apps.filter { it.packageName in packagesWithWidgets }.sortedBy { it.label }
+        val packagesWithWidgets = providers.asSequence().map { it.provider.packageName }.toSet()
+        apps.asSequence()
+            .filter { it.packageName in packagesWithWidgets }
+            .sortedBy { it.label }
+            .toList()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun getWidgetsForApp(packageName: String): List<AppWidgetProviderInfo> {
@@ -302,7 +315,7 @@ class HomeViewModel @Inject constructor(
                 }
                 is CollisionResult.MergeApps -> {
                     if (item is HomeItem.App) {
-                        homeRepository.createFolderFromApps(
+                        val newFolderId = homeRepository.createFolderFromApps(
                             appA = com.samidevstudio.neoglide.data.local.entity.HomeAppEntity(
                                 id = item.id,
                                 packageName = item.appModel.packageName,
@@ -316,7 +329,9 @@ class HomeViewModel @Inject constructor(
                                 column = collisionResult.targetApp.column
                             )
                         )
-                        _uiEvent.emit(UiEvent.ShowToast("Folder Created"))
+                        if (newFolderId != -1) {
+                            _uiEvent.emit(UiEvent.FolderCreated(newFolderId))
+                        }
                     } else {
                         _uiEvent.emit(UiEvent.ShowToast("Space already occupied"))
                     }
@@ -345,9 +360,9 @@ class HomeViewModel @Inject constructor(
             // Keep track of spots we've already "booked" during this sanitization pass
             // We use a local list to prevent stacking before the repository updates the Flow
             val bookedRects = items.mapNotNull { item ->
-                val isAppOrFolder = item is HomeItem.App || item is HomeItem.Folder
+                val isAppOrFolder = (item is HomeItem.App) || (item is HomeItem.Folder)
                 val showLabels = userPreferencesRepository.userPreferencesFlow.first().let { 
-                    it.appLabelMode == AppLabelMode.HOME_ONLY || it.appLabelMode == AppLabelMode.BOTH 
+                    (it.appLabelMode == AppLabelMode.HOME_ONLY) || (it.appLabelMode == AppLabelMode.BOTH) 
                 }
                 val effectiveSpanY = if (isAppOrFolder && showLabels) 1.5f else item.spanY
                 
@@ -358,9 +373,9 @@ class HomeViewModel @Inject constructor(
             }.toMutableList()
 
             items.forEach { item ->
-                val isAppOrFolder = item is HomeItem.App || item is HomeItem.Folder
+                val isAppOrFolder = (item is HomeItem.App) || (item is HomeItem.Folder)
                 val showLabels = userPreferencesRepository.userPreferencesFlow.first().let { 
-                    it.appLabelMode == AppLabelMode.HOME_ONLY || it.appLabelMode == AppLabelMode.BOTH 
+                    (it.appLabelMode == AppLabelMode.HOME_ONLY) || (it.appLabelMode == AppLabelMode.BOTH) 
                 }
                 val effectiveSpanY = if (isAppOrFolder && showLabels) 1.5f else item.spanY
                 
@@ -548,11 +563,13 @@ class HomeViewModel @Inject constructor(
                 return@launch
             }
             
-            homeRepository.addHomeApp(com.samidevstudio.neoglide.data.local.entity.HomeAppEntity(
-                packageName = packageName,
-                row = finalRow,
-                column = finalCol
-            ))
+            homeRepository.addHomeApp(
+                com.samidevstudio.neoglide.data.local.entity.HomeAppEntity(
+                    packageName = packageName,
+                    row = finalRow,
+                    column = finalCol
+                )
+            )
         }
     }
 
@@ -578,14 +595,7 @@ class HomeViewModel @Inject constructor(
             // This matches the UI logic for device-independence
             val unitSizeDp = (screenWidthDp - 48f) / columns 
             
-            val (spanXInt, spanYInt) = WidgetUtils.calculateWidgetSpan(info, unitSizeDp, unitSizeDp)
-            val originalSpanX = spanXInt.toFloat()
-            val originalSpanY = spanYInt.toFloat()
-            
-            val spanX = originalSpanX.coerceAtMost(columns.toFloat())
-            // Preserve aspect ratio if we capped the width
-            val scaleFactor = spanX / originalSpanX
-            val spanY = (originalSpanY * scaleFactor).roundToInt().toFloat().coerceAtLeast(1f)
+            val (spanX, spanY) = WidgetUtils.calculateProjectedWidgetSpan(context, info, unitSizeDp, unitSizeDp, columns)
 
             // Find available space if preferred spot is taken
             val preferredRow = _pendingWidgetRow.value
@@ -599,18 +609,20 @@ class HomeViewModel @Inject constructor(
                 return@launch
             }
 
-            Log.d("HomeViewModel", "Completing widget config: ID=$widgetId, Span=${spanX}x${spanY}, Pos=($finalRow, $finalCol)")
+            Log.d("HomeViewModel", "Completing widget config: ID=$widgetId, Span=$spanX x $spanY, Pos=($finalRow, $finalCol)")
 
-            widgetRepository.addWidget(WidgetEntity(
-                widgetId = widgetId,
-                providerPackage = info.provider.packageName,
-                providerClass = info.provider.className,
-                label = info.loadLabel(context.packageManager),
-                spanX = spanX,
-                spanY = spanY,
-                row = finalRow,
-                column = finalCol
-            ))
+            widgetRepository.addWidget(
+                WidgetEntity(
+                    widgetId = widgetId,
+                    providerPackage = info.provider.packageName,
+                    providerClass = info.provider.className,
+                    label = info.loadLabel(context.packageManager),
+                    spanX = spanX,
+                    spanY = spanY,
+                    row = finalRow,
+                    column = finalCol
+                )
+            )
         }
     }
 

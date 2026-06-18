@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.domain.model.AppShortcut
+import com.samidevstudio.neoglide.ui.theme.BadgeRed
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -183,9 +184,8 @@ fun AppItem(
                         refreshTrigger = refreshTrigger
                     )
                     
-                    // NOTIFICATION DOT
+                    // NOTIFICATION BADGE
                     if (hasNotification) {
-                        val dotColor = MaterialTheme.colorScheme.primary
                         val borderColor = if (sharedElementKeyPrefix != "drawer") Color.White else MaterialTheme.colorScheme.surface
                         
                         if (notificationCount > 0) {
@@ -193,11 +193,9 @@ fun AppItem(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
                                     .offset(x = 4.dp, y = (-4).dp)
-                                    .background(dotColor, CircleShape)
-                                    .padding(1.dp)
                                     .background(borderColor, CircleShape)
-                                    .padding(1.dp)
-                                    .background(dotColor, CircleShape)
+                                    .padding(1.5.dp)
+                                    .background(BadgeRed, CircleShape)
                                     .padding(horizontal = 4.dp, vertical = 1.dp),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -215,12 +213,10 @@ fun AppItem(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
                                     .padding(2.dp)
-                                    .size(10.dp)
-                                    .background(dotColor, CircleShape)
-                                    .padding(1.dp)
+                                    .size(12.dp)
                                     .background(borderColor, CircleShape)
-                                    .padding(1.dp)
-                                    .background(dotColor, CircleShape)
+                                    .padding(2.dp)
+                                    .background(BadgeRed, CircleShape)
                             )
                         }
                     }
@@ -345,9 +341,8 @@ fun SearchAppItem(
                         refreshTrigger = refreshTrigger
                     )
                     
-                    // NOTIFICATION DOT
+                    // NOTIFICATION BADGE
                     if (hasNotification) {
-                        val dotColor = MaterialTheme.colorScheme.primary
                         val borderColor = Color.White
                         
                         if (notificationCount > 0) {
@@ -355,11 +350,9 @@ fun SearchAppItem(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
                                     .offset(x = 4.dp, y = (-4).dp)
-                                    .background(dotColor, CircleShape)
-                                    .padding(1.dp)
                                     .background(borderColor, CircleShape)
-                                    .padding(1.dp)
-                                    .background(dotColor, CircleShape)
+                                    .padding(1.5.dp)
+                                    .background(BadgeRed, CircleShape)
                                     .padding(horizontal = 4.dp, vertical = 1.dp),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -377,12 +370,10 @@ fun SearchAppItem(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
                                     .padding(2.dp)
-                                    .size(10.dp)
-                                    .background(dotColor, CircleShape)
-                                    .padding(1.dp)
+                                    .size(12.dp)
                                     .background(borderColor, CircleShape)
-                                    .padding(1.dp)
-                                    .background(dotColor, CircleShape)
+                                    .padding(2.dp)
+                                    .background(BadgeRed, CircleShape)
                             )
                         }
                     }

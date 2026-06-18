@@ -48,15 +48,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -94,14 +98,17 @@ fun FolderExpansion(
     onHideToggle: (String) -> Unit = {},
     onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
     isLocked: Boolean = false,
+    autoFocusLabel: Boolean = false,
     onAppDragStart: (AppModel, androidx.compose.ui.geometry.Offset, androidx.compose.ui.geometry.Offset) -> Unit = { _, _, _ -> },
     onAppDrag: (androidx.compose.ui.geometry.Offset) -> Unit = {},
     onAppDragOut: (AppModel, androidx.compose.ui.geometry.Offset, androidx.compose.ui.geometry.Offset) -> Unit = { _, _, _ -> },
     onAppDragEnd: () -> Unit = {},
     onAppDragCancel: () -> Unit = {}
 ) {
-    var currentLabel by remember(label) { mutableStateOf(label) }
+    var textFieldValue by remember { mutableStateOf(TextFieldValue(text = label)) }
     var draggingApp by remember { mutableStateOf<AppModel?>(null) }
+    var isDragConfirmed by remember { mutableStateOf(false) }
+    var accumulatedDrag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var isDraggedOut by remember { mutableStateOf(false) }
     var dragOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var grabPoint by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
@@ -110,6 +117,20 @@ fun FolderExpansion(
     val density = LocalDensity.current
     val context = androidx.compose.ui.platform.LocalContext.current
     val focusManager = LocalFocusManager.current
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(label) {
+        if (label != textFieldValue.text) {
+            textFieldValue = textFieldValue.copy(text = label)
+        }
+    }
+
+    LaunchedEffect(autoFocusLabel) {
+        if (autoFocusLabel) {
+            textFieldValue = textFieldValue.copy(selection = TextRange(label.length))
+            focusRequester.requestFocus()
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -146,11 +167,11 @@ fun FolderExpansion(
                     ) {
                         // Folder Label (Editable)
                         BasicTextField(
-                            value = currentLabel,
+                            value = textFieldValue,
                             onValueChange = {
                                 if (!isLocked) {
-                                    currentLabel = it
-                                    onLabelChange(it)
+                                    textFieldValue = it
+                                    onLabelChange(it.text)
                                 }
                             },
                             textStyle = TextStyle(
@@ -166,6 +187,7 @@ fun FolderExpansion(
                             keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .focusRequester(focusRequester)
                                 .then(if (isLocked) Modifier.clickable { 
                                     android.widget.Toast.makeText(context, "Locked from launcher settings", android.widget.Toast.LENGTH_SHORT).show()
                                 } else Modifier)
@@ -216,7 +238,7 @@ fun FolderExpansion(
                                             val sortedCats = if (allCategories.isNotEmpty()) {
                                                 allCategories.filterNotNull().filter { it != AppCategory.HIDDEN && it != currentCategory }
                                             } else {
-                                                AppCategory.entries.filter { it != AppCategory.FOLDER && it != AppCategory.HIDDEN && it != currentCategory }
+                                                AppCategory.builtInValues.filter { it != AppCategory.FOLDER && it != AppCategory.HIDDEN && it != currentCategory }
                                             }
 
                                             sortedCats.forEach { category ->
@@ -269,8 +291,6 @@ fun FolderExpansion(
                             val isBeingDragged = draggingApp?.packageName == app.packageName
                             var showAppMenu by remember { mutableStateOf(false) }
                             var shortcuts by remember { mutableStateOf<List<AppShortcut>>(emptyList()) }
-                            var accumulatedDrag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-                            var isDragConfirmed by remember { mutableStateOf(false) }
 
                             LaunchedEffect(showAppMenu) {
                                 if (showAppMenu) {
@@ -374,7 +394,7 @@ fun FolderExpansion(
                                 if (showAppMenu) {
                                     AppContextMenu(
                                         expanded = true,
-                                        onDismissRequest = { showMenu = false },
+                                        onDismissRequest = { showAppMenu = false },
                                         packageName = app.packageName,
                                         label = app.label,
                                         shortcuts = shortcuts,
@@ -390,7 +410,7 @@ fun FolderExpansion(
         }
 
         // Floating Drag Icon
-        val isLifting = draggingApp != null
+        val isLifting = draggingApp != null && isDragConfirmed
         val liftScale by animateFloatAsState(
             targetValue = if (isLifting) 1.2f else 1f,
             animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
@@ -402,7 +422,7 @@ fun FolderExpansion(
             label = "liftShadow"
         )
 
-        if (!isDraggedOut) {
+        if (isDragConfirmed && !isDraggedOut) {
             draggingApp?.let { app ->
                 Box(
                     modifier = Modifier

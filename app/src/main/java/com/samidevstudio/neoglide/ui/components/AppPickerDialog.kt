@@ -213,7 +213,7 @@ fun MultiAppPickerDialog(
         filteredApps.partition { it.packageName in memberPackageNames }
     }
 
-    Dialog(onDismissRequest = onDismissRequest) {
+    Dialog(onDismissRequest = { onDismissRequest() }) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
@@ -231,7 +231,14 @@ fun MultiAppPickerDialog(
                     text = title,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(bottom = 16.dp, start = 8.dp)
+                    modifier = Modifier.padding(bottom = 8.dp, start = 8.dp)
+                )
+
+                Text(
+                    text = "Select two or more apps to group them into a folder. Selected apps will be moved into this new folder regardless of which category or folder they are currently in.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 16.dp, start = 8.dp, end = 8.dp)
                 )
 
                 OutlinedTextField(
@@ -321,7 +328,7 @@ fun MultiAppPickerDialog(
                         .padding(top = 8.dp),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    TextButton(onClick = onDismissRequest) {
+                    TextButton(onClick = { onDismissRequest() }) {
                         Text("Done", fontWeight = FontWeight.Bold)
                     }
                 }

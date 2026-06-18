@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -25,11 +26,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.samidevstudio.neoglide.domain.model.AppModel
+import com.samidevstudio.neoglide.ui.theme.BadgeRed
 import com.samidevstudio.neoglide.ui.utils.HapticEngine
 
 @Composable
@@ -43,6 +46,8 @@ fun FolderItem(
     showLabel: Boolean = true,
     isHovered: Boolean = false,
     isBlocked: Boolean = false,
+    hasNotification: Boolean = false,
+    notificationCount: Int = 0,
     onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
     onClick: () -> Unit = {}
 ) {
@@ -87,6 +92,42 @@ fun FolderItem(
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     MiniAppIcon(apps.getOrNull(2), useMonochrome, miniIconSize)
                     MiniAppIcon(apps.getOrNull(3), useMonochrome, miniIconSize)
+                }
+            }
+
+            // NOTIFICATION BADGE
+            if (hasNotification) {
+                val borderColor = Color.White
+                if (notificationCount > 0) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 2.dp, y = (-2).dp)
+                            .background(borderColor, CircleShape)
+                            .padding(1.5.dp)
+                            .background(BadgeRed, CircleShape)
+                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = if (notificationCount > 99) "99+" else notificationCount.toString(),
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(2.dp)
+                            .size(10.dp)
+                            .background(borderColor, CircleShape)
+                            .padding(1.5.dp)
+                            .background(BadgeRed, CircleShape)
+                    )
                 }
             }
         }
