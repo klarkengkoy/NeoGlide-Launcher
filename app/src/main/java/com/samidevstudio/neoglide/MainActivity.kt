@@ -1,5 +1,7 @@
 package com.samidevstudio.neoglide
 
+import android.app.WallpaperColors
+import android.app.WallpaperManager
 import android.appwidget.AppWidgetManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -11,6 +13,7 @@ import android.graphics.PathMeasure
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.animation.DecelerateInterpolator
@@ -23,7 +26,10 @@ import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentActivity
@@ -51,6 +57,7 @@ import com.samidevstudio.neoglide.ui.utils.IconLoader
 import com.samidevstudio.neoglide.ui.utils.LocalHapticEngine
 import com.samidevstudio.neoglide.ui.utils.LocalIconCache
 import com.samidevstudio.neoglide.ui.utils.LocalIconLoader
+import com.samidevstudio.neoglide.ui.utils.LocalWallpaperIsLight
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -75,6 +82,27 @@ class MainActivity : FragmentActivity() {
 
     private val homeViewModel: HomeViewModel by viewModels()
     private val drawerViewModel: DrawerViewModel by viewModels()
+
+    private var wallpaperIsLight by mutableStateOf(false)
+    private val wallpaperColorsListener = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+        WallpaperManager.OnColorsChangedListener { colors, _ ->
+            updateWallpaperColors(colors)
+        }
+    } else null
+
+    private fun updateWallpaperColors(colors: WallpaperColors?) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val hints = colors?.colorHints ?: 0
+            wallpaperIsLight = (hints and WallpaperColors.HINT_SUPPORTS_DARK_TEXT) != 0
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            // Fallback for API 27-30: Simple luminance check on primary color
+            val primary = colors?.primaryColor
+            if (primary != null) {
+                val luminance = primary.luminance()
+                wallpaperIsLight = luminance > 0.5f
+            }
+        }
+    }
 
     private var pendingWidgetId: Int = -1
 
@@ -364,6 +392,15 @@ class MainActivity : FragmentActivity() {
 
         billingManager.startConnection()
 
+        // Wallpaper Color Detection
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            val wm = WallpaperManager.getInstance(this)
+            updateWallpaperColors(wm.getWallpaperColors(WallpaperManager.FLAG_SYSTEM))
+            wallpaperColorsListener?.let {
+                wm.addOnColorsChangedListener(it, android.os.Handler(android.os.Looper.getMainLooper()))
+            }
+        }
+
         // Start app refresh immediately on cold start
         lifecycleScope.launch {
             appRepository.refreshApps()
@@ -375,6 +412,7 @@ class MainActivity : FragmentActivity() {
                 LocalHapticEngine provides hapticEngine,
                 LocalIconCache provides iconCache,
                 LocalIconLoader provides iconLoader,
+                LocalWallpaperIsLight provides wallpaperIsLight,
             ) {
                 Log.d("NeoGlideInit", "Step 3: UI Composition entered.")
                 NeoGlideLauncherTheme {
@@ -403,7 +441,7 @@ class MainActivity : FragmentActivity() {
                             }
 
                             NavDisplay(
-                                entries = navigationState.toEntries(entryProvider)
+                                entries = navigationState.toEntries(entryProvider),
                             ) {
                                 navigator.goBack()
                             }
@@ -414,7 +452,14 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
+    override fun onDestroy() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            val wm = WallpaperManager.getInstance(this)
+            wallpaperColorsListener?.let {
+                wm.removeOnColorsChangedListener(it)
+            }
+        }
+        super.onDestroy()
     }
+
 }
