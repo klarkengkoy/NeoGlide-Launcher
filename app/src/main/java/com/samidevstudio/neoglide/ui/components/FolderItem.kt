@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.ui.theme.BadgeRed
 import com.samidevstudio.neoglide.ui.utils.HapticEngine
+import com.samidevstudio.neoglide.ui.utils.LocalWallpaperIsLight
 
 @Composable
 fun FolderItem(
@@ -51,6 +52,7 @@ fun FolderItem(
     onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
     onClick: () -> Unit = {}
 ) {
+    val isWallpaperLight = LocalWallpaperIsLight.current
     val hoverScale by animateFloatAsState(
         targetValue = if (isHovered) 1.2f else 1f,
         animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessLow),
@@ -138,12 +140,20 @@ fun FolderItem(
                 text = label,
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontSize = fontSize,
-                    color = Color.White,
-                    shadow = androidx.compose.ui.graphics.Shadow(
-                        color = Color.Black.copy(alpha = 0.5f),
-                        offset = androidx.compose.ui.geometry.Offset(1f, 1f),
-                        blurRadius = 4f
-                    )
+                    color = if (isWallpaperLight) Color.Black.copy(alpha = 0.8f) else Color.White,
+                    shadow = if (isWallpaperLight) {
+                        androidx.compose.ui.graphics.Shadow(
+                            color = Color.White.copy(alpha = 0.5f),
+                            offset = androidx.compose.ui.geometry.Offset(0f, 1f),
+                            blurRadius = 2f
+                        )
+                    } else {
+                        androidx.compose.ui.graphics.Shadow(
+                            color = Color.Black.copy(alpha = 0.5f),
+                            offset = androidx.compose.ui.geometry.Offset(1f, 1f),
+                            blurRadius = 4f
+                        )
+                    }
                 ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

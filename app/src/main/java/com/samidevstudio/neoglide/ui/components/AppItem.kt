@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.domain.model.AppShortcut
 import com.samidevstudio.neoglide.ui.theme.BadgeRed
+import com.samidevstudio.neoglide.ui.utils.LocalWallpaperIsLight
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -81,6 +82,7 @@ fun AppItem(
     var shortcuts by remember { mutableStateOf<List<AppShortcut>>(emptyList()) }
     val view = LocalView.current
     var coords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+    val isWallpaperLight = LocalWallpaperIsLight.current
 
     val hoverScale by animateFloatAsState(
         targetValue = if (isHovered) 0.8f else 1f,
@@ -110,23 +112,31 @@ fun AppItem(
             )
         } else Modifier
 
-        val sharedLabelModifier = if (sharedElementKeyPrefix == "dock") {
+        val sharedLabelModifier = if (sharedElementKeyPrefix == "dock" || sharedElementKeyPrefix == "home") {
             Modifier.sharedElement(
                 rememberSharedContentState(key = "$sharedElementKeyPrefix-label-${app.packageName}"),
                 animatedVisibilityScope = animatedVisibilityScope
             )
         } else Modifier
 
-        val labelStyle = if (sharedElementKeyPrefix == "dock") {
+        val labelStyle = if (sharedElementKeyPrefix == "dock" || sharedElementKeyPrefix == "home") {
             MaterialTheme.typography.labelSmall.copy(
                 fontSize = fontSize,
                 fontWeight = FontWeight.Medium,
-                color = Color.White,
-                shadow = Shadow(
-                    color = Color.Black.copy(alpha = 0.6f),
-                    offset = Offset(0f, 2f),
-                    blurRadius = 8f
-                )
+                color = if (isWallpaperLight) Color.Black.copy(alpha = 0.8f) else Color.White,
+                shadow = if (isWallpaperLight) {
+                    Shadow(
+                        color = Color.White.copy(alpha = 0.5f),
+                        offset = Offset(0f, 1f),
+                        blurRadius = 2f
+                    )
+                } else {
+                    Shadow(
+                        color = Color.Black.copy(alpha = 0.6f),
+                        offset = Offset(0f, 2f),
+                        blurRadius = 8f
+                    )
+                }
             )
         } else {
             MaterialTheme.typography.labelSmall.copy(
