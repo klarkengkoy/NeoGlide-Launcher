@@ -16,10 +16,28 @@ android {
         applicationId = "com.samidevstudio.neoglide"
         minSdk = 24
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = project.property("VERSION_CODE").toString().toInt()
+        versionName = project.property("VERSION_NAME").toString()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        create("release") {
+            // To sign the release build, add the following to your local.properties (NOT versioned):
+            // RELEASE_STORE_FILE=/path/to/your/keystore.jks
+            // RELEASE_STORE_PASSWORD=your_keystore_password
+            // RELEASE_KEY_ALIAS=your_key_alias
+            // RELEASE_KEY_PASSWORD=your_key_password
+            
+            val storeFilePath = project.findProperty("RELEASE_STORE_FILE")?.toString()
+            if (storeFilePath != null) {
+                storeFile = file(storeFilePath)
+                storePassword = project.findProperty("RELEASE_STORE_PASSWORD")?.toString()
+                keyAlias = project.findProperty("RELEASE_KEY_ALIAS")?.toString()
+                keyPassword = project.findProperty("RELEASE_KEY_PASSWORD")?.toString()
+            }
+        }
     }
 
     buildTypes {
@@ -30,7 +48,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            
+            // Only use signingConfig if it was successfully configured with a storeFile
+            if (signingConfigs.getByName("release").storeFile != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
     
@@ -103,11 +125,14 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     
     implementation(libs.androidx.palette)
+    implementation(libs.billing.ktx)
 
     testImplementation(libs.junit)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.ui.test.junit4)
+    debugImplementation(platform(libs.androidx.compose.bom))
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
 }
