@@ -20,7 +20,7 @@ class HomeRepository @Inject constructor(
     private val widgetDao: WidgetDao,
     private val folderDao: FolderDao,
     private val appRepositoryProvider: Provider<AppRepository>,
-    private val userPreferencesRepository: UserPreferencesRepository
+    private val userPreferencesRepository: UserPreferencesRepository,
 ) {
     private val appRepository get() = appRepositoryProvider.get()
     val allHomeApps: Flow<List<HomeAppEntity>> = homeAppDao.getAllHomeApps()
@@ -48,22 +48,35 @@ class HomeRepository @Inject constructor(
         widgetDao.updateWidgetBounds(widgetId, row, col, spanX, spanY)
     }
 
-    suspend fun createFolderFromApps(appA: HomeAppEntity, appB: HomeAppEntity, label: String = "Folder", category: String? = null): Int = withContext(Dispatchers.IO) {
-        // 1. Create Folder
-        val folderId = folderDao.insertFolder(FolderEntity(
+    suspend fun createFolderFromApps(appA: HomeAppEntity, appB: HomeAppEntity, label: String = "Folder", category: String? = null): Int {
+        return createFolderWithApps(
+            apps = listOf(appA, appB),
             label = label,
-            row = appB.row,
-            column = appB.column,
             category = category
-        )).toInt()
+        )
+    }
+
+    suspend fun createFolderWithApps(apps: List<HomeAppEntity>, label: String = "Folder", category: String? = null): Int = withContext(Dispatchers.IO) {
+        val anchorApp = apps.lastOrNull() ?: return@withContext -1
+        
+        // 1. Create Folder
+        val folderId = folderDao.insertFolder(
+            FolderEntity(
+                label = label,
+                row = anchorApp.row,
+                column = anchorApp.column,
+                category = category
+            )
+        ).toInt()
 
         // 2. Add apps to folder
-        folderDao.insertFolderApp(FolderAppEntity(folderId, appA.packageName, 0))
-        folderDao.insertFolderApp(FolderAppEntity(folderId, appB.packageName, 1))
-
-        // 3. Remove apps from home screen
-        homeAppDao.deleteHomeAppById(appA.id)
-        homeAppDao.deleteHomeAppById(appB.id)
+        apps.forEachIndexed { index, app ->
+            folderDao.insertFolderApp(FolderAppEntity(folderId, app.packageName, index))
+            // 3. Remove apps from home screen if they were there
+            if (app.id != 0) {
+                homeAppDao.deleteHomeAppById(app.id)
+            }
+        }
 
         folderId
     }
@@ -78,6 +91,10 @@ class HomeRepository @Inject constructor(
 
     suspend fun updateFolderCategory(folderId: Int, category: String?) = withContext(Dispatchers.IO) {
         folderDao.updateFolderCategory(folderId, category)
+    }
+
+    suspend fun updateAllFoldersInCategory(oldCategory: String, newCategory: String) = withContext(Dispatchers.IO) {
+        folderDao.updateAllFoldersInCategory(oldCategory, newCategory)
     }
 
     suspend fun removeAppFromFolders(packageName: String) = withContext(Dispatchers.IO) {
@@ -224,7 +241,7 @@ class HomeRepository @Inject constructor(
         homeAppDao.deleteAllHomeApps()
         widgetDao.deleteAllWidgets()
         folderDao.deleteHomeScreenFolders()
-        userPreferencesRepository.setFirstInstallRun(true)
+        userPreferencesRepository.setFirstInstallRun(isFirst = true)
         appRepository.refreshApps()
     }
 

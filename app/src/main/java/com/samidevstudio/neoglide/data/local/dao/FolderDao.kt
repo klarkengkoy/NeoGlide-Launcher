@@ -37,6 +37,10 @@ interface FolderDao {
     fun getHomeScreenFoldersWithApps(): Flow<List<FolderWithApps>>
 
     @Transaction
+    @Query("SELECT * FROM folders WHERE category IS NOT NULL")
+    suspend fun getAppDrawerFoldersWithAppsList(): List<FolderWithApps>
+
+    @Transaction
     @Query("SELECT * FROM folders WHERE id = :id")
     suspend fun getFolderWithAppsById(id: Int): FolderWithApps?
 
@@ -63,6 +67,9 @@ interface FolderDao {
 
     @Query("UPDATE folders SET label = :label WHERE id = :folderId")
     suspend fun updateFolderLabel(folderId: Int, label: String)
+
+    @Query("UPDATE folders SET category = :newCategory WHERE category = :oldCategory")
+    suspend fun updateAllFoldersInCategory(oldCategory: String, newCategory: String)
 
     @Query("UPDATE folders SET category = :category WHERE id = :folderId")
     suspend fun updateFolderCategory(folderId: Int, category: String?)

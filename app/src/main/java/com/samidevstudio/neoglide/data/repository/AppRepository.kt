@@ -12,6 +12,7 @@ import androidx.core.net.toUri
 import com.samidevstudio.neoglide.data.local.dao.AppDao
 import com.samidevstudio.neoglide.data.local.dao.FolderDao
 import com.samidevstudio.neoglide.data.local.entity.AppEntity
+import com.samidevstudio.neoglide.domain.classifier.AppCategoryClassifier
 import com.samidevstudio.neoglide.domain.model.AppCategory
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.domain.model.AppShortcut
@@ -42,13 +43,15 @@ class AppRepository @Inject constructor(
     private val appDao: AppDao,
     private val folderDao: FolderDao,
     private val homeRepository: HomeRepository,
+    private val categoryRepository: CategoryRepository,
+    private val userPreferencesRepository: UserPreferencesRepository,
 ) {
     private val packageManager: PackageManager = context.packageManager
     private val launcherApps: LauncherApps = context.getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
 
     private var warmUpJob: Job? = null
     
-c    private val _isDatabaseReady = MutableStateFlow(value = false)
+    private val _isDatabaseReady = MutableStateFlow(value = false)
     val isDatabaseReady: StateFlow<Boolean> = _isDatabaseReady.asStateFlow()
 
     fun warmUpIcons(iconLoader: IconLoader, scope: CoroutineScope) {
@@ -96,7 +99,7 @@ c    private val _isDatabaseReady = MutableStateFlow(value = false)
 
             // Priority 3: The rest (deeper storage)
             if (apps.size > 48) {
-                apps.drop(48).chunked(10).forEach { chunk ->
+                apps.asSequence().drop(48).chunked(10).forEach { chunk ->
                     if (!isActive) {
                         return@launch
                     }
@@ -134,22 +137,28 @@ c    private val _isDatabaseReady = MutableStateFlow(value = false)
         val myPackageName = context.packageName
         val existingApps = appDao.getAllAppsList().associateBy { it.packageName }
         
+        val prefsFlow = userPreferencesRepository.userPreferencesFlow.first()
+        val classifier = AppCategoryClassifier(prefsFlow.orderedCategories.toSet())
+
         val appEntities = activityList
+            .asSequence()
             .filter { it.applicationInfo.packageName != myPackageName }
             .map { info ->
                 val packageName = info.applicationInfo.packageName
                 val existing = existingApps[packageName]
                 createAppEntity(
                     app = info.applicationInfo,
+                    classifier = classifier,
                     existingLastUsedTime = existing?.lastUsedTime ?: 0L,
                     existingCategory = if (forceRecategorize) null else existing?.category,
-                    existingHue = if (forceRecalculateColors) null else existing?.dominantHue
+                    existingHue = if (forceRecalculateColors) null else existing?.dominantHue,
                 )
             }
             .distinctBy { it.packageName }
+            .toList()
             
         // Use a more surgical approach: delete only what's gone, insert the rest
-        val newPackageNames = appEntities.map { it.packageName }.toSet()
+        val newPackageNames = appEntities.asSequence().map { it.packageName }.toSet()
         existingApps.keys.forEach { pkg ->
             if (pkg !in newPackageNames) {
                 appDao.deleteAppByPackageName(pkg)
@@ -170,9 +179,12 @@ c    private val _isDatabaseReady = MutableStateFlow(value = false)
             if (activities.isNotEmpty()) {
                 val info = activities[0]
                 val existing = appDao.getAppByPackageName(packageName)
+                val prefsFlow = userPreferencesRepository.userPreferencesFlow.first()
+                val classifier = AppCategoryClassifier(prefsFlow.orderedCategories.toSet())
                 appDao.insertApp(
                     createAppEntity(
                         app = info.applicationInfo,
+                        classifier = classifier,
                         existingLastUsedTime = existing?.lastUsedTime ?: 0L,
                         existingCategory = existing?.category,
                         existingHue = existing?.dominantHue
@@ -197,12 +209,17 @@ c    private val _isDatabaseReady = MutableStateFlow(value = false)
         appDao.updateAppCategory(packageName, category.name)
     }
 
+    suspend fun updateAllAppsInCategory(oldCategory: String, newCategory: String) = withContext(Dispatchers.IO) {
+        appDao.updateAllAppsInCategory(oldCategory, newCategory)
+    }
+
     suspend fun markAppAsInFolder(packageName: String) = withContext(Dispatchers.IO) {
         appDao.markAppAsInFolder(packageName)
     }
 
     private fun createAppEntity(
         app: ApplicationInfo, 
+        classifier: AppCategoryClassifier,
         existingLastUsedTime: Long = 0L,
         existingCategory: String? = null,
         existingHue: Float? = null
@@ -223,10 +240,10 @@ c    private val _isDatabaseReady = MutableStateFlow(value = false)
         return AppEntity(
             packageName = app.packageName,
             label = packageManager.getApplicationLabel(app).toString(),
-            category = existingCategory ?: categorizeApp(app).name,
+            category = existingCategory ?: classifier.classify(app.packageName, context).name,
             installTime = installTime,
             lastUsedTime = existingLastUsedTime,
-            dominantHue = hue
+            dominantHue = hue,
         )
     }
 
@@ -358,11 +375,11 @@ c    private val _isDatabaseReady = MutableStateFlow(value = false)
     private fun findDefaultPackage(intent: Intent): String? {
         val resolveInfo = packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
         val pkg = resolveInfo?.activityInfo?.packageName
-        return if (pkg != null && pkg != "android" && packageManager.getLaunchIntentForPackage(pkg) != null) {
+        return if ((pkg != null) && (pkg != "android") && (packageManager.getLaunchIntentForPackage(pkg) != null)) {
             pkg
         } else {
             val resolved = packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
-            resolved.firstOrNull { it.activityInfo.packageName != "android" && packageManager.getLaunchIntentForPackage(it.activityInfo.packageName) != null }
+            resolved.firstOrNull { (it.activityInfo.packageName != "android") && (packageManager.getLaunchIntentForPackage(it.activityInfo.packageName) != null) }
                 ?.activityInfo?.packageName
         }
     }
@@ -398,57 +415,6 @@ c    private val _isDatabaseReady = MutableStateFlow(value = false)
         }
     }
 
-    private fun categorizeApp(app: ApplicationInfo): AppCategory {
-        val knownCategories = mapOf(
-            "com.whatsapp" to AppCategory.COMMUNICATION,
-            "com.facebook.orca" to AppCategory.COMMUNICATION,
-            "com.telegram.messenger" to AppCategory.COMMUNICATION,
-            "com.google.android.apps.messaging" to AppCategory.COMMUNICATION,
-            "com.google.android.dialer" to AppCategory.COMMUNICATION,
-            "com.google.android.apps.photos" to AppCategory.MEDIA,
-            "com.instagram.android" to AppCategory.SOCIAL,
-            "com.facebook.katana" to AppCategory.SOCIAL,
-            "com.twitter.android" to AppCategory.SOCIAL,
-            "com.zhiliaoapp.musically" to AppCategory.SOCIAL,
-            "com.google.android.youtube" to AppCategory.MEDIA,
-            "com.spotify.music" to AppCategory.MEDIA,
-            "com.netflix.mediaclient" to AppCategory.MEDIA,
-            "com.amazon.mShop.android.shopping" to AppCategory.SHOPPING,
-            "com.ebay.mobile" to AppCategory.SHOPPING,
-            "com.google.android.apps.maps" to AppCategory.UTILITIES,
-            "com.google.android.gm" to AppCategory.COMMUNICATION,
-            "com.android.chrome" to AppCategory.UTILITIES,
-            "com.google.android.calendar" to AppCategory.UTILITIES,
-            "com.google.android.apps.docs" to AppCategory.UTILITIES,
-            "com.google.android.calculator" to AppCategory.UTILITIES,
-            "com.google.android.deskclock" to AppCategory.UTILITIES,
-            "com.android.settings" to AppCategory.SYSTEM,
-            "com.google.android.apps.nbu.files" to AppCategory.UTILITIES,
-            "com.google.android.apps.walletnfcrel" to AppCategory.UTILITIES
-        )
-
-        knownCategories[app.packageName]?.let { return it }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val category = when (app.category) {
-                ApplicationInfo.CATEGORY_GAME -> AppCategory.GAMES
-                ApplicationInfo.CATEGORY_AUDIO, ApplicationInfo.CATEGORY_VIDEO, ApplicationInfo.CATEGORY_IMAGE -> AppCategory.MEDIA
-                ApplicationInfo.CATEGORY_SOCIAL -> AppCategory.SOCIAL
-                ApplicationInfo.CATEGORY_NEWS -> AppCategory.SOCIAL
-                ApplicationInfo.CATEGORY_MAPS -> AppCategory.UTILITIES
-                ApplicationInfo.CATEGORY_PRODUCTIVITY -> AppCategory.UTILITIES
-                else -> null
-            }
-            category?.let { return it }
-        }
-        
-        // Fallback for system apps if not caught by metadata or known list
-        if ((app.flags and ApplicationInfo.FLAG_SYSTEM) != 0) {
-            return AppCategory.SYSTEM
-        }
-
-        return AppCategory.OTHER
-    }
 
 
     private fun AppEntity.toDomainModel(): AppModel {
@@ -468,8 +434,69 @@ c    private val _isDatabaseReady = MutableStateFlow(value = false)
         refreshApps(forceRecategorize = true)
     }
 
-    suspend fun deleteDrawerFolders() = withContext(Dispatchers.IO) {
-        folderDao.deleteAppDrawerFolders()
-        refreshApps(forceRecategorize = true)
+    suspend fun reclassifyAll(): Map<AppCategory, List<String>> = withContext(Dispatchers.IO) {
+        val apps = appDao.getAllAppsList()
+        val customCategoriesMap = categoryRepository.getCustomCategoriesMap()
+        val customCategoryNames = customCategoriesMap.keys.map { it.name }.toSet()
+        val prefsFlow = userPreferencesRepository.userPreferencesFlow.first()
+        val enabledCategories = prefsFlow.orderedCategories.toSet()
+        val classifier = AppCategoryClassifier(enabledCategories)
+        
+        val movements = mutableMapOf<AppCategory, MutableList<String>>()
+        val categoryCounts = apps.groupingBy { it.category }.eachCount().toMutableMap()
+        
+        for (app in apps) {
+            val currentCategoryName = app.category
+            
+            // Manual/Custom categories never steal and are never stolen from automatically
+            if (currentCategoryName in customCategoryNames) continue
+
+            val packageInfo = try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    packageManager.getPackageInfo(app.packageName, PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()))
+                } else {
+                    packageManager.getPackageInfo(app.packageName, PackageManager.GET_PERMISSIONS)
+                }
+            } catch (_: Exception) { null } ?: continue
+
+            val permissions = packageInfo.requestedPermissions?.toList() ?: emptyList()
+            val appInfoCategory = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                packageInfo.applicationInfo?.category ?: -1
+            } else -1
+            
+            val detailed = classifier.classifyDetailed(app.packageName, app.label, appInfoCategory, permissions)
+            
+            val targetCategory = detailed.natural
+                ?: if ((detailed.heuristic != null) && (detailed.heuristic.name in enabledCategories)) {
+                    detailed.heuristic
+                } else {
+                    AppCategory.OTHER
+                }
+
+            if (targetCategory.name != currentCategoryName) {
+                val sourceCount = categoryCounts[currentCategoryName] ?: 0
+                
+                // Stealing rule: Keep at least 1 app in the source category if it's a heuristic steal.
+                // Natural (Manifest) matches always move to their rightful place.
+                val isHeuristicSteal = detailed.natural == null && detailed.heuristic != null
+                val canSteal = if (isHeuristicSteal) sourceCount > 1 else true
+
+                if (canSteal) {
+                    appDao.updateAppCategory(app.packageName, targetCategory.name)
+                    movements.getOrPut(targetCategory) { mutableListOf() }.add(app.label)
+                    
+                    categoryCounts[currentCategoryName] = sourceCount - 1
+                    categoryCounts[targetCategory.name] = (categoryCounts[targetCategory.name] ?: 0) + 1
+                }
+            }
+        }
+        movements
+    }
+
+    suspend fun dissolveDrawerFolders() = withContext(Dispatchers.IO) {
+        val drawerFolders = folderDao.getAppDrawerFoldersWithAppsList()
+        drawerFolders.forEach { folderWithApps ->
+            homeRepository.dissolveFolder(folderWithApps.folder.id)
+        }
     }
 }

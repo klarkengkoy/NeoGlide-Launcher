@@ -32,6 +32,7 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import androidx.navigation3.ui.NavDisplay
+import com.samidevstudio.neoglide.data.billing.BillingManager
 import com.samidevstudio.neoglide.data.repository.AppRepository
 import com.samidevstudio.neoglide.data.repository.WidgetRepository
 import com.samidevstudio.neoglide.ui.detail.AppDetailScreen
@@ -70,6 +71,7 @@ class MainActivity : FragmentActivity() {
     @Inject lateinit var iconCache: IconCache
     @Inject lateinit var iconLoader: IconLoader
     @Inject lateinit var appRepository: AppRepository
+    @Inject lateinit var billingManager: BillingManager
 
     private val homeViewModel: HomeViewModel by viewModels()
     private val drawerViewModel: DrawerViewModel by viewModels()
@@ -159,7 +161,7 @@ class MainActivity : FragmentActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_WIDGET_CONFIG) {
             val widgetId = data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1).takeIf { it != -1 } ?: pendingWidgetId
-            if (resultCode == RESULT_OK && widgetId != -1) {
+            if ((resultCode == RESULT_OK) && (widgetId != -1)) {
                 homeViewModel.completeWidgetConfiguration(widgetId)
             } else if (widgetId != -1) {
                 homeViewModel.cancelWidgetConfiguration(widgetId)
@@ -206,7 +208,7 @@ class MainActivity : FragmentActivity() {
             val elapsed = System.currentTimeMillis() - startTime
             val isDatabaseReady = appRepository.isDatabaseReady.value
 
-            val shouldStay = !isDatabaseReady && elapsed < 5000
+            val shouldStay = (!isDatabaseReady) && (elapsed < 5000)
             if (!shouldStay && !hasLoggedDismissal) {
                 hasLoggedDismissal = true
                 Log.d("NeoGlideInit", "Step 2: Splash screen condition met. Ready to transition.")
@@ -257,7 +259,7 @@ class MainActivity : FragmentActivity() {
                     scribblePath.moveTo(0f, 0f)
                     for (i in 0..steps) {
                         val x = i * stepWidth
-                        val y = if (i % 2 == 1) iconHeight.toFloat() else 0f
+                        val y = if ((i % 2) == 1) iconHeight.toFloat() else 0f
                         scribblePath.lineTo(x, y)
                     }
                     pathMeasure.setPath(scribblePath, false)
@@ -284,7 +286,10 @@ class MainActivity : FragmentActivity() {
                         val sweep = (endAngle - startAngle) * revealProgress
                         
                         wiperPath.moveTo(pivotX, pivotY)
-                        wiperRectF.set(pivotX - r, pivotY - r, pivotX + r, pivotY + r)
+                        wiperRectF.left = pivotX - r
+                        wiperRectF.top = pivotY - r
+                        wiperRectF.right = pivotX + r
+                        wiperRectF.bottom = pivotY + r
                         wiperPath.arcTo(wiperRectF, startAngle, sweep, false)
                         wiperPath.close()
                         
@@ -331,26 +336,33 @@ class MainActivity : FragmentActivity() {
                     override fun onAnimationEnd(animation: android.animation.Animator) {
                         revealAnimator.start()
                     }
-                }
+                },
             )
 
-            revealAnimator.addListener(object : android.animation.AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: android.animation.Animator) {
-                    fadeAnimator.start()
-                }
-            })
+            revealAnimator.addListener(
+                object : android.animation.AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: android.animation.Animator) {
+                        fadeAnimator.start()
+                    }
+                },
+            )
 
-            fadeAnimator.addListener(object : android.animation.AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: android.animation.Animator) {
-                    vp.remove()
-                }
-            })
+            fadeAnimator.addListener(
+                object : android.animation.AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: android.animation.Animator) {
+                        vp.remove()
+                        homeViewModel.onSplashScreenFinished()
+                    }
+                },
+            )
 
             eraseAnimator.start()
         }
 
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        billingManager.startConnection()
 
         // Start app refresh immediately on cold start
         lifecycleScope.launch {
@@ -362,7 +374,7 @@ class MainActivity : FragmentActivity() {
             CompositionLocalProvider(
                 LocalHapticEngine provides hapticEngine,
                 LocalIconCache provides iconCache,
-                LocalIconLoader provides iconLoader
+                LocalIconLoader provides iconLoader,
             ) {
                 Log.d("NeoGlideInit", "Step 3: UI Composition entered.")
                 NeoGlideLauncherTheme {

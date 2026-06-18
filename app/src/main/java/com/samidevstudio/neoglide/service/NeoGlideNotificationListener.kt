@@ -38,7 +38,7 @@ class NeoGlideNotificationListener : NotificationListenerService() {
 
     private fun updateNotifications() {
         try {
-            val notifications = getActiveNotifications()
+            val notifications = activeNotifications
             val counts = notifications?.groupBy { it.packageName }
                 ?.mapValues { it.value.size } ?: emptyMap()
             _activeNotifications.value = counts

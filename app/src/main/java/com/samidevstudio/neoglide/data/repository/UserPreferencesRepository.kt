@@ -65,8 +65,8 @@ enum class SearchProvider(val searchUrl: String, val displayName: String) {
     LOCAL_ONLY("", "Local Only")
 }
 
-enum class NotificationDotMode {
-    APP_ICON, CATEGORY_BAR, BOTH, NONE
+enum class BadgeStyle {
+    NONE, DOT, COUNT
 }
 
 enum class AppLabelMode {
@@ -91,7 +91,9 @@ data class UserPreferences(
     val gridSize: GridSize = GridSize.MEDIUM,
     val appLabelMode: AppLabelMode = AppLabelMode.BOTH,
     val searchProvider: SearchProvider = SearchProvider.GOOGLE,
-    val notificationDotMode: NotificationDotMode = NotificationDotMode.BOTH,
+    val homeBadgeStyle: BadgeStyle = BadgeStyle.COUNT,
+    val drawerBadgeStyle: BadgeStyle = BadgeStyle.COUNT,
+    val railBadgeStyle: BadgeStyle = BadgeStyle.COUNT,
     val lockLayout: Boolean = false,
     val doubleTapToSleep: Boolean = false,
     val swipeDownForNotifications: Boolean = true,
@@ -101,7 +103,8 @@ data class UserPreferences(
     val hapticsEnabled: Boolean = true,
     val isSortReverse: Boolean = false,
     val isPremium: Boolean = false,
-    val isFirstInstallRun: Boolean = true
+    val isFirstInstallRun: Boolean = true,
+    val orderedCategories: List<String> = emptyList()
 )
 
 @Singleton
@@ -119,6 +122,9 @@ class UserPreferencesRepository @Inject constructor(
         val APP_LABEL_MODE = stringPreferencesKey("app_label_mode")
         val SEARCH_PROVIDER = stringPreferencesKey("search_provider")
         val NOTIFICATION_DOT_MODE = stringPreferencesKey("notification_dot_mode")
+        val HOME_BADGE_STYLE = stringPreferencesKey("home_badge_style")
+        val DRAWER_BADGE_STYLE = stringPreferencesKey("drawer_badge_style")
+        val RAIL_BADGE_STYLE = stringPreferencesKey("rail_badge_style")
         val LOCK_LAYOUT = booleanPreferencesKey("lock_layout")
         val DOUBLE_TAP_TO_SLEEP = booleanPreferencesKey("double_tap_to_sleep")
         val SWIPE_DOWN_FOR_NOTIFICATIONS = booleanPreferencesKey("swipe_down_for_notifications")
@@ -129,6 +135,7 @@ class UserPreferencesRepository @Inject constructor(
         val IS_SORT_REVERSE = booleanPreferencesKey("is_sort_reverse")
         val IS_PREMIUM = booleanPreferencesKey("is_premium")
         val IS_FIRST_INSTALL_RUN = booleanPreferencesKey("is_first_install_run")
+        val ORDERED_CATEGORIES = stringPreferencesKey("ordered_categories")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data
@@ -160,14 +167,37 @@ class UserPreferencesRepository @Inject constructor(
             val searchProviderStr = preferences[PreferencesKeys.SEARCH_PROVIDER] ?: SearchProvider.GOOGLE.name
             val searchProvider = try { SearchProvider.valueOf(searchProviderStr) } catch (_: Exception) { SearchProvider.GOOGLE }
 
-            val dotModeStr = preferences[PreferencesKeys.NOTIFICATION_DOT_MODE] ?: NotificationDotMode.BOTH.name
-            val dotMode = try { NotificationDotMode.valueOf(dotModeStr) } catch (_: Exception) { NotificationDotMode.BOTH }
+            val legacyDotModeStr = preferences[PreferencesKeys.NOTIFICATION_DOT_MODE] ?: "BOTH"
+
+            val homeBadgeStyleStr = preferences[PreferencesKeys.HOME_BADGE_STYLE]
+            val homeBadgeStyle = if (homeBadgeStyleStr == null) {
+                if (legacyDotModeStr == "APP_ICON" || legacyDotModeStr == "BOTH") BadgeStyle.COUNT else BadgeStyle.NONE
+            } else {
+                try { BadgeStyle.valueOf(homeBadgeStyleStr) } catch (_: Exception) { BadgeStyle.COUNT }
+            }
+
+            val drawerBadgeStyleStr = preferences[PreferencesKeys.DRAWER_BADGE_STYLE]
+            val drawerBadgeStyle = if (drawerBadgeStyleStr == null) {
+                if (legacyDotModeStr == "APP_ICON" || legacyDotModeStr == "BOTH") BadgeStyle.COUNT else BadgeStyle.NONE
+            } else {
+                try { BadgeStyle.valueOf(drawerBadgeStyleStr) } catch (_: Exception) { BadgeStyle.COUNT }
+            }
+
+            val railBadgeStyleStr = preferences[PreferencesKeys.RAIL_BADGE_STYLE]
+            val railBadgeStyle = if (railBadgeStyleStr == null) {
+                if (legacyDotModeStr == "CATEGORY_BAR" || legacyDotModeStr == "BOTH") BadgeStyle.COUNT else BadgeStyle.NONE
+            } else {
+                try { BadgeStyle.valueOf(railBadgeStyleStr) } catch (_: Exception) { BadgeStyle.COUNT }
+            }
 
             val verticalAnchorStr = preferences[PreferencesKeys.VERTICAL_ANCHOR] ?: VerticalAnchor.TOP.name
             val verticalAnchor = try { VerticalAnchor.valueOf(verticalAnchorStr) } catch (_: Exception) { VerticalAnchor.TOP }
 
             val horizontalAnchorStr = preferences[PreferencesKeys.HORIZONTAL_ANCHOR] ?: HorizontalAnchor.LEFT.name
             val horizontalAnchor = try { HorizontalAnchor.valueOf(horizontalAnchorStr) } catch (_: Exception) { HorizontalAnchor.LEFT }
+
+            val orderedCategoriesStr = preferences[PreferencesKeys.ORDERED_CATEGORIES]
+            val orderedCategories = orderedCategoriesStr?.split("|")?.filter { it.isNotEmpty() } ?: emptyList()
 
             UserPreferences(
                 categoryBarType = categoryBarType,
@@ -179,7 +209,9 @@ class UserPreferencesRepository @Inject constructor(
                 gridSize = gridSize,
                 appLabelMode = appLabelMode,
                 searchProvider = searchProvider,
-                notificationDotMode = dotMode,
+                homeBadgeStyle = homeBadgeStyle,
+                drawerBadgeStyle = drawerBadgeStyle,
+                railBadgeStyle = railBadgeStyle,
                 lockLayout = preferences[PreferencesKeys.LOCK_LAYOUT] ?: false,
                 doubleTapToSleep = preferences[PreferencesKeys.DOUBLE_TAP_TO_SLEEP] ?: false,
                 swipeDownForNotifications = preferences[PreferencesKeys.SWIPE_DOWN_FOR_NOTIFICATIONS] ?: true,
@@ -189,7 +221,8 @@ class UserPreferencesRepository @Inject constructor(
                 hapticsEnabled = preferences[PreferencesKeys.HAPTICS_ENABLED] ?: true,
                 isSortReverse = preferences[PreferencesKeys.IS_SORT_REVERSE] ?: false,
                 isPremium = preferences[PreferencesKeys.IS_PREMIUM] ?: false,
-                isFirstInstallRun = preferences[PreferencesKeys.IS_FIRST_INSTALL_RUN] ?: true
+                isFirstInstallRun = preferences[PreferencesKeys.IS_FIRST_INSTALL_RUN] ?: true,
+                orderedCategories = orderedCategories
             )
         }
 
@@ -213,8 +246,16 @@ class UserPreferencesRepository @Inject constructor(
         context.dataStore.edit { preferences -> preferences[PreferencesKeys.SEARCH_PROVIDER] = provider.name }
     }
 
-    suspend fun updateNotificationDotMode(mode: NotificationDotMode) {
-        context.dataStore.edit { preferences -> preferences[PreferencesKeys.NOTIFICATION_DOT_MODE] = mode.name }
+    suspend fun updateHomeBadgeStyle(style: BadgeStyle) {
+        context.dataStore.edit { preferences -> preferences[PreferencesKeys.HOME_BADGE_STYLE] = style.name }
+    }
+
+    suspend fun updateDrawerBadgeStyle(style: BadgeStyle) {
+        context.dataStore.edit { preferences -> preferences[PreferencesKeys.DRAWER_BADGE_STYLE] = style.name }
+    }
+
+    suspend fun updateRailBadgeStyle(style: BadgeStyle) {
+        context.dataStore.edit { preferences -> preferences[PreferencesKeys.RAIL_BADGE_STYLE] = style.name }
     }
 
     suspend fun updateUseMonochromeIcons(useMonochrome: Boolean) {
@@ -287,5 +328,47 @@ class UserPreferencesRepository @Inject constructor(
 
     suspend fun setFirstInstallRun(isFirst: Boolean) {
         context.dataStore.edit { preferences -> preferences[PreferencesKeys.IS_FIRST_INSTALL_RUN] = isFirst }
+    }
+
+    suspend fun updateCategoryOrder(categories: List<String>) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferencesKeys.ORDERED_CATEGORIES] = categories.joinToString("|")
+        }
+    }
+
+    suspend fun updateCategoryNameInOrder(oldName: String, newName: String) {
+        context.dataStore.edit { preferences ->
+            val orderedStr = preferences[PreferencesKeys.ORDERED_CATEGORIES] ?: ""
+            val current = orderedStr.split("|").filter { it.isNotEmpty() }.toMutableList()
+            val index = current.indexOf(oldName)
+            if (index != -1) {
+                current[index] = newName
+                preferences[PreferencesKeys.ORDERED_CATEGORIES] = current.joinToString("|")
+            }
+        }
+    }
+
+    suspend fun toggleCategoryEnabled(categoryName: String) {
+        context.dataStore.edit { preferences ->
+            val orderedStr = preferences[PreferencesKeys.ORDERED_CATEGORIES] ?: ""
+            val current = orderedStr.split("|").filter { it.isNotEmpty() }.toMutableList()
+            
+            if (categoryName in current) {
+                current.remove(categoryName)
+            } else {
+                current.add(categoryName)
+            }
+            preferences[PreferencesKeys.ORDERED_CATEGORIES] = current.joinToString("|")
+        }
+    }
+
+    suspend fun removeCategoryFromOrder(categoryName: String) {
+        context.dataStore.edit { preferences ->
+            val orderedStr = preferences[PreferencesKeys.ORDERED_CATEGORIES] ?: ""
+            val current = orderedStr.split("|").filter { it.isNotEmpty() }.toMutableList()
+            if (current.remove(categoryName)) {
+                preferences[PreferencesKeys.ORDERED_CATEGORIES] = current.joinToString("|")
+            }
+        }
     }
 }

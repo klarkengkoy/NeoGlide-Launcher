@@ -31,6 +31,9 @@ interface AppDao {
     @Update
     suspend fun updateApp(app: AppEntity)
 
+    @Query("UPDATE apps SET category = :newCategory WHERE category = :oldCategory")
+    suspend fun updateAllAppsInCategory(oldCategory: String, newCategory: String)
+
     @Query("UPDATE apps SET category = :category WHERE packageName = :packageName")
     suspend fun updateAppCategory(packageName: String, category: String)
 
