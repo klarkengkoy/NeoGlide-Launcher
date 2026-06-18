@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -64,11 +65,14 @@ class BillingManager @Inject constructor(
         const val PRODUCT_MONTHLY = "neoglide_premium_monthly"
         const val PRODUCT_YEARLY = "neoglide_premium_yearly"
 
-        private val ALL_PRODUCTS = listOf(
+        private val INAPP_PRODUCTS = listOf(
             QueryProductDetailsParams.Product.newBuilder()
                 .setProductId(PRODUCT_LIFETIME)
                 .setProductType(BillingClient.ProductType.INAPP)
-                .build(),
+                .build()
+        )
+
+        private val SUBS_PRODUCTS = listOf(
             QueryProductDetailsParams.Product.newBuilder()
                 .setProductId(PRODUCT_MONTHLY)
                 .setProductType(BillingClient.ProductType.SUBS)
@@ -102,16 +106,29 @@ class BillingManager @Inject constructor(
     }
 
     private fun queryProductDetails() {
-        val params = QueryProductDetailsParams.newBuilder()
-            .setProductList(ALL_PRODUCTS)
+        val inAppParams = QueryProductDetailsParams.newBuilder()
+            .setProductList(INAPP_PRODUCTS)
             .build()
 
-        billingClient.queryProductDetailsAsync(params) { billingResult, queryProductDetailsResult ->
+        billingClient.queryProductDetailsAsync(inAppParams) { billingResult, queryProductDetailsResult ->
             if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
                 val productDetailsList = queryProductDetailsResult.productDetailsList
                 val detailsMap = productDetailsList.associateBy { it.productId }
-                _productDetails.value = detailsMap
-                Log.d("BillingManager", "Product details queried: ${detailsMap.keys}")
+                _productDetails.update { it + detailsMap }
+                Log.d("BillingManager", "In-app product details queried: ${detailsMap.keys}")
+            }
+        }
+
+        val subsParams = QueryProductDetailsParams.newBuilder()
+            .setProductList(SUBS_PRODUCTS)
+            .build()
+
+        billingClient.queryProductDetailsAsync(subsParams) { billingResult, queryProductDetailsResult ->
+            if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
+                val productDetailsList = queryProductDetailsResult.productDetailsList
+                val detailsMap = productDetailsList.associateBy { it.productId }
+                _productDetails.update { it + detailsMap }
+                Log.d("BillingManager", "Subscription product details queried: ${detailsMap.keys}")
             }
         }
     }
