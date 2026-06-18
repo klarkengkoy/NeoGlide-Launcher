@@ -46,4 +46,9 @@ object DatabaseModule {
     fun provideFolderDao(database: NeoGlideDatabase): com.samidevstudio.neoglide.data.local.dao.FolderDao {
         return database.folderDao()
     }
+
+    @Provides
+    fun provideCategoryDao(database: NeoGlideDatabase): com.samidevstudio.neoglide.data.local.dao.CategoryDao {
+        return database.categoryDao()
+    }
 }
