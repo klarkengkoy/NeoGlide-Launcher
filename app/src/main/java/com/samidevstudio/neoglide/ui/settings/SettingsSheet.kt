@@ -1,5 +1,7 @@
 package com.samidevstudio.neoglide.ui.settings
 
+import androidx.activity.compose.LocalActivity
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,20 +25,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Anchor
-import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Error
@@ -57,15 +55,16 @@ import androidx.compose.material.icons.filled.SortByAlpha
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.ViewStream
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -82,9 +81,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,32 +95,40 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.android.billingclient.api.ProductDetails
+import com.samidevstudio.neoglide.data.billing.BillingManager
 import com.samidevstudio.neoglide.data.repository.AppLabelMode
+import com.samidevstudio.neoglide.data.repository.BadgeStyle
 import com.samidevstudio.neoglide.data.repository.CategoryBarType
 import com.samidevstudio.neoglide.data.repository.GridSize
 import com.samidevstudio.neoglide.data.repository.HorizontalAnchor
-import com.samidevstudio.neoglide.data.repository.NotificationDotMode
 import com.samidevstudio.neoglide.data.repository.SearchProvider
 import com.samidevstudio.neoglide.data.repository.SortingMode
 import com.samidevstudio.neoglide.data.repository.VerticalAnchor
+import com.samidevstudio.neoglide.domain.model.AppCategory
 import com.samidevstudio.neoglide.ui.components.AppIcon
+import com.samidevstudio.neoglide.ui.components.MultiAppPickerDialog
+import com.samidevstudio.neoglide.ui.components.category.AddCategoryDialogRefined
+import com.samidevstudio.neoglide.ui.components.category.ManageCategoriesDialog
 import com.samidevstudio.neoglide.ui.utils.HapticEngine
 import com.samidevstudio.neoglide.ui.utils.rememberHapticFeedback
+import kotlinx.coroutines.launch
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsSheet(
     onDismiss: () -> Unit,
-    viewModel: SettingsViewModel = hiltViewModel(),
+    viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val preferences by viewModel.userPreferences.collectAsStateWithLifecycle()
@@ -128,12 +138,41 @@ fun SettingsSheet(
     val isAuthForHidden by viewModel.isUserAuthenticatedForHiddenApps.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
     val lifecycleOwner = LocalLifecycleOwner.current
+    val restoreStatus by viewModel.restoreStatus.collectAsStateWithLifecycle()
+
+    var activeDialog by remember { mutableStateOf<String?>(null) }
+    var restoreError by remember { mutableStateOf<String?>(null) }
+    val pendingResetAction = remember { mutableStateOf<ResetAction?>(null) }
+
+    LaunchedEffect(restoreStatus) {
+        when (restoreStatus) {
+            is BillingManager.RestoreStatus.Success -> {
+                android.widget.Toast.makeText(context, "Premium features restored successfully!", android.widget.Toast.LENGTH_LONG).show()
+                viewModel.resetRestoreStatus()
+                activeDialog = null
+            }
+            is BillingManager.RestoreStatus.NoPurchase -> {
+                restoreError = "We couldn't find a premium purchase for the account currently signed into your Google Play Store. If you have multiple accounts, please ensure the correct one is active in the Play Store app and try again."
+                viewModel.resetRestoreStatus()
+            }
+            is BillingManager.RestoreStatus.NoNetwork -> {
+                restoreError = "An internet connection is required to verify your purchases with the Google Play Store. Please check your connection and try again."
+                viewModel.resetRestoreStatus()
+            }
+            is BillingManager.RestoreStatus.Error -> {
+                restoreError = (restoreStatus as BillingManager.RestoreStatus.Error).message
+                viewModel.resetRestoreStatus()
+            }
+            else -> {}
+        }
+    }
 
     // Observe lifecycle to refresh permissions when returning from system settings
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.checkNotificationPermission()
+                viewModel.checkDefaultLauncher()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -142,15 +181,16 @@ fun SettingsSheet(
         }
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.checkDefaultLauncher()
+    }
+
     // Reset authentication when the settings sheet is closed
     DisposableEffect(Unit) {
         onDispose {
             viewModel.setUserAuthenticatedForHiddenApps(authenticated = false)
         }
     }
-
-    var activeDialog by remember { mutableStateOf<String?>(null) }
-    val pendingResetAction = remember { mutableStateOf<ResetAction?>(null) }
 
     val showHiddenAppsWithAuth = {
         if (!isPremium) {
@@ -195,11 +235,23 @@ fun SettingsSheet(
                 }) { Text("Set up Lock") }
             }
         )
-        "category" -> CategoryBarSettingsDialog(
-            currentType = preferences.categoryBarType,
-            onDismiss = { activeDialog = null },
-            onSelect = { viewModel.setCategoryBarType(it) }
-        )
+        "category" -> {
+            val drawerViewModel: com.samidevstudio.neoglide.ui.drawer.DrawerViewModel = hiltViewModel()
+            val coroutineScope = rememberCoroutineScope()
+            CategoryBarSettingsDialog(
+                currentType = preferences.categoryBarType,
+                onDismiss = { activeDialog = null },
+                onSelect = { newType ->
+                    coroutineScope.launch {
+                        if (drawerViewModel.canSwitchToCategoryBarType(context, newType)) {
+                            viewModel.setCategoryBarType(newType)
+                        } else {
+                            android.widget.Toast.makeText(context, "Cannot switch: Too many categories for this layout. Please remove some categories first.", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            )
+        }
         "anchor" -> AnchorSettingsDialog(
             verticalAnchor = preferences.verticalAnchor,
             horizontalAnchor = preferences.horizontalAnchor,
@@ -249,22 +301,25 @@ fun SettingsSheet(
             }
         )
         "notif" -> SelectionDialog(
-            title = "Notification dots",
+            title = "Notification badges",
             options = listOf(
-                DialogOption("App Icon", NotificationDotMode.APP_ICON, preferences.notificationDotMode == NotificationDotMode.APP_ICON),
-                DialogOption("Category Bar", NotificationDotMode.CATEGORY_BAR, preferences.notificationDotMode == NotificationDotMode.CATEGORY_BAR),
-                DialogOption("Both", NotificationDotMode.BOTH, preferences.notificationDotMode == NotificationDotMode.BOTH),
-                DialogOption("None", NotificationDotMode.NONE, preferences.notificationDotMode == NotificationDotMode.NONE)
+                DialogOption("Home Screen", BadgeStyle.COUNT, preferences.homeBadgeStyle == BadgeStyle.COUNT),
+                DialogOption("App Drawer", BadgeStyle.COUNT, preferences.drawerBadgeStyle == BadgeStyle.COUNT),
+                DialogOption("Category Rail", BadgeStyle.COUNT, preferences.railBadgeStyle == BadgeStyle.COUNT)
             ),
             onDismiss = { activeDialog = null },
-            onSelect = { viewModel.setNotificationDotMode(it as NotificationDotMode) }
+            onSelect = { /* This was a simple dialog, now replaced by notif_settings */ }
         )
         "about" -> AboutDialog(onDismiss = { activeDialog = null })
         "notif_settings" -> NotificationSettingsDialog(
             isNotifEnabled = isNotifEnabled,
-            dotMode = preferences.notificationDotMode,
+            homeStyle = preferences.homeBadgeStyle,
+            drawerStyle = preferences.drawerBadgeStyle,
+            railStyle = preferences.railBadgeStyle,
             onDismiss = { activeDialog = null },
-            onSelectDotMode = { viewModel.setNotificationDotMode(it) }
+            onSelectHomeStyle = { viewModel.setHomeBadgeStyle(it) },
+            onSelectDrawerStyle = { viewModel.setDrawerBadgeStyle(it) },
+            onSelectRailStyle = { viewModel.setRailBadgeStyle(it) }
         )
         "label_settings" -> AppLabelSettingsDialog(
             labelMode = preferences.appLabelMode,
@@ -275,13 +330,95 @@ fun SettingsSheet(
             onDismiss = { activeDialog = null },
             viewModel = viewModel
         )
-        "premium" -> PremiumFeaturesDialog(
-            isPremium = isPremium,
-            onDismiss = { activeDialog = null },
-            onUpgrade = { viewModel.setIsPremium(true) }
-        )
+        "add_category" -> {
+            val drawerViewModel: com.samidevstudio.neoglide.ui.drawer.DrawerViewModel = hiltViewModel()
+            AddCategoryDialogRefined(
+                onDismiss = { activeDialog = null },
+                drawerViewModel = drawerViewModel,
+                onAddBuiltIn = { drawerViewModel.addBuiltInCategory(it) },
+                onAddCustom = { name, icon -> 
+                    drawerViewModel.addCustomCategory(name, icon)
+                },
+                onSwitchToVertical = { viewModel.setCategoryBarType(CategoryBarType.LEFT) }
+            )
+        }
+        "manage_categories" -> {
+            val drawerViewModel: com.samidevstudio.neoglide.ui.drawer.DrawerViewModel = hiltViewModel()
+            ManageCategoriesDialog(
+                onDismiss = { activeDialog = null },
+                drawerViewModel = drawerViewModel,
+                onRemove = { category -> drawerViewModel.removeCustomCategory(category) },
+                onReorder = { order -> viewModel.updateCategoryOrder(order) },
+                onUpdate = { old, new, icon -> viewModel.updateCategory(old, new, icon) }
+            )
+        }
+        "add_folder" -> {
+            val drawerViewModel: com.samidevstudio.neoglide.ui.drawer.DrawerViewModel = hiltViewModel()
+            val allApps by viewModel.allApps.collectAsStateWithLifecycle()
+            val preferences by viewModel.userPreferences.collectAsStateWithLifecycle()
+            val selectedApps = remember { mutableStateListOf<String>() }
+            
+            val availableApps = remember(allApps, preferences.hiddenPackages) {
+                allApps.filter { it.packageName !in preferences.hiddenPackages }
+            }
+
+            MultiAppPickerDialog(
+                title = "Create New Folder",
+                allApps = availableApps,
+                memberPackageNames = selectedApps.toSet(),
+                recentlyUsedApps = emptyList(),
+                onToggleMember = { app, checked ->
+                    if (checked) {
+                        if (app.packageName !in selectedApps) selectedApps.add(app.packageName)
+                    } else {
+                        selectedApps.remove(app.packageName)
+                    }
+                },
+                onDismissRequest = { 
+                    if (selectedApps.size >= 2) {
+                        val category = if (preferences.categoryBarType == CategoryBarType.NONE) null 
+                                      else (drawerViewModel.selectedCategory.value ?: AppCategory.OTHER)
+                        drawerViewModel.createFolderFromList(selectedApps.toList(), "Folder", category)
+                        onDismiss()
+                    }
+                    activeDialog = null
+                }
+            )
+        }
+        "premium" -> {
+            val productDetails by viewModel.productDetails.collectAsStateWithLifecycle()
+            val activity = LocalActivity.current
+            
+            PremiumFeaturesDialog(
+                isPremium = isPremium,
+                productDetailsMap = productDetails,
+                restoreStatus = restoreStatus,
+                onDismiss = { activeDialog = null },
+                onRestore = { viewModel.restorePurchases() },
+                onUpgrade = { productId ->
+                    activity?.let { viewModel.buyPremium(it, productId) }
+                }
+            )
+        }
     }
     
+    if (restoreError != null) {
+        AlertDialog(
+            onDismissRequest = { restoreError = null },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Restoration Failed")
+                }
+            },
+            text = { Text(restoreError!!) },
+            confirmButton = {
+                TextButton(onClick = { restoreError = null }) { Text("OK", fontWeight = FontWeight.Bold) }
+            }
+        )
+    }
+
     if (pendingResetAction.value != null) {
         AlertDialog(
             onDismissRequest = { pendingResetAction.value = null },
@@ -302,7 +439,7 @@ fun SettingsSheet(
                             ResetAction.RESET_HOME -> viewModel.resetHomeScreen()
                             ResetAction.RESET_DRAWER -> viewModel.resetAppDrawer()
                             ResetAction.DELETE_HOME_FOLDERS -> viewModel.deleteHomeFolders()
-                            ResetAction.DELETE_DRAWER_FOLDERS -> viewModel.deleteAppDrawerFolders()
+                            ResetAction.DISSOLVE_DRAWER_FOLDERS -> viewModel.dissolveAppDrawerFolders()
                             ResetAction.OPEN_APP_INFO -> viewModel.openAppInfo()
                             null -> {}
                         }
@@ -332,163 +469,208 @@ fun SettingsSheet(
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     ) {
+        val isDefaultLauncher by viewModel.isDefaultLauncher.collectAsStateWithLifecycle()
+
         Column(modifier = Modifier.fillMaxWidth().navigationBarsPadding()) {
-            LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceAround
-                    ) {
-                        QuickActionItem(Icons.Default.Add, "Shortcut") { }
-                        QuickActionItem(Icons.Default.CreateNewFolder, "Folder") { }
-                        QuickActionItem(Icons.Default.Category, "Category") { }
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(bottom = 24.dp)
+            ) {
+                if (!isDefaultLauncher) {
+                    item {
+                        Surface(
+                            onClick = { viewModel.openDefaultLauncherSettings() },
+                            modifier = Modifier.padding(16.dp),
+                            shape = RoundedCornerShape(24.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(20.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Home, null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "Set Default Launcher",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        "Experience NeoGlide as it's meant to be.",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                                Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
                     }
                 }
 
                 item {
-                    SettingsGroup(title = "DEVELOPER TOOLS (TEMPORARY)") {
-                        ToggleSettingsItem(
-                            icon = Icons.Default.BugReport,
-                            title = "Premium Toggle",
-                            checked = isPremium,
-                            onCheckedChange = { viewModel.setIsPremium(it) }
+                    SettingsGroup(title = "QUICK ACTIONS") {
+                        SettingsItem(
+                            icon = Icons.Default.CreateNewFolder,
+                            title = "Add Folder",
+                            onClick = {
+                                if (!preferences.lockLayout) {
+                                    activeDialog = "add_folder"
+                                } else {
+                                    android.widget.Toast.makeText(context, "Locked from launcher settings", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         )
                         SettingsItem(
-                            icon = Icons.Default.Home,
-                            title = "Set Default Launcher",
-                            onClick = { viewModel.openDefaultLauncherSettings() }
+                            icon = Icons.Default.Category,
+                            title = "Add Category",
+                            onClick = {
+                                if (!preferences.lockLayout) {
+                                    activeDialog = "add_category"
+                                } else {
+                                    android.widget.Toast.makeText(context, "Locked from launcher settings", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+                        ToggleSettingsItem(
+                            icon = Icons.Default.Lock,
+                            title = "Lock Layout",
+                            checked = preferences.lockLayout,
+                            onHapticFeedback = hapticFeedback,
+                            onCheckedChange = { viewModel.setLockLayout(it) }
                         )
                     }
                 }
 
                 item {
-                    SettingsGroup(title = "DRAWER & NAVIGATION") {
+                    SettingsGroup(title = "NAVIGATION") {
                         SettingsItem(
                             icon = Icons.Default.ViewStream,
-                            title = "Category bar",
+                            title = "Category Bar",
                             onClick = { activeDialog = "category" },
-                            trailing = { 
+                            trailing = {
                                 val label = when(preferences.categoryBarType) {
                                     CategoryBarType.LEFT -> "Left"
                                     CategoryBarType.RIGHT -> "Right"
                                     CategoryBarType.BOTTOM -> "Bottom"
-                                    CategoryBarType.NONE -> "Categoryless"
+                                    CategoryBarType.NONE -> "None"
                                 }
-                                ValueLabel(label) 
+                                ValueLabel(label)
                             }
                         )
                         SettingsItem(
                             icon = Icons.Default.Anchor,
-                            title = "Anchor",
+                            title = "Alignment & Anchor",
                             onClick = { activeDialog = "anchor" },
                             trailing = { ValueLabel("${preferences.verticalAnchor.name.formatLabel()} / ${preferences.horizontalAnchor.name.formatLabel()}") }
                         )
                         SettingsItem(
                             icon = Icons.Default.SortByAlpha,
-                            title = "Sorting",
-                            isPremium = !isPremium,
+                            title = "Sorting Mode",
                             onClick = { activeDialog = "sorting" },
                             trailing = { ValueLabel(getSortingLabel(preferences.sortingMode)) }
                         )
                         SettingsItem(
-                            icon = Icons.Default.VisibilityOff,
-                            title = "Hidden apps",
-                            isPremium = !isPremium,
-                            onClick = { showHiddenAppsWithAuth() }
+                            icon = Icons.Default.FontDownload,
+                            title = "App Labels",
+                            onClick = { activeDialog = "label_settings" }
                         )
                     }
                 }
 
                 item {
-                    SettingsGroup(title = "INTERACTION & LAYOUT") {
+                    SettingsGroup(title = "HOME & APPEARANCE") {
                         SettingsItem(
-                            icon = Icons.Default.GridView, 
-                            title = "Home Screen Layout", 
+                            icon = Icons.Default.GridView,
+                            title = "Home Screen Layout",
                             onClick = { activeDialog = "grid" },
                             trailing = { ValueLabel(preferences.gridSize.name.lowercase().replaceFirstChar { it.uppercase() }) }
-                        ) 
-                        ToggleSettingsItem(
-                            icon = Icons.Default.Lock,
-                            title = "Prevent changes",
-                            checked = preferences.lockLayout,
-                            onHapticFeedback = hapticFeedback,
-                            onCheckedChange = { viewModel.setLockLayout(it) }
                         )
                         ToggleSettingsItem(
                             icon = Icons.Default.Vibration,
-                            title = "Haptic feedback",
+                            title = "Haptic Feedback",
                             checked = preferences.hapticsEnabled,
                             onHapticFeedback = hapticFeedback,
                             onCheckedChange = { viewModel.setHapticsEnabled(it) }
                         )
-                    }
-                }
-
-                item {
-                    SettingsGroup(title = "ADVANCED") {
                         SettingsItem(
-                            icon = Icons.Default.Notifications,
-                            title = "Notifications",
-                            onClick = { activeDialog = "notif_settings" }
-                        )
-                        SettingsItem(
-                            icon = Icons.Default.Search, 
-                            title = "Search provider", 
-                            isPremium = !isPremium,
-                            onClick = { activeDialog = "search" },
-                            trailing = { ValueLabel(preferences.searchProvider.displayName) }
-                        )
-                        SettingsItem(
-                            icon = Icons.Default.FontDownload,
-                            title = "App labels",
-                            onClick = { activeDialog = "label_settings" }
-                        )
-                        SettingsItem(
-                            icon = Icons.Default.Wallpaper, 
-                            title = "Wallpaper", 
+                            icon = Icons.Default.Wallpaper,
+                            title = "Wallpaper",
                             onClick = { viewModel.openWallpaperSettings() }
                         )
                         SettingsItem(
-                            icon = Icons.Default.Palette, 
-                            title = "Appearance", 
+                            icon = Icons.Default.Palette,
+                            title = "Appearance",
                             onClick = { viewModel.openAppearanceSettings() }
-                        )
-                        SettingsItem(
-                            icon = Icons.Default.Build, 
-                            title = "Troubleshooting", 
-                            onClick = { activeDialog = "trouble" }
                         )
                     }
                 }
 
                 item {
-                    SettingsGroup(title = "SUPPORT & INFO") {
+                    SettingsGroup(title = "PRIVACY & SECURITY") {
                         SettingsItem(
-                            icon = Icons.Default.WorkspacePremium, 
-                            title = "Premium features", 
-                            onClick = { activeDialog = "premium" }, 
-                            trailing = { 
-                                if (isPremium) {
-                                    ValueLabel("Active")
-                                } else {
-                                    PremiumBadge()
-                                }
-                            }
+                            icon = Icons.Default.VisibilityOff,
+                            title = "Hidden Apps",
+                            isPremium = !isPremium,
+                            onClick = { showHiddenAppsWithAuth() }
                         )
                         SettingsItem(
-                            icon = Icons.Default.Info,
-                            title = "About NeoGlide Launcher",
-                            onClick = { activeDialog = "about" },
-                            trailing = { Text("Version 1.0.0", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            icon = Icons.Default.Notifications,
+                            title = "Notification Badges",
+                            onClick = { activeDialog = "notif_settings" }
                         )
                     }
                 }
-                
-                item { Spacer(modifier = Modifier.height(32.dp)) }
+
+                item {
+                    SettingsGroup(title = "SEARCH") {
+                        SettingsItem(
+                            icon = Icons.Default.Search,
+                            title = "Search Provider",
+                            onClick = { activeDialog = "search" },
+                            trailing = { ValueLabel(preferences.searchProvider.displayName) }
+                        )
+                    }
+                }
+
+                item {
+                    if (!isPremium) {
+                        SettingsGroup(title = "UPGRADE") {
+                            SettingsItem(
+                                icon = Icons.Default.WorkspacePremium,
+                                title = "NeoGlide Premium",
+                                onClick = { activeDialog = "premium" }
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    SettingsGroup(title = "SYSTEM") {
+                        SettingsItem(
+                            icon = Icons.Default.Build,
+                            title = "Troubleshooting",
+                            onClick = { activeDialog = "trouble" }
+                        )
+                        SettingsItem(
+                            icon = Icons.Default.Info,
+                            title = "About NeoGlide",
+                            onClick = { activeDialog = "about" },
+                            trailing = {
+                                Text(
+                                    "v${viewModel.getAppVersion()}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        )
+                    }
+                }
             }
         }
     }
 }
+
+
 
 private fun String.formatLabel(): String = this.replace("_", " ")
     .lowercase(Locale.getDefault())
@@ -513,9 +695,13 @@ private fun getSortingDescription(mode: SortingMode, isReverse: Boolean): String
 @Composable
 fun NotificationSettingsDialog(
     isNotifEnabled: Boolean,
-    dotMode: NotificationDotMode,
+    homeStyle: BadgeStyle,
+    drawerStyle: BadgeStyle,
+    railStyle: BadgeStyle,
     onDismiss: () -> Unit,
-    onSelectDotMode: (NotificationDotMode) -> Unit
+    onSelectHomeStyle: (BadgeStyle) -> Unit,
+    onSelectDrawerStyle: (BadgeStyle) -> Unit,
+    onSelectRailStyle: (BadgeStyle) -> Unit
 ) {
     val context = LocalContext.current
 
@@ -525,13 +711,13 @@ fun NotificationSettingsDialog(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Notifications, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(12.dp))
-                Text("Notifications")
+                Text("Notification Badges")
             }
         },
         text = {
             Column {
                 Text(
-                    "Stay organized with notification badges. Enable access to see counts on your icons and in the app drawer.",
+                    "Stay organized with notification badges. Choose your preferred style for different areas of the launcher.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -567,12 +753,12 @@ fun NotificationSettingsDialog(
                         Spacer(modifier = Modifier.width(16.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Enable Notification Badges",
+                                text = "Enable Badge Access",
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = if (isNotifEnabled) "Active • Counting notifications" else "Tap to enable numeric badges",
+                                text = if (isNotifEnabled) "Active • Reading notifications" else "Tap to grant permission",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (isNotifEnabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
                             )
@@ -588,64 +774,16 @@ fun NotificationSettingsDialog(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                Text(
-                    text = "Display badges on:",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                BadgeStyleSection("Home Screen", homeStyle, onSelectHomeStyle)
+                Spacer(modifier = Modifier.height(16.dp))
+                BadgeStyleSection("App Drawer", drawerStyle, onSelectDrawerStyle)
+                Spacer(modifier = Modifier.height(16.dp))
+                BadgeStyleSection("Category Rail", railStyle, onSelectRailStyle)
                 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // CHIP GROUP FOR MODERN SELECTION
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val showOnIcons = dotMode == NotificationDotMode.APP_ICON || dotMode == NotificationDotMode.BOTH
-                    val showOnRail = dotMode == NotificationDotMode.CATEGORY_BAR || dotMode == NotificationDotMode.BOTH
-
-                    FilterChip(
-                        selected = showOnIcons,
-                        onClick = {
-                            val newMode = when {
-                                !showOnIcons && showOnRail -> NotificationDotMode.BOTH
-                                !showOnIcons && !showOnRail -> NotificationDotMode.APP_ICON
-                                showOnIcons && showOnRail -> NotificationDotMode.CATEGORY_BAR
-                                else -> NotificationDotMode.NONE
-                            }
-                            onSelectDotMode(newMode)
-                        },
-                        label = { Text("App Icons") },
-                        leadingIcon = if (showOnIcons) {
-                            { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
-                        } else null,
-                        shape = RoundedCornerShape(12.dp)
-                    )
-
-                    FilterChip(
-                        selected = showOnRail,
-                        onClick = {
-                            val newMode = when {
-                                !showOnRail && showOnIcons -> NotificationDotMode.BOTH
-                                !showOnRail && !showOnIcons -> NotificationDotMode.CATEGORY_BAR
-                                showOnRail && showOnIcons -> NotificationDotMode.APP_ICON
-                                else -> NotificationDotMode.NONE
-                            }
-                            onSelectDotMode(newMode)
-                        },
-                        label = { Text("Category Rail") },
-                        leadingIcon = if (showOnRail) {
-                            { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
-                        } else null,
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(16.dp))
                 
                 Text(
-                    text = "Choose where you want to see notification counts. Changes apply instantly.",
+                    text = "None: No indicators.\nDot: Small dot for notifications.\nCount: Numeric count for each app.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
@@ -656,6 +794,42 @@ fun NotificationSettingsDialog(
         }
     )
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BadgeStyleSection(
+    title: String,
+    currentStyle: BadgeStyle,
+    onSelect: (BadgeStyle) -> Unit
+) {
+    Column {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            BadgeStyle.entries.forEach { style ->
+                FilterChip(
+                    selected = currentStyle == style,
+                    onClick = { onSelect(style) },
+                    label = { Text(style.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                    leadingIcon = if (currentStyle == style) {
+                        { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                    } else null,
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+        }
+    }
+}
+
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -681,6 +855,27 @@ fun AppLabelSettingsDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                val labelDescription = when (labelMode) {
+                    AppLabelMode.BOTH -> "Labels are visible on both Home Screen and App Drawer for maximum clarity."
+                    AppLabelMode.HOME_ONLY -> "Labels are only shown on the Home Screen. App Drawer remains clean and icon-focused."
+                    AppLabelMode.DRAWER_ONLY -> "Labels are only shown in the App Drawer. Home Screen icons remain minimal without text."
+                    AppLabelMode.NONE -> "All application labels are hidden for the most minimalist and clean experience."
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                ) {
+                    Text(
+                        text = labelDescription,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(12.dp).fillMaxWidth()
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Surface(
@@ -743,21 +938,6 @@ fun AppLabelSettingsDialog(
                         }
                     }
                 }
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                val labelDescription = when (labelMode) {
-                    AppLabelMode.BOTH -> "Labels are visible on both Home Screen and App Drawer for maximum clarity."
-                    AppLabelMode.HOME_ONLY -> "Labels are only shown on the Home Screen. App Drawer remains clean and icon-focused."
-                    AppLabelMode.DRAWER_ONLY -> "Labels are only shown in the App Drawer. Home Screen icons remain minimal without text."
-                    AppLabelMode.NONE -> "All application labels are hidden for the most minimalist and clean experience."
-                }
-
-                Text(
-                    text = labelDescription,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                )
             }
         },
         confirmButton = {
@@ -805,11 +985,37 @@ fun HiddenAppsDialog(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = "Manage apps that are hidden from the main drawer view.",
+                    text = "Keep your app list tidy by hiding apps you rarely use or want to keep private.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (preferences.showHiddenApps) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Show in Drawer Rail", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        Switch(
+                            checked = preferences.showHiddenApps,
+                            onCheckedChange = { viewModel.setShowHiddenApps(it) },
+                            modifier = Modifier.scale(0.8f)
+                        )
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
                     value = searchQuery,
@@ -981,56 +1187,110 @@ private fun HiddenAppPickerItem(
     }
 }
 
+
+
+
 @Composable
-fun AboutDialog(onDismiss: () -> Unit) {
+fun AboutDialog(onDismiss: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
+    val context = LocalContext.current
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Info, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(12.dp))
-                Text("About NeoGlide Launcher")
+                Text("About NeoGlide")
             }
         },
         text = {
             Column {
                 Text(
-                    "NeoGlide Launcher is a minimalist, clean, and lightweight Android launcher optimized for responsiveness and intelligent organization.",
-                    style = MaterialTheme.typography.bodyMedium
+                    "NeoGlide is an ergonomic, clean, and lightweight Android launcher optimized for fluidity and smart organization.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Version: 1.0.0-neo", fontWeight = FontWeight.Bold)
-                Text("Developer: SamiDev Studio")
-                Spacer(modifier = Modifier.height(16.dp))
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        AboutInfoRow("Version", viewModel.getAppVersion())
+                        AboutInfoRow("Build", "v1.0.0-neo")
+                        AboutInfoRow("Developer", "Samoyed Dev Studio")
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
                 Text(
-                    "This project is built with Jetpack Compose and modern Android architecture.",
+                    "This launcher is built with Jetpack Compose and prioritizes user privacy and performance.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                
                 Spacer(modifier = Modifier.height(8.dp))
-                // TODO: Add proper Legal & Compliance links and info (Privacy Policy, Licenses, etc.)
-                TextButton(
-                    onClick = { /* TODO: Open Privacy Policy URL */ },
-                    contentPadding = PaddingValues(0.dp)
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text("Privacy Policy", style = MaterialTheme.typography.labelLarge)
+                    TextButton(
+                        onClick = {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://samoyeddevstudio.com/neoglide/privacy"))
+                            context.startActivity(intent)
+                        },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("Privacy Policy", style = MaterialTheme.typography.labelLarge)
+                    }
+                    TextButton(
+                        onClick = {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://samoyeddevstudio.com/neoglide"))
+                            context.startActivity(intent)
+                        },
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("Website", style = MaterialTheme.typography.labelLarge)
+                    }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
+            TextButton(onClick = onDismiss) { Text("Close", fontWeight = FontWeight.Bold) }
         }
     )
 }
 
 @Composable
+private fun AboutInfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(text = label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(text = value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
+@Composable
 fun PremiumFeaturesDialog(
     isPremium: Boolean,
+    productDetailsMap: Map<String, ProductDetails>,
+    restoreStatus: BillingManager.RestoreStatus,
     onDismiss: () -> Unit,
-    onUpgrade: () -> Unit
+    onRestore: () -> Unit,
+    onUpgrade: (String) -> Unit
 ) {
+    val isProcessing = restoreStatus is BillingManager.RestoreStatus.Processing
+
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isProcessing) onDismiss() },
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.WorkspacePremium, null, tint = MaterialTheme.colorScheme.tertiary)
@@ -1042,13 +1302,73 @@ fun PremiumFeaturesDialog(
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     text = if (isPremium) "Thank you for supporting NeoGlide! You have unlocked all premium features." 
-                           else "Unlock the full potential of NeoGlide Launcher with a one-time premium purchase.",
+                           else "Unlock the full potential of NeoGlide Launcher with a choice of flexible plans.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
+                if (!isPremium) {
+                    Text(
+                        "Choose your plan:",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Lifetime
+                    PricingTier(
+                        title = "Lifetime",
+                        price = productDetailsMap[BillingManager.PRODUCT_LIFETIME]?.oneTimePurchaseOfferDetails?.formattedPrice ?: "Loading...",
+                        description = "Pay once, own forever. Best value.",
+                        enabled = !isProcessing,
+                        onClick = { onUpgrade(BillingManager.PRODUCT_LIFETIME) }
+                    )
+                    
+                    // Yearly
+                    PricingTier(
+                        title = "Yearly",
+                        price = productDetailsMap[BillingManager.PRODUCT_YEARLY]?.subscriptionOfferDetails?.firstOrNull()?.pricingPhases?.pricingPhaseList?.firstOrNull()?.formattedPrice?.let { "$it/year" } ?: "Loading...",
+                        description = "Full access, billed annually.",
+                        enabled = !isProcessing,
+                        onClick = { onUpgrade(BillingManager.PRODUCT_YEARLY) }
+                    )
+                    
+                    // Monthly
+                    PricingTier(
+                        title = "Monthly",
+                        price = productDetailsMap[BillingManager.PRODUCT_MONTHLY]?.subscriptionOfferDetails?.firstOrNull()?.pricingPhases?.pricingPhaseList?.firstOrNull()?.formattedPrice?.let { "$it/month" } ?: "Loading...",
+                        description = "Flexible access, cancel anytime.",
+                        enabled = !isProcessing,
+                        onClick = { onUpgrade(BillingManager.PRODUCT_MONTHLY) }
+                    )
+                    
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
+                }
+
+                if (isProcessing) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                "Verifying with Google Play...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
                 PremiumFeatureItem(
                     title = "Privacy Vault",
                     description = "Hide sensitive apps and protect them with biometric security (Fingerprint/PIN).",
@@ -1056,48 +1376,92 @@ fun PremiumFeaturesDialog(
                 )
                 PremiumFeatureItem(
                     title = "Advanced Sorting",
-                    description = "Sort your apps by Installation Time, Last Used, Icon Color, or Reverse Alphabetical.",
+                    description = "Sort your apps by Installation Time, Last Used, Icon Color, or Reverse the selected sort order.",
                     icon = Icons.Default.SortByAlpha
                 )
                 PremiumFeatureItem(
                     title = "Custom Search",
-                    description = "Use DuckDuckGo or other privacy-focused search providers.",
+                    description = "Use preferred search providers.",
                     icon = Icons.Default.Search
                 )
                 PremiumFeatureItem(
-                    title = "Backup & Sync (Planned)",
-                    description = "Save your layout to Google Drive using Android's Handoff API.",
-                    icon = Icons.Default.CloudSync
-                )
-                PremiumFeatureItem(
-                    title = "Infinite Customization (V2)",
-                    description = "Custom grid sizes, widget stacks, monochrome icons, and custom icon shapes.",
-                    icon = Icons.Default.Palette
+                    title = "Multi-device Premium",
+                    description = "Your premium status is tied to your Google Account and syncs automatically across all your devices.",
+                    icon = Icons.Default.WorkspacePremium
                 )
             }
         },
         confirmButton = {
-            if (!isPremium) {
-                Button(
-                    onClick = { 
-                        onUpgrade()
-                        onDismiss()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
-                ) {
-                    Text("Unlock Everything")
-                }
-            } else {
+            if (isPremium) {
                 TextButton(onClick = onDismiss) { Text("Done") }
             }
         },
         dismissButton = {
             if (!isPremium) {
-                TextButton(onClick = onDismiss) { Text("Maybe later") }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isProcessing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                    } else {
+                        TextButton(onClick = onRestore) { Text("Restore") }
+                    }
+                    TextButton(onClick = onDismiss, enabled = !isProcessing) { Text("Maybe later") }
+                }
             }
         }
     )
 }
+
+@Composable
+private fun PricingTier(
+    title: String,
+    price: String,
+    description: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) 0.5f else 0.2f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (enabled) 1f else 0.5f))
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title, 
+                    style = MaterialTheme.typography.titleMedium, 
+                    fontWeight = FontWeight.Bold,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+                Text(
+                    description, 
+                    style = MaterialTheme.typography.bodySmall, 
+                    color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
+            Text(
+                price, 
+                style = MaterialTheme.typography.titleMedium, 
+                color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), 
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+
+
 
 @Composable
 private fun PremiumFeatureItem(
@@ -1129,6 +1493,8 @@ private fun PremiumFeatureItem(
     }
 }
 
+
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SortingSettingsDialog(
@@ -1156,6 +1522,20 @@ fun SortingSettingsDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                ) {
+                    Text(
+                        text = getSortingDescription(currentMode, isReverse),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(12.dp).fillMaxWidth()
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
@@ -1234,14 +1614,6 @@ fun SortingSettingsDialog(
                         )
                     }
                 }
-                
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                Text(
-                    text = getSortingDescription(currentMode, isReverse),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         },
         confirmButton = {
@@ -1289,6 +1661,27 @@ fun AnchorSettingsDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            text = "Vertical: $verticalDescription",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Horizontal: $horizontalDescription",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
@@ -1317,20 +1710,6 @@ fun AnchorSettingsDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                ) {
-                    Text(
-                        text = verticalDescription,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(12.dp).fillMaxWidth()
-                    )
-                }
-
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
@@ -1357,20 +1736,6 @@ fun AnchorSettingsDialog(
                             shape = RoundedCornerShape(12.dp)
                         )
                     }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                ) {
-                    Text(
-                        text = horizontalDescription,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(12.dp).fillMaxWidth()
-                    )
                 }
             }
         },
@@ -1422,6 +1787,27 @@ fun CategoryBarSettingsDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                ) {
+                    Column(modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                    ) {
+                        Text(
+                            text = description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (selectedType == CategoryBarType.NONE) 
+                                MaterialTheme.colorScheme.error 
+                            else 
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
@@ -1453,27 +1839,6 @@ fun CategoryBarSettingsDialog(
                                 { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
                             } else null,
                             shape = RoundedCornerShape(12.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                ) {
-                    Column(modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                    ) {
-                        Text(
-                            text = description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (selectedType == CategoryBarType.NONE) 
-                                MaterialTheme.colorScheme.error 
-                            else 
-                                MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -1528,6 +1893,27 @@ fun SearchSettingsDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                ) {
+                    Column(modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                    ) {
+                        Text(
+                            text = description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (selectedProvider == SearchProvider.LOCAL_ONLY)
+                                MaterialTheme.colorScheme.error
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Text(
@@ -1565,27 +1951,6 @@ fun SearchSettingsDialog(
                                 { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
                             } else null,
                             shape = RoundedCornerShape(12.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                ) {
-                    Column(modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                    ) {
-                        Text(
-                            text = description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (selectedProvider == SearchProvider.LOCAL_ONLY)
-                                MaterialTheme.colorScheme.error
-                            else
-                                MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -1804,6 +2169,13 @@ fun TroubleshootingDialog(
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
             ) {
+                Text(
+                    "Advanced tools to restore default states, refresh cached assets, or access system-level application settings. Use these if you experience unexpected behavior.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
                 SettingsGroup(title = "HOME SCREEN") {
                     SettingsItem(
                         icon = ResetAction.RESET_HOME.icon,
@@ -1830,11 +2202,11 @@ fun TroubleshootingDialog(
                         onClick = { onAction(ResetAction.RESET_DRAWER) }
                     )
                     SettingsItem(
-                        icon = ResetAction.DELETE_DRAWER_FOLDERS.icon,
-                        title = ResetAction.DELETE_DRAWER_FOLDERS.label,
-                        description = ResetAction.DELETE_DRAWER_FOLDERS.description,
+                        icon = ResetAction.DISSOLVE_DRAWER_FOLDERS.icon,
+                        title = ResetAction.DISSOLVE_DRAWER_FOLDERS.label,
+                        description = ResetAction.DISSOLVE_DRAWER_FOLDERS.description,
                         showChevron = false,
-                        onClick = { onAction(ResetAction.DELETE_DRAWER_FOLDERS) }
+                        onClick = { onAction(ResetAction.DISSOLVE_DRAWER_FOLDERS) }
                     )
                 }
 
@@ -1868,9 +2240,9 @@ fun TroubleshootingDialog(
 enum class ResetAction(val label: String, val description: String, val icon: ImageVector) {
     REFRESH_APP_ICONS("Refresh App Icons", "Re-extract colors and icons for all apps. Useful if icons appear outdated or incorrect.", Icons.Default.Refresh),
     RESET_HOME("Reset Home Screen", "Restore the default home screen layout and dock.", Icons.Default.LayersClear),
-    RESET_DRAWER("Reset App Drawer", "Clear drawer folders and reset categories.", Icons.Default.FolderDelete),
-    DELETE_HOME_FOLDERS("Delete Home Folders", "Dissolve folders on home screen.", Icons.Default.DeleteSweep),
-    DELETE_DRAWER_FOLDERS("Delete App Drawer Folders", "Dissolve folders in app drawer.", Icons.Default.FolderOff),
+    RESET_DRAWER("Reset App Drawer", "Clear drawer folders and reset all app categories to defaults.", Icons.Default.FolderDelete),
+    DELETE_HOME_FOLDERS("Delete Home Folders", "Remove all folders from home screen. Apps inside will be removed from home screen.", Icons.Default.DeleteSweep),
+    DISSOLVE_DRAWER_FOLDERS("Dissolve App Drawer Folders", "Remove all folders in the app drawer. Apps will return to their categories.", Icons.Default.FolderOff),
     OPEN_APP_INFO("App Info", "Open system settings to clear cache or storage.", Icons.Default.Settings)
 }
 
@@ -1892,6 +2264,9 @@ private fun SettingsGroup(
     }
 }
 
+
+
+
 @Composable
 private fun SectionHeader(title: String) {
     Text(
@@ -1906,8 +2281,8 @@ private fun SectionHeader(title: String) {
 @Composable
 fun PremiumBadge() {
     Icon(
-        Icons.Default.WorkspacePremium, 
-        null, 
+        Icons.Default.WorkspacePremium,
+        null,
         modifier = Modifier.size(16.dp),
         tint = MaterialTheme.colorScheme.tertiary
     )
@@ -1916,25 +2291,6 @@ fun PremiumBadge() {
 @Composable
 private fun ValueLabel(text: String) {
     Text(text = text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-}
-
-@Composable
-fun QuickActionItem(icon: ImageVector, label: String, onClick: () -> Unit) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .clickable { onClick() }
-            .padding(8.dp)
-    ) {
-        Surface(modifier = Modifier.size(48.dp), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(icon, label, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(text = label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
 }
 
 @Composable
@@ -2027,3 +2383,20 @@ fun SettingsItem(
         }
     }
 }
+
+@Preview(showBackground = true)
+@Composable
+fun PremiumFeaturesDialogPreview() {
+    com.samidevstudio.neoglide.ui.theme.NeoGlideLauncherTheme {
+        PremiumFeaturesDialog(
+            isPremium = false,
+            productDetailsMap = emptyMap(),
+            restoreStatus = BillingManager.RestoreStatus.Idle,
+            onDismiss = {},
+            onRestore = {},
+            onUpgrade = {}
+        )
+    }
+}
+
+

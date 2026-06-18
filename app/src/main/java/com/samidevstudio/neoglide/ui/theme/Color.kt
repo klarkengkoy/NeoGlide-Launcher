@@ -52,3 +52,6 @@ val onSurfaceDark = Color(0xFFE6E1E5)
 val surfaceVariantDark = Color(0xFF49454F)
 val onSurfaceVariantDark = Color(0xFFCAC4D0)
 val outlineDark = Color(0xFF938F99)
+
+// Notification Badge
+val BadgeRed = Color(0xFFF28B82)
