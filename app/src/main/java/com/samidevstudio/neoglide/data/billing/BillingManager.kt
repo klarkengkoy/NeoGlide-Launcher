@@ -116,6 +116,8 @@ class BillingManager @Inject constructor(
                 val detailsMap = productDetailsList.associateBy { it.productId }
                 _productDetails.update { it + detailsMap }
                 Log.d("BillingManager", "In-app product details queried: ${detailsMap.keys}")
+            } else {
+                Log.e("BillingManager", "Failed to query in-app products: ${billingResult.responseCode} - ${billingResult.debugMessage}")
             }
         }
 
@@ -129,6 +131,8 @@ class BillingManager @Inject constructor(
                 val detailsMap = productDetailsList.associateBy { it.productId }
                 _productDetails.update { it + detailsMap }
                 Log.d("BillingManager", "Subscription product details queried: ${detailsMap.keys}")
+            } else {
+                Log.e("BillingManager", "Failed to query subscription products: ${billingResult.responseCode} - ${billingResult.debugMessage}")
             }
         }
     }
