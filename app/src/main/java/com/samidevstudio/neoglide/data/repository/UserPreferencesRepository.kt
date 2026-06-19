@@ -95,7 +95,6 @@ data class UserPreferences(
     val drawerBadgeStyle: BadgeStyle = BadgeStyle.COUNT,
     val railBadgeStyle: BadgeStyle = BadgeStyle.COUNT,
     val lockLayout: Boolean = false,
-    val doubleTapToSleep: Boolean = false,
     val swipeDownForNotifications: Boolean = true,
     val verticalAnchor: VerticalAnchor = VerticalAnchor.TOP,
     val horizontalAnchor: HorizontalAnchor = HorizontalAnchor.LEFT,
@@ -126,7 +125,6 @@ class UserPreferencesRepository @Inject constructor(
         val DRAWER_BADGE_STYLE = stringPreferencesKey("drawer_badge_style")
         val RAIL_BADGE_STYLE = stringPreferencesKey("rail_badge_style")
         val LOCK_LAYOUT = booleanPreferencesKey("lock_layout")
-        val DOUBLE_TAP_TO_SLEEP = booleanPreferencesKey("double_tap_to_sleep")
         val SWIPE_DOWN_FOR_NOTIFICATIONS = booleanPreferencesKey("swipe_down_for_notifications")
         val VERTICAL_ANCHOR = stringPreferencesKey("vertical_anchor")
         val HORIZONTAL_ANCHOR = stringPreferencesKey("horizontal_anchor")
@@ -213,7 +211,6 @@ class UserPreferencesRepository @Inject constructor(
                 drawerBadgeStyle = drawerBadgeStyle,
                 railBadgeStyle = railBadgeStyle,
                 lockLayout = preferences[PreferencesKeys.LOCK_LAYOUT] ?: false,
-                doubleTapToSleep = preferences[PreferencesKeys.DOUBLE_TAP_TO_SLEEP] ?: false,
                 swipeDownForNotifications = preferences[PreferencesKeys.SWIPE_DOWN_FOR_NOTIFICATIONS] ?: true,
                 verticalAnchor = verticalAnchor,
                 horizontalAnchor = horizontalAnchor,
@@ -286,10 +283,6 @@ class UserPreferencesRepository @Inject constructor(
 
     suspend fun updateLockLayout(lock: Boolean) {
         context.dataStore.edit { preferences -> preferences[PreferencesKeys.LOCK_LAYOUT] = lock }
-    }
-
-    suspend fun updateDoubleTapToSleep(enable: Boolean) {
-        context.dataStore.edit { preferences -> preferences[PreferencesKeys.DOUBLE_TAP_TO_SLEEP] = enable }
     }
 
     suspend fun updateSwipeDownForNotifications(enable: Boolean) {
