@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.kotlinCompose)
@@ -22,6 +24,12 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    val localProperties = Properties()
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        localProperties.load(localPropertiesFile.inputStream())
+    }
+
     signingConfigs {
         create("release") {
             // To sign the release build, add the following to your local.properties (NOT versioned):
@@ -30,12 +38,12 @@ android {
             // RELEASE_KEY_ALIAS=your_key_alias
             // RELEASE_KEY_PASSWORD=your_key_password
             
-            val storeFilePath = project.findProperty("RELEASE_STORE_FILE")?.toString()
+            val storeFilePath = localProperties.getProperty("RELEASE_STORE_FILE")
             if (storeFilePath != null) {
                 storeFile = file(storeFilePath)
-                storePassword = project.findProperty("RELEASE_STORE_PASSWORD")?.toString()
-                keyAlias = project.findProperty("RELEASE_KEY_ALIAS")?.toString()
-                keyPassword = project.findProperty("RELEASE_KEY_PASSWORD")?.toString()
+                storePassword = localProperties.getProperty("RELEASE_STORE_PASSWORD")
+                keyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS")
+                keyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD")
             }
         }
     }
@@ -44,6 +52,7 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            ndk.debugSymbolLevel = "full"
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
