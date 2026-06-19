@@ -1219,7 +1219,7 @@ fun AboutDialog(onDismiss: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         AboutInfoRow("Version", viewModel.getAppVersion())
-                        AboutInfoRow("Build", "v1.0.0-neo")
+                        AboutInfoRow("Build", viewModel.getAppBuild())
                         AboutInfoRow("Developer", "Samoyed Dev Studio")
                     }
                 }
@@ -1238,25 +1238,75 @@ fun AboutDialog(onDismiss: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    var showPrivacyPolicy by remember { mutableStateOf(false) }
+                    
+                    if (showPrivacyPolicy) {
+                        PrivacyPolicyDialog(onDismiss = { showPrivacyPolicy = false })
+                    }
+
                     TextButton(
-                        onClick = {
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://samoyeddevstudio.com/neoglide/privacy"))
-                            context.startActivity(intent)
-                        },
+                        onClick = { showPrivacyPolicy = true },
                         contentPadding = PaddingValues(0.dp)
                     ) {
                         Text("Privacy Policy", style = MaterialTheme.typography.labelLarge)
                     }
-                    TextButton(
-                        onClick = {
-                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://samoyeddevstudio.com/neoglide"))
-                            context.startActivity(intent)
-                        },
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text("Website", style = MaterialTheme.typography.labelLarge)
-                    }
                 }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close", fontWeight = FontWeight.Bold) }
+        }
+    )
+}
+
+@Composable
+fun PrivacyPolicyDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Lock, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("Privacy Policy")
+            }
+        },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    text = "Effective Date: June 19, 2026",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Samoyed Dev Studio built the NeoGlide Launcher app as a Free app. This SERVICE is provided by Samoyed Dev Studio at no cost and is intended for use as is.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("1. Information Collection and Use", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = "Information requested is retained on your device and is not collected by us in any way. The app uses third-party services that may collect information used to identify you: Google Play Services, Firebase Analytics, and Firebase Crashlytics.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("2. Permissions", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = "• Query All Packages: Used to display and organize your apps.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("3. Data Safety", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = "We do not sell or share your data with third parties. All app organization data is stored locally on your device.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("4. Contact Us", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = "If you have any questions, contact us at smyddevstudio@gmail.com",
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         },
         confirmButton = {

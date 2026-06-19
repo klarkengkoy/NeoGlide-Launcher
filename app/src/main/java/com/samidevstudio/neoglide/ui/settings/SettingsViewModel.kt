@@ -148,10 +148,6 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { preferencesRepository.updateLockLayout(lock) }
     }
 
-    fun setDoubleTapToSleep(enable: Boolean) {
-        viewModelScope.launch { preferencesRepository.updateDoubleTapToSleep(enable) }
-    }
-
     fun setSwipeDownForNotifications(enable: Boolean) {
         viewModelScope.launch { preferencesRepository.updateSwipeDownForNotifications(enable) }
     }
@@ -246,6 +242,20 @@ class SettingsViewModel @Inject constructor(
             packageInfo.versionName ?: "1.0.0"
         } catch (_: Exception) {
             "1.0.0"
+        }
+    }
+
+    fun getAppBuild(): String {
+        return try {
+            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                packageInfo.longVersionCode.toString()
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo.versionCode.toString()
+            }
+        } catch (_: Exception) {
+            "1"
         }
     }
 
