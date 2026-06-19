@@ -211,6 +211,9 @@ fun NeoGlideWidgetHost(
                     shape = RoundedCornerShape(28.dp),
                     spotColor = Color.Black.copy(alpha = 0.5f)
                 )
+                .pointerInput(Unit) {
+                    detectTapGestures(onLongPress = { /* Consume to prevent background long-press */ })
+                }
                 .then(
                     if (isEditing) {
                         Modifier.border(2.dp, Color.White, RoundedCornerShape(28.dp))
