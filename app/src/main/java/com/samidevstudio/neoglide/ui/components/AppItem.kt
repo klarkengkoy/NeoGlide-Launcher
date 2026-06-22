@@ -272,6 +272,8 @@ fun SearchAppItem(
     isHidden: Boolean = false,
     hasNotification: Boolean = false,
     notificationCount: Int = 0,
+    iconSize: androidx.compose.ui.unit.Dp = 56.dp,
+    fontSize: androidx.compose.ui.unit.TextUnit = 14.sp,
     sharedElementKeyPrefix: String = "search",
     showLabel: Boolean = true,
     refreshTrigger: Int = 0,
@@ -346,6 +348,7 @@ fun SearchAppItem(
                     AppIcon(
                         packageName = app.packageName,
                         contentDescription = app.label,
+                        size = iconSize,
                         useMonochrome = useMonochrome,
                         iconPackPackageName = iconPackPackageName,
                         refreshTrigger = refreshTrigger
@@ -406,7 +409,7 @@ fun SearchAppItem(
                     Text(
                         text = app.label,
                         style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 14.sp,
+                            fontSize = fontSize,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface
                         ),

@@ -29,32 +29,7 @@ enum class SortingMode {
 }
 
 enum class GridSize {
-    SMALL, MEDIUM, LARGE;
-
-    val targetCellWidthDp: Int
-        get() = when (this) {
-            SMALL -> 66
-            MEDIUM -> 80
-            LARGE -> 95
-        }
-
-    val iconSizeDp: Int
-        get() = when (this) {
-            SMALL -> 48
-            MEDIUM -> 56
-            LARGE -> 64
-        }
-
-    val fontSizeSp: Int
-        get() = when (this) {
-            SMALL -> 11
-            MEDIUM -> 13
-            LARGE -> 15
-        }
-
-    fun getColumnCount(availableWidthDp: Float): Int {
-        return (availableWidthDp / targetCellWidthDp).toInt().coerceAtLeast(3)
-    }
+    SMALL, MEDIUM, LARGE
 }
 
 enum class SearchProvider(val searchUrl: String, val displayName: String) {

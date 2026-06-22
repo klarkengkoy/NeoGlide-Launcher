@@ -16,7 +16,9 @@ import com.samidevstudio.neoglide.data.repository.WidgetRepository
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.domain.model.AppShortcut
 import com.samidevstudio.neoglide.service.NeoGlideNotificationListener
+import com.samidevstudio.neoglide.ui.utils.LayoutManager
 import com.samidevstudio.neoglide.ui.utils.WidgetUtils
+import androidx.compose.ui.unit.dp
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -97,6 +99,9 @@ class HomeViewModel @Inject constructor(
     private val _refreshTrigger = MutableStateFlow(0)
     val refreshTrigger = _refreshTrigger.asStateFlow()
 
+    private val preferences = userPreferencesRepository.userPreferencesFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, com.samidevstudio.neoglide.data.repository.UserPreferences())
+
     fun triggerIconRefresh() {
         _refreshTrigger.value += 1
     }
@@ -157,8 +162,11 @@ class HomeViewModel @Inject constructor(
             ) { size, labelMode -> size to labelMode }
                 .collect { (size, labelMode) ->
                     val screenWidthDp = context.resources.configuration.screenWidthDp
-                    val columns = size.getColumnCount(screenWidthDp - 48f)
-                    val maxRows = 10 
+                    val screenHeightDp = context.resources.configuration.screenHeightDp
+                    
+                    val layoutConfig = LayoutManager.calculateConfig(screenWidthDp.dp, size)
+                    val columns = layoutConfig.columns
+                    val maxRows = (screenHeightDp / layoutConfig.unitHeight.value).toInt().coerceAtLeast(1)
                     
                     // Only sanitize if the grid actually shrank
                     if ((lastColumns != -1) && ((columns < lastColumns) || (maxRows < lastMaxRows))) {
@@ -174,13 +182,12 @@ class HomeViewModel @Inject constructor(
     private suspend fun provisionDefaultHomeApps() {
         val coreApps = appRepository.getCoreAppsForProvisioning()
         if (coreApps.isNotEmpty()) {
-            val offset = (5 - coreApps.size) / 2f
             coreApps.forEachIndexed { index, packageName ->
                 homeRepository.addHomeApp(
                     com.samidevstudio.neoglide.data.local.entity.HomeAppEntity(
                         packageName = packageName,
                         row = 99f, // Sentinel value for adaptive bottom snapping
-                        column = index.toFloat() + offset
+                        column = index.toFloat()
                     )
                 )
             }
@@ -492,7 +499,17 @@ class HomeViewModel @Inject constructor(
                 else -> item.row
             }
 
-            val itemRect = android.graphics.RectF(item.column, effectiveRow, item.column + item.spanX, effectiveRow + item.spanY)
+            val visualCol = if (item.row >= 99f) {
+                val dockItems = currentItems.filter { it.row >= 99f }.sortedBy { it.column }
+                val index = dockItems.indexOfFirst { it.uniqueKey == item.uniqueKey }
+                // Calculate columns based on current screen width
+                val screenWidthDp = context.resources.configuration.screenWidthDp
+                val densitySetting = preferences.value.gridSize
+                val columns = LayoutManager.calculateConfig(screenWidthDp.dp, densitySetting).columns
+                LayoutManager.getDistributedColumn(index, dockItems.size, columns)
+            } else item.column
+
+            val itemRect = android.graphics.RectF(visualCol, effectiveRow, visualCol + item.spanX, effectiveRow + item.spanY)
             
             if (android.graphics.RectF.intersects(draggedRect, itemRect)) {
                 // Potential merge if both are apps and overlap is significant (e.g. centers are close)
@@ -556,7 +573,9 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             val prefs = userPreferencesRepository.userPreferencesFlow.first()
             val screenWidthDp = context.resources.configuration.screenWidthDp
-            val columns = prefs.gridSize.getColumnCount(screenWidthDp - 48f)
+            
+            val layoutConfig = LayoutManager.calculateConfig(screenWidthDp.dp, prefs.gridSize)
+            val columns = layoutConfig.columns
 
             val (finalRow, finalCol) = findAvailableSpace(row, col, 1f, 1f, maxRows, columns) ?: run {
                 _uiEvent.emit(UiEvent.ShowToast("Home screen is full"))
@@ -589,13 +608,14 @@ class HomeViewModel @Inject constructor(
             // Use current grid preferences for span calculation
             val prefs = userPreferencesRepository.userPreferencesFlow.first()
             val screenWidthDp = context.resources.configuration.screenWidthDp
-            val columns = prefs.gridSize.getColumnCount(screenWidthDp - 48f) // match 24dp horizontal padding in HomeScreen
             
-            // Derive square cell size based on current screen width and column count
-            // This matches the UI logic for device-independence
-            val unitSizeDp = (screenWidthDp - 48f) / columns 
+            val layoutConfig = LayoutManager.calculateConfig(screenWidthDp.dp, prefs.gridSize)
+            val columns = layoutConfig.columns
+            val unitSizeDp = layoutConfig.iconSize.value // Use icon size for span logic or unitWidth?
+            // Widget spans are usually based on the full cell size including gaps
+            val cellWidthDp = layoutConfig.unitWidth.value
             
-            val (spanX, spanY) = WidgetUtils.calculateProjectedWidgetSpan(context, info, unitSizeDp, unitSizeDp, columns)
+            val (spanX, spanY) = WidgetUtils.calculateProjectedWidgetSpan(context, info, cellWidthDp, cellWidthDp, columns)
 
             // Find available space if preferred spot is taken
             val preferredRow = _pendingWidgetRow.value

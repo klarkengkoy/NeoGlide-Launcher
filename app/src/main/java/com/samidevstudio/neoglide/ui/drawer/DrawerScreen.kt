@@ -120,6 +120,7 @@ import com.samidevstudio.neoglide.ui.settings.SettingsSheet
 import com.samidevstudio.neoglide.ui.settings.SettingsViewModel
 import com.samidevstudio.neoglide.ui.theme.BadgeRed
 import com.samidevstudio.neoglide.ui.utils.HapticEngine
+import com.samidevstudio.neoglide.ui.utils.LayoutManager
 import com.samidevstudio.neoglide.ui.utils.rememberHapticFeedback
 import com.samidevstudio.neoglide.ui.utils.toIcon
 import kotlinx.coroutines.launch
@@ -275,6 +276,17 @@ private fun DrawerContent(
         }
     }
 
+    val screenWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+    val layoutConfig = remember(preferences.gridSize, screenWidthDp) {
+        LayoutManager.calculateConfig(screenWidthDp.dp, preferences.gridSize)
+    }
+    
+    val columns = layoutConfig.columns
+    val iconSize = layoutConfig.iconSize
+    val fontSize = layoutConfig.fontSize
+    val unitWidth = layoutConfig.unitWidth
+    val sidePadding = layoutConfig.sidePadding
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -305,7 +317,12 @@ private fun DrawerContent(
             drawerRootCoords = drawerRootCoords,
             onSearchActiveChange = { isSearchActive = it },
             onSettingsClick = { showSettings = true },
-            onFolderClick = { expandedFolderId = it }
+            onFolderClick = { expandedFolderId = it },
+            layoutConfig = layoutConfig,
+            columns = columns,
+            iconSize = iconSize,
+            fontSize = fontSize,
+            sidePadding = sidePadding
         )
 
         DrawerOverlays(
@@ -336,7 +353,10 @@ private fun DrawerContent(
             },
             onSetFolderInvisible = { isFolderInvisibleByDrag = it },
             onShowAppPicker = { showAppPicker = it },
-            onSetPendingFolder = { pendingFolderIdForAdd = it }
+            onSetPendingFolder = { pendingFolderIdForAdd = it },
+            unitWidth = unitWidth,
+            iconSize = iconSize,
+            fontSize = fontSize
         )
     }
 }
@@ -368,7 +388,12 @@ private fun DrawerMainLayout(
     drawerRootCoords: LayoutCoordinates?,
     onSearchActiveChange: (Boolean) -> Unit,
     onSettingsClick: () -> Unit,
-    onFolderClick: (Int) -> Unit
+    onFolderClick: (Int) -> Unit,
+    layoutConfig: LayoutManager.LayoutConfig,
+    columns: Int,
+    iconSize: androidx.compose.ui.unit.Dp,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+    sidePadding: androidx.compose.ui.unit.Dp
 ) {
     val context = LocalContext.current
     
@@ -425,7 +450,9 @@ private fun DrawerMainLayout(
                             val intent = Intent(Intent.ACTION_VIEW, "${provider.searchUrl}$query".toUri())
                             context.startActivity(intent)
                         }
-                    }
+                    },
+                    iconSize = iconSize,
+                    fontSize = fontSize
                 )
             } else {
                 val categoryNotifications by viewModel.categoryNotifications.collectAsStateWithLifecycle()
@@ -455,14 +482,18 @@ private fun DrawerMainLayout(
                             }
                             AppGrid(
                                 items = currentGridItems,
-                                columns = 4,
+                                columns = columns,
                                 onFolderClick = onFolderClick,
                                 bottomPadding = if (showCategoryBar && orientation == CategoryOrientation.HORIZONTAL_BOTTOM) 8.dp else 20.dp,
+                                sidePadding = sidePadding,
+                                spacing = layoutConfig.spacing,
                                 modifier = Modifier.weight(1f),
                                 sharedTransitionScope = sharedTransitionScope,
                                 animatedVisibilityScope = animatedVisibilityScope,
                                 useMonochrome = preferences.useMonochromeIcons,
                                 iconPackPackageName = preferences.iconPackPackageName,
+                                iconSize = iconSize,
+                                fontSize = fontSize,
                                 hiddenPackages = preferences.hiddenPackages,
                                 isLocked = preferences.lockLayout,
                                 verticalAnchor = preferences.verticalAnchor,
@@ -556,7 +587,10 @@ private fun DrawerOverlays(
     onDismissFolder: () -> Unit,
     onSetFolderInvisible: (Boolean) -> Unit,
     onShowAppPicker: (Boolean) -> Unit,
-    onSetPendingFolder: (Int) -> Unit
+    onSetPendingFolder: (Int) -> Unit,
+    unitWidth: androidx.compose.ui.unit.Dp,
+    iconSize: androidx.compose.ui.unit.Dp,
+    fontSize: androidx.compose.ui.unit.TextUnit
 ) {
     val density = androidx.compose.ui.platform.LocalDensity.current
 
@@ -596,6 +630,10 @@ private fun DrawerOverlays(
                         folderId = folder.id,
                         label = folder.label,
                         apps = folder.apps,
+                        unitWidth = unitWidth,
+                        unitHeight = unitWidth * 1.2f,
+                        iconSize = iconSize,
+                        fontSize = fontSize,
                         onDismiss = onDismissFolder,
                         onDissolve = { viewModel.dissolveFolder(folder.id) },
                         onAddApps = {
@@ -1005,7 +1043,9 @@ private fun DrawerSearchResults(
     onShortcutClick: (AppShortcut) -> Unit,
     getShortcuts: suspend (String) -> List<AppShortcut>,
     onHideToggle: (String, Boolean) -> Unit,
-    onWebSearch: (String) -> Unit
+    onWebSearch: (String) -> Unit,
+    iconSize: androidx.compose.ui.unit.Dp,
+    fontSize: androidx.compose.ui.unit.TextUnit
 ) {
     SearchResults(
         filteredApps = filteredApps,
@@ -1025,7 +1065,9 @@ private fun DrawerSearchResults(
         getShortcuts = getShortcuts,
         onShortcutClick = onShortcutClick,
         onHideToggle = onHideToggle,
-        onWebSearch = onWebSearch
+        onWebSearch = onWebSearch,
+        iconSize = iconSize,
+        fontSize = fontSize
     )
 }
 
@@ -1294,6 +1336,8 @@ fun AppGrid(
     onFolderClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
     bottomPadding: androidx.compose.ui.unit.Dp = 20.dp,
+    sidePadding: androidx.compose.ui.unit.Dp = 16.dp,
+    spacing: androidx.compose.ui.unit.Dp = 0.dp,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     useMonochrome: Boolean = false,
@@ -1305,6 +1349,8 @@ fun AppGrid(
     badgeStyle: BadgeStyle = BadgeStyle.COUNT,
     showLabel: Boolean = true,
     refreshTrigger: Int = 0,
+    iconSize: androidx.compose.ui.unit.Dp = 56.dp,
+    fontSize: androidx.compose.ui.unit.TextUnit = 13.sp,
     rootCoords: androidx.compose.ui.layout.LayoutCoordinates? = null,
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
@@ -1319,7 +1365,7 @@ fun AppGrid(
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
         reverseLayout = false,
-        contentPadding = PaddingValues(bottom = bottomPadding, start = 8.dp, end = 8.dp),
+        contentPadding = PaddingValues(bottom = bottomPadding, start = sidePadding - (spacing / 2f), end = sidePadding - (spacing / 2f)),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = if (verticalAnchor == VerticalAnchor.BOTTOM) {
             Arrangement.spacedBy(16.dp, Alignment.Bottom)
@@ -1370,6 +1416,7 @@ fun AppGrid(
                                         isDragConfirmed = false
                                         val currentPos = itemPosition.value
                                         dragInfo.dragPosition = rootCoords?.windowToLocal(currentPos) ?: currentPos
+                                        
                                         dragInfo.grabOffset = offset
                                         if (drawerItem is DrawerItem.App) {
                                             dragInfo.draggableItem = drawerItem.appModel
@@ -1498,6 +1545,8 @@ fun AppGrid(
                                     app = drawerItem.appModel,
                                     sharedTransitionScope = sharedTransitionScope,
                                     animatedVisibilityScope = animatedVisibilityScope,
+                                    iconSize = iconSize,
+                                    fontSize = fontSize,
                                     useMonochrome = useMonochrome,
                                     iconPackPackageName = iconPackPackageName,
                                     isHidden = drawerItem.appModel.packageName in hiddenPackages,
@@ -1542,6 +1591,8 @@ fun AppGrid(
                                 FolderItem(
                                     label = drawerItem.label,
                                     apps = drawerItem.apps,
+                                    iconSize = iconSize,
+                                    fontSize = fontSize,
                                     useMonochrome = useMonochrome,
                                     showLabel = showLabel,
                                     isHovered = isHoveredByDrag,
@@ -1584,7 +1635,9 @@ fun SearchResults(
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: (String, Boolean) -> Unit = { _, _ -> },
-    onWebSearch: (String) -> Unit
+    onWebSearch: (String) -> Unit,
+    iconSize: androidx.compose.ui.unit.Dp = 56.dp,
+    fontSize: androidx.compose.ui.unit.TextUnit = 13.sp
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -1611,6 +1664,8 @@ fun SearchResults(
                                 app = app,
                                 sharedTransitionScope = sharedTransitionScope,
                                 animatedVisibilityScope = animatedVisibilityScope,
+                                iconSize = iconSize,
+                                fontSize = fontSize,
                                 useMonochrome = useMonochrome,
                                 iconPackPackageName = iconPackPackageName,
                                 isHidden = app.packageName in hiddenPackages,
@@ -1654,6 +1709,8 @@ fun SearchResults(
                     hasNotification = badgeStyle != BadgeStyle.NONE && app.packageName in activeNotifications.keys,
                     notificationCount = if (badgeStyle == BadgeStyle.COUNT) activeNotifications[app.packageName] ?: 0 else 0,
                     showLabel = showLabel,
+                    iconSize = iconSize,
+                    fontSize = fontSize,
                     sharedElementKeyPrefix = "search",
                     refreshTrigger = refreshTrigger,
                     getShortcuts = getShortcuts,

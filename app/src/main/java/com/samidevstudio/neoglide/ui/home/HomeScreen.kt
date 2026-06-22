@@ -58,7 +58,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -80,6 +79,7 @@ import com.samidevstudio.neoglide.ui.components.WidgetPickerDialog
 import com.samidevstudio.neoglide.ui.drawer.DrawerScreen
 import com.samidevstudio.neoglide.ui.settings.SettingsSheet
 import com.samidevstudio.neoglide.ui.utils.HapticEngine
+import com.samidevstudio.neoglide.ui.utils.LayoutManager
 import com.samidevstudio.neoglide.ui.utils.rememberHapticFeedback
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -264,7 +264,6 @@ fun HomeScreen(
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 24.dp)
                         .onGloballyPositioned { gridCoords = it }
                         .pointerInput(Unit) {
                             detectTapGestures(
@@ -290,9 +289,13 @@ fun HomeScreen(
                             )
                         }
                 ) {
-                    val columns = preferences.gridSize.getColumnCount(maxWidth.value)
-                    val unitWidth = maxWidth / columns.toFloat()
-                    val unitHeight = unitWidth // SQUARE GRID!
+                    val layoutConfig = LayoutManager.calculateConfig(maxWidth, preferences.gridSize)
+                    val columns = layoutConfig.columns
+                    val unitWidth = layoutConfig.unitWidth
+                    val unitHeight = layoutConfig.unitHeight
+                    val iconSize = layoutConfig.iconSize
+                    val fontSize = layoutConfig.fontSize
+                    val sidePadding = layoutConfig.sidePadding
                     
                     val availableHeight = maxHeight
                     val maxRows = (availableHeight / unitHeight).toInt().coerceAtLeast(1)
@@ -307,11 +310,20 @@ fun HomeScreen(
 
                     val showLabels = (preferences.appLabelMode == AppLabelMode.HOME_ONLY) || (preferences.appLabelMode == AppLabelMode.BOTH)
 
+                    // HELPER: Get visual column (accounts for distributed dock)
+                    fun getVisualColumn(item: HomeItem): Float {
+                        return if (item.row >= 99f) {
+                            val dockItems = homeItems.filter { it.row >= 99f }.sortedBy { it.column }
+                            val index = dockItems.indexOfFirst { it.uniqueKey == item.uniqueKey }
+                            LayoutManager.getDistributedColumn(index, dockItems.size, columns)
+                        } else item.column
+                    }
+
                     // DRAG LOGIC REFINEMENT: Update bounds in response to dragOffset changes
                     fun calculateTargetBounds(fingerPosition: androidx.compose.ui.geometry.Offset, spanX: Float = 1f, spanY: Float = 1f): RectBounds {
                         // Use finger position as the logical center of the snap target for better "under finger" feel
                         // This makes the ghost target follow the finger's center regardless of grab point
-                        val centerX = fingerPosition.x
+                        val centerX = fingerPosition.x - with(density) { (sidePadding - (layoutConfig.spacing / 2f)).toPx() }
                         val centerY = fingerPosition.y - topOffsetPx
                         
                         // SNAP TO SUBGRID: Universal half-unit snapping (factor 2)
@@ -412,7 +424,8 @@ fun HomeScreen(
                                     }
 
                                     // Check if item's rect intersects with dragTargetBounds
-                                    val itemRect = android.graphics.RectF(item.column, effectiveRow, item.column + item.spanX, effectiveRow + item.spanY)
+                                    val visualCol = getVisualColumn(item)
+                                    val itemRect = android.graphics.RectF(visualCol, effectiveRow, visualCol + item.spanX, effectiveRow + item.spanY)
                                     val shadowRect = android.graphics.RectF(bounds.col, bounds.row, bounds.col + bounds.spanX, bounds.row + bounds.spanY)
                                     
                                     android.graphics.RectF.intersects(itemRect, shadowRect)
@@ -492,6 +505,8 @@ fun HomeScreen(
                                     app = draggingAppFromFolder!!,
                                     sharedTransitionScope = sharedTransitionScope,
                                     animatedVisibilityScope = animatedVisibilityScope,
+                                    iconSize = iconSize,
+                                    fontSize = fontSize,
                                     useMonochrome = preferences.useMonochromeIcons,
                                     iconPackPackageName = preferences.iconPackPackageName,
                                     showLabel = false,
@@ -507,8 +522,8 @@ fun HomeScreen(
                                             app = item.appModel,
                                             sharedTransitionScope = sharedTransitionScope,
                                             animatedVisibilityScope = animatedVisibilityScope,
-                                            iconSize = preferences.gridSize.iconSizeDp.dp,
-                                            fontSize = preferences.gridSize.fontSizeSp.sp,
+                                            iconSize = iconSize,
+                                            fontSize = fontSize,
                                             useMonochrome = preferences.useMonochromeIcons,
                                             iconPackPackageName = preferences.iconPackPackageName,
                                             showLabel = showLabels,
@@ -522,8 +537,8 @@ fun HomeScreen(
                                         FolderItem(
                                             label = item.label,
                                             apps = item.apps,
-                                            iconSize = preferences.gridSize.iconSizeDp.dp,
-                                            fontSize = preferences.gridSize.fontSizeSp.sp,
+                                            iconSize = iconSize,
+                                            fontSize = fontSize,
                                             useMonochrome = preferences.useMonochromeIcons,
                                             showLabel = showLabels,
                                             onClick = { },
@@ -558,7 +573,7 @@ fun HomeScreen(
 
                     // GHOST TARGET VISUAL
                     val ghostTargetX by animateDpAsState(
-                        targetValue = dragTargetBounds?.let { unitWidth * it.col } ?: 0.dp,
+                        targetValue = dragTargetBounds?.let { sidePadding - (layoutConfig.spacing / 2f) + (unitWidth * it.col) } ?: 0.dp,
                         animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),
                         label = "ghostX"
                     )
@@ -609,8 +624,15 @@ fun HomeScreen(
                                             .onGloballyPositioned { itemCoords = it }
                                             .offset {
                                                 val adaptiveRow = if (item.row >= 99f) (maxRows - 1).toFloat() else item.row
+                                                val baseCol = if (item.row >= 99f) {
+                                                    // DOCK DISTRIBUTION logic
+                                                    val dockItems = homeItems.filter { it.row >= 99f }.sortedBy { it.column }
+                                                    val index = dockItems.indexOf(item)
+                                                    LayoutManager.getDistributedColumn(index, dockItems.size, columns)
+                                                } else item.column
+
                                                 androidx.compose.ui.unit.IntOffset(
-                                                    (unitWidthPx * item.column).roundToInt(),
+                                                    (sidePadding.toPx() - (layoutConfig.spacing.toPx() / 2f) + unitWidthPx * baseCol).roundToInt(),
                                                     (topOffsetPx + unitHeightPx * adaptiveRow).roundToInt()
                                                 )
                                             }
@@ -632,8 +654,9 @@ fun HomeScreen(
 
                                                             grabPoint = offset
                                                             val initialAdaptiveRow = if (item.row >= 99f) (maxRows - 1).toFloat() else item.row
+                                                            val initialVisualCol = getVisualColumn(item)
                                                             dragOffset = androidx.compose.ui.geometry.Offset(
-                                                                unitWidthPx * item.column,
+                                                                with(density) { (sidePadding - (layoutConfig.spacing / 2f)).toPx() } + unitWidthPx * initialVisualCol,
                                                                 topOffsetPx + unitHeightPx * initialAdaptiveRow
                                                             )
                                                             
@@ -665,7 +688,8 @@ fun HomeScreen(
                                                         } else {
                                                             appMenuLabel = app.label
                                                             showAppMenuId = item.id
-                                                            val iconLeft = (unitWidth * item.column)
+                                                            val visualCol = getVisualColumn(item)
+                                                            val iconLeft = sidePadding - (layoutConfig.spacing / 2f) + (unitWidth * visualCol)
                                                             val iconTop = verticalPadding + (unitHeight * item.row)
 
                                                             val menuH = 150.dp
@@ -701,8 +725,8 @@ fun HomeScreen(
                                         app = app,
                                         sharedTransitionScope = sharedTransitionScope,
                                         animatedVisibilityScope = animatedVisibilityScope,
-                                        iconSize = preferences.gridSize.iconSizeDp.dp,
-                                        fontSize = preferences.gridSize.fontSizeSp.sp,
+                                        iconSize = iconSize,
+                                        fontSize = fontSize,
                                         useMonochrome = preferences.useMonochromeIcons,
                                         iconPackPackageName = preferences.iconPackPackageName,
                                         isHidden = app.packageName in preferences.hiddenPackages,
@@ -746,8 +770,14 @@ fun HomeScreen(
                                         .onGloballyPositioned { itemCoords = it }
                                         .offset {
                                             val adaptiveRow = if (item.row >= 99f) (maxRows - 1).toFloat() else item.row
+                                            val baseCol = if (item.row >= 99f) {
+                                                val dockItems = homeItems.filter { it.row >= 99f }.sortedBy { it.column }
+                                                val index = dockItems.indexOf(item)
+                                                LayoutManager.getDistributedColumn(index, dockItems.size, columns)
+                                            } else item.column
+
                                             androidx.compose.ui.unit.IntOffset(
-                                                (unitWidthPx * item.column).roundToInt(),
+                                                (sidePadding.toPx() - (layoutConfig.spacing.toPx() / 2f) + unitWidthPx * baseCol).roundToInt(),
                                                 (topOffsetPx + unitHeightPx * adaptiveRow).roundToInt()
                                             )
                                         }
@@ -768,8 +798,9 @@ fun HomeScreen(
 
                                                         grabPoint = offset
                                                         val initialAdaptiveRow = if (item.row >= 99f) (maxRows - 1).toFloat() else item.row
+                                                        val initialVisualCol = getVisualColumn(item)
                                                         dragOffset = androidx.compose.ui.geometry.Offset(
-                                                            unitWidthPx * item.column,
+                                                            with(density) { (sidePadding - (layoutConfig.spacing / 2f)).toPx() } + unitWidthPx * initialVisualCol,
                                                             topOffsetPx + unitHeightPx * initialAdaptiveRow
                                                         )
 
@@ -801,7 +832,8 @@ fun HomeScreen(
                                                         } else {
                                                             showFolderMenuLabel = item.label
                                                             showFolderMenuId = item.id
-                                                            val iconLeft = (unitWidth * item.column)
+                                                            val visualCol = getVisualColumn(item)
+                                                            val iconLeft = sidePadding - (layoutConfig.spacing / 2f) + (unitWidth * visualCol)
                                                             val iconTop = verticalPadding + (unitHeight * item.row)
 
                                                             val menuH = 100.dp
@@ -833,8 +865,8 @@ fun HomeScreen(
                                     FolderItem(
                                         label = item.label,
                                         apps = item.apps,
-                                        iconSize = preferences.gridSize.iconSizeDp.dp,
-                                        fontSize = preferences.gridSize.fontSizeSp.sp,
+                                        iconSize = iconSize,
+                                        fontSize = fontSize,
                                         useMonochrome = preferences.useMonochromeIcons,
                                         showLabel = showLabels,
                                         isHovered = hoveredUniqueKey == item.uniqueKey,
@@ -874,7 +906,7 @@ fun HomeScreen(
                                     isBlocked = item.uniqueKey in blockedUniqueKeys,
                                     onHapticFeedback = hapticFeedback,
                                     modifier = Modifier
-                                        .offset(y = verticalPadding)
+                                        .offset(x = sidePadding - (layoutConfig.spacing / 2f), y = verticalPadding)
                                         .zIndex(if (isCurrentEditing) 1f else 0f),
                                     onDragStart = {
                                         if (!preferences.lockLayout) {
@@ -895,7 +927,7 @@ fun HomeScreen(
                                     },
                                     onLongClick = {
                                         if (!preferences.lockLayout) {
-                                            val widgetLeft = (unitWidth * item.column) + 4.dp
+                                            val widgetLeft = sidePadding - (layoutConfig.spacing / 2f) + (unitWidth * item.column) + 4.dp
                                             val widgetTop = verticalPadding + (unitHeight * item.row) + 4.dp
                                             val widgetWidth = (unitWidth * item.spanX) - 8.dp
                                             val widgetHeight = (unitHeight * item.spanY) - 8.dp
@@ -973,7 +1005,7 @@ fun HomeScreen(
                         onDismissRequest = { showContextMenu = false },
                         offset = contextMenuOffset,
                         onOpenWidgets = {
-                            val xPx = with(density) { contextMenuOffset.x.toPx() }
+                            val xPx = with(density) { (contextMenuOffset.x - (sidePadding - (layoutConfig.spacing / 2f))).toPx() }
                             val yPx = with(density) { (contextMenuOffset.y - verticalPadding).toPx() }
                             val unitWidthPx = with(density) { unitWidth.toPx() }
                             val unitHeightPx = with(density) { unitHeight.toPx() }
@@ -985,7 +1017,7 @@ fun HomeScreen(
                             showWidgetPicker = true
                         },
                         onAddApp = {
-                            val xPx = with(density) { contextMenuOffset.x.toPx() }
+                            val xPx = with(density) { (contextMenuOffset.x - (sidePadding - (layoutConfig.spacing / 2f))).toPx() }
                             val yPx = with(density) { (contextMenuOffset.y - verticalPadding).toPx() }
                             val unitWidthPx = with(density) { unitWidth.toPx() }
                             val unitHeightPx = with(density) { unitHeight.toPx() }
@@ -1080,6 +1112,8 @@ fun HomeScreen(
                                 apps = expandedFolder.apps,
                                 unitWidth = unitWidth,
                                 unitHeight = unitHeight,
+                                iconSize = iconSize,
+                                fontSize = fontSize,
                                 onDismiss = { 
                                     expandedFolderId = -1
                                     autoFocusFolderName = false
