@@ -164,9 +164,9 @@ class HomeViewModel @Inject constructor(
                     val screenWidthDp = context.resources.configuration.screenWidthDp
                     val screenHeightDp = context.resources.configuration.screenHeightDp
                     
-                    val layoutConfig = LayoutManager.calculateConfig(screenWidthDp.dp, size)
-                    val columns = layoutConfig.columns
-                    val maxRows = (screenHeightDp / layoutConfig.unitHeight.value).toInt().coerceAtLeast(1)
+                    val layoutConfig = LayoutManager.calculateConfig(screenWidthDp.dp, screenHeightDp.dp, size)
+                    val columns = layoutConfig.totalColumns.toInt()
+                    val maxRows = layoutConfig.totalRows.toInt()
                     
                     // Only sanitize if the grid actually shrank
                     if ((lastColumns != -1) && ((columns < lastColumns) || (maxRows < lastMaxRows))) {
@@ -182,12 +182,32 @@ class HomeViewModel @Inject constructor(
     private suspend fun provisionDefaultHomeApps() {
         val coreApps = appRepository.getCoreAppsForProvisioning()
         if (coreApps.isNotEmpty()) {
+            val prefs = userPreferencesRepository.userPreferencesFlow.first()
+            val screenWidthDp = context.resources.configuration.screenWidthDp
+            val screenHeightDp = context.resources.configuration.screenHeightDp
+            val layoutConfig = LayoutManager.calculateConfig(screenWidthDp.dp, screenHeightDp.dp, prefs.gridSize)
+            val snapFactor = LayoutManager.SNAP_FACTOR
+            
+            val appCount = coreApps.size
+
             coreApps.forEachIndexed { index, packageName ->
+                // Calculate symmetric center position for core apps
+                // We center the group of apps within the CORE 5 columns.
+                // Note: Coordinates are now relative to the Core Grid (bold lines).
+                val startCol = (5f - appCount.coerceAtMost(5)) / 2f
+                
+                // Deterministic placement on the dock (last whole integer row)
+                val rawCol = startCol + index
+                val rawRow = LayoutManager.getDockRow(layoutConfig.totalRows)
+                
+                // Snap to 0.25 precision
+                val snappedCol = Math.round(rawCol * snapFactor) / snapFactor
+                
                 homeRepository.addHomeApp(
                     com.samidevstudio.neoglide.data.local.entity.HomeAppEntity(
                         packageName = packageName,
-                        row = 99f, // Sentinel value for adaptive bottom snapping
-                        column = index.toFloat()
+                        row = rawRow,
+                        column = snappedCol
                     )
                 )
             }
@@ -392,10 +412,13 @@ class HomeViewModel @Inject constructor(
                     var foundRow = -1f
                     var foundCol = -1f
                     
-                    outer@for (r in 0 until maxRows) {
-                        for (c in 0 until columns) {
-                            val row = r.toFloat()
-                            val col = c.toFloat()
+                    val snapFactor = LayoutManager.SNAP_FACTOR
+                    val step = 1f / snapFactor
+
+                    outer@for (rowIdx in 0 until (maxRows * snapFactor).toInt()) {
+                        for (colIdx in 0 until (columns * snapFactor).toInt()) {
+                            val row = rowIdx * step
+                            val col = colIdx * step
                             
                             if (col + item.spanX > columns || row + effectiveSpanY > maxRows) continue
                             
@@ -462,11 +485,14 @@ class HomeViewModel @Inject constructor(
             return prefRow to prefCol
         }
 
-        // 2. Scan entire grid
-        for (r in 0 until maxRows) {
-            for (c in 0 until columns) {
-                val row = r.toFloat()
-                val col = c.toFloat()
+        // 2. Scan entire grid with fractional steps
+        val snapFactor = LayoutManager.SNAP_FACTOR
+        val step = 1f / snapFactor
+
+        for (rowIdx in 0 until (maxRows * snapFactor).toInt()) {
+            for (colIdx in 0 until (columns * snapFactor).toInt()) {
+                val row = rowIdx * step
+                val col = colIdx * step
                 
                 // Stay within grid bounds
                 if (col + spanX > columns.toFloat() || row + spanY > maxRows.toFloat()) continue
@@ -499,15 +525,7 @@ class HomeViewModel @Inject constructor(
                 else -> item.row
             }
 
-            val visualCol = if (item.row >= 99f) {
-                val dockItems = currentItems.filter { it.row >= 99f }.sortedBy { it.column }
-                val index = dockItems.indexOfFirst { it.uniqueKey == item.uniqueKey }
-                // Calculate columns based on current screen width
-                val screenWidthDp = context.resources.configuration.screenWidthDp
-                val densitySetting = preferences.value.gridSize
-                val columns = LayoutManager.calculateConfig(screenWidthDp.dp, densitySetting).columns
-                LayoutManager.getDistributedColumn(index, dockItems.size, columns)
-            } else item.column
+            val visualCol = item.column
 
             val itemRect = android.graphics.RectF(visualCol, effectiveRow, visualCol + item.spanX, effectiveRow + item.spanY)
             
@@ -515,13 +533,14 @@ class HomeViewModel @Inject constructor(
                 // Potential merge if both are apps and overlap is significant (e.g. centers are close)
                 if (draggedItem is HomeItem.App) {
                     if (item is HomeItem.App) {
-                        val distSq = (newRow - effectiveRow) * (newRow - effectiveRow) + (newCol - item.column) * (newCol - item.column)
-                        if (distSq < 0.25f) { // roughly 0.5 unit distance
+                        val distSq = (newRow - effectiveRow) * (newRow - effectiveRow) + (newCol - visualCol) * (newCol - visualCol)
+                        // Tighter threshold for finer grid: 0.25 radius (distSq < 0.0625)
+                        if (distSq < 0.0625f) {
                             return CollisionResult.MergeApps(item)
                         }
                     } else if (item is HomeItem.Folder) {
-                        val distSq = (newRow - effectiveRow) * (newRow - effectiveRow) + (newCol - item.column) * (newCol - item.column)
-                        if (distSq < 0.25f) {
+                        val distSq = (newRow - effectiveRow) * (newRow - effectiveRow) + (newCol - visualCol) * (newCol - visualCol)
+                        if (distSq < 0.0625f) {
                             return CollisionResult.AddToFolder(item)
                         }
                     }
@@ -569,15 +588,17 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun addHomeApp(packageName: String, row: Float, col: Float, maxRows: Int = 10) {
+    fun addHomeApp(packageName: String, row: Float, col: Float) {
         viewModelScope.launch {
             val prefs = userPreferencesRepository.userPreferencesFlow.first()
             val screenWidthDp = context.resources.configuration.screenWidthDp
+            val screenHeightDp = context.resources.configuration.screenHeightDp
             
-            val layoutConfig = LayoutManager.calculateConfig(screenWidthDp.dp, prefs.gridSize)
-            val columns = layoutConfig.columns
+            val layoutConfig = LayoutManager.calculateConfig(screenWidthDp.dp, screenHeightDp.dp, prefs.gridSize)
+            val columns = layoutConfig.totalColumns.toInt()
+            val effectiveMaxRows = layoutConfig.totalRows.toInt()
 
-            val (finalRow, finalCol) = findAvailableSpace(row, col, 1f, 1f, maxRows, columns) ?: run {
+            val (finalRow, finalCol) = findAvailableSpace(row, col, 1f, 1f, effectiveMaxRows, columns) ?: run {
                 _uiEvent.emit(UiEvent.ShowToast("Home screen is full"))
                 return@launch
             }
@@ -596,7 +617,7 @@ class HomeViewModel @Inject constructor(
         return appWidgetHost.allocateAppWidgetId()
     }
 
-    fun completeWidgetConfiguration(widgetId: Int, maxRows: Int = 10) {
+    fun completeWidgetConfiguration(widgetId: Int) {
         viewModelScope.launch {
             val info = try {
                 appWidgetManager.getAppWidgetInfo(widgetId)
@@ -608,10 +629,11 @@ class HomeViewModel @Inject constructor(
             // Use current grid preferences for span calculation
             val prefs = userPreferencesRepository.userPreferencesFlow.first()
             val screenWidthDp = context.resources.configuration.screenWidthDp
+            val screenHeightDp = context.resources.configuration.screenHeightDp
             
-            val layoutConfig = LayoutManager.calculateConfig(screenWidthDp.dp, prefs.gridSize)
-            val columns = layoutConfig.columns
-            val unitSizeDp = layoutConfig.iconSize.value // Use icon size for span logic or unitWidth?
+            val layoutConfig = LayoutManager.calculateConfig(screenWidthDp.dp, screenHeightDp.dp, prefs.gridSize)
+            val columns = layoutConfig.totalColumns.toInt()
+            val effectiveMaxRows = layoutConfig.totalRows.toInt()
             // Widget spans are usually based on the full cell size including gaps
             val cellWidthDp = layoutConfig.unitWidth.value
             
@@ -622,7 +644,7 @@ class HomeViewModel @Inject constructor(
             val preferredCol = _pendingWidgetCol.value
             
             val (finalRow, finalCol) = findAvailableSpace(
-                preferredRow, preferredCol, spanX, spanY, maxRows
+                preferredRow, preferredCol, spanX, spanY, effectiveMaxRows, columns
             ) ?: run {
                 _uiEvent.emit(UiEvent.ShowToast("Home screen is full"))
                 appWidgetHost.deleteAppWidgetId(widgetId)

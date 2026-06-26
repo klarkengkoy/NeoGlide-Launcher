@@ -166,10 +166,11 @@ fun NeoGlideWidgetHost(
 
     LaunchedEffect(visualRect, activeHandle) {
         if (activeHandle != Handle.NONE) {
-            val finalRow = ((visualRect[0]) * 2).roundToInt() / 2f
-            val finalCol = ((visualRect[1]) * 2).roundToInt() / 2f
-            val finalSpanX = (visualRect[2] * 2).roundToInt() / 2f
-            val finalSpanY = (visualRect[3] * 2).roundToInt() / 2f
+            val snapFactor = com.samidevstudio.neoglide.ui.utils.LayoutManager.SNAP_FACTOR
+            val finalRow = ((visualRect[0]) * snapFactor).roundToInt() / snapFactor
+            val finalCol = ((visualRect[1]) * snapFactor).roundToInt() / snapFactor
+            val finalSpanX = (visualRect[2] * snapFactor).roundToInt() / snapFactor
+            val finalSpanY = (visualRect[3] * snapFactor).roundToInt() / snapFactor
 
             if (finalRow != lastSnappedRow || finalCol != lastSnappedCol ||
                 finalSpanX != lastSnappedSpanX || finalSpanY != lastSnappedSpanY) {
@@ -234,8 +235,9 @@ fun NeoGlideWidgetHost(
                             if (isDragConfirmed) {
                                 onHapticFeedback(HapticEngine.HapticType.DRAG_END)
                                 val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
-                                val finalRow = ((base.row + dragDeltaY / unitHeightPx) * 2).roundToInt() / 2f
-                                val finalCol = ((base.col + dragDeltaX / unitWidthPx) * 2).roundToInt() / 2f
+                                val snapFactor = com.samidevstudio.neoglide.ui.utils.LayoutManager.SNAP_FACTOR
+                                val finalRow = ((base.row + dragDeltaY / unitHeightPx) * snapFactor).roundToInt() / snapFactor
+                                val finalCol = ((base.col + dragDeltaX / unitWidthPx) * snapFactor).roundToInt() / snapFactor
 
                                 currentOnResize(
                                     finalRow.coerceAtLeast(0f),
@@ -292,10 +294,10 @@ fun NeoGlideWidgetHost(
                         }
                     },
                     update = { view ->
-                        // Flickering Fix: Only update size when we snap to half-grid
-                        // This prevents requesting the widget to redraw for every pixel of drag
-                        val snapW = (visualRect[2] * 2).roundToInt() / 2f
-                        val snapH = (visualRect[3] * 2).roundToInt() / 2f
+                        // Flickering Fix: Only update size when we snap to grid
+                        val snapFactor = com.samidevstudio.neoglide.ui.utils.LayoutManager.SNAP_FACTOR
+                        val snapW = (visualRect[2] * snapFactor).roundToInt() / snapFactor
+                        val snapH = (visualRect[3] * snapFactor).roundToInt() / snapFactor
                         
                         val w = ((unitWidth * snapW) - 8.dp).value.toInt()
                         val h = ((unitHeight * snapH) - 8.dp).value.toInt()
@@ -335,8 +337,9 @@ else if (content != null) {
                                 onDragEnd = {
                                     if (isDragConfirmed) {
                                         val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
-                                        val finalRow = ((base.row + dragDeltaY / unitHeightPx) * 2).roundToInt() / 2f
-                                        val finalCol = ((base.col + dragDeltaX / unitWidthPx) * 2).roundToInt() / 2f
+                                        val snapFactor = com.samidevstudio.neoglide.ui.utils.LayoutManager.SNAP_FACTOR
+                                        val finalRow = ((base.row + dragDeltaY / unitHeightPx) * snapFactor).roundToInt() / snapFactor
+                                        val finalCol = ((base.col + dragDeltaX / unitWidthPx) * snapFactor).roundToInt() / snapFactor
 
                                         currentOnResize(
                                             finalRow.coerceAtLeast(0f),
@@ -378,7 +381,8 @@ else if (content != null) {
                 ResizeHandle(Alignment.TopCenter, Modifier.align(Alignment.TopCenter).zIndex(2f), unitWidth, unitHeight, visualRect, activeHandle == Handle.TOP) { h, d, e ->
                     if (e) {
                         val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
-                        val finalSpanY = ((base.spanY - dragDeltaY / unitHeightPx) * 2).roundToInt() / 2f
+                        val snapFactor = com.samidevstudio.neoglide.ui.utils.LayoutManager.SNAP_FACTOR
+                        val finalSpanY = ((base.spanY - dragDeltaY / unitHeightPx) * snapFactor).roundToInt() / snapFactor
                         val clampedSpanY = finalSpanY.coerceAtLeast(0.5f)
                         val adjustedRow = (base.row + base.spanY - clampedSpanY).coerceAtLeast(0f)
                         currentOnResize(adjustedRow, base.col, base.spanX, clampedSpanY)
@@ -397,7 +401,8 @@ else if (content != null) {
                 ResizeHandle(Alignment.BottomCenter, Modifier.align(Alignment.BottomCenter).zIndex(2f), unitWidth, unitHeight, visualRect, activeHandle == Handle.BOTTOM) { h, d, e ->
                     if (e) {
                         val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
-                        val finalSpanY = ((base.spanY + dragDeltaY / unitHeightPx) * 2).roundToInt() / 2f
+                        val snapFactor = com.samidevstudio.neoglide.ui.utils.LayoutManager.SNAP_FACTOR
+                        val finalSpanY = ((base.spanY + dragDeltaY / unitHeightPx) * snapFactor).roundToInt() / snapFactor
                         currentOnResize(base.row, base.col, base.spanX, finalSpanY.coerceAtLeast(0.5f))
                         activeHandle = Handle.NONE; dragDeltaY = 0f; initialSnapshot = null
                     } else {
@@ -414,7 +419,8 @@ else if (content != null) {
                 ResizeHandle(Alignment.CenterStart, Modifier.align(Alignment.CenterStart).zIndex(2f), unitWidth, unitHeight, visualRect, activeHandle == Handle.LEFT) { h, d, e ->
                     if (e) {
                         val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
-                        val finalSpanX = ((base.spanX - dragDeltaX / unitWidthPx) * 2).roundToInt() / 2f
+                        val snapFactor = com.samidevstudio.neoglide.ui.utils.LayoutManager.SNAP_FACTOR
+                        val finalSpanX = ((base.spanX - dragDeltaX / unitWidthPx) * snapFactor).roundToInt() / snapFactor
                         val clampedSpanX = finalSpanX.coerceAtLeast(0.5f)
                         val adjustedCol = (base.col + base.spanX - clampedSpanX).coerceAtLeast(0f)
                         currentOnResize(base.row, adjustedCol, clampedSpanX, base.spanY)
@@ -433,7 +439,8 @@ else if (content != null) {
                 ResizeHandle(Alignment.CenterEnd, Modifier.align(Alignment.CenterEnd).zIndex(2f), unitWidth, unitHeight, visualRect, activeHandle == Handle.RIGHT) { h, d, e ->
                     if (e) {
                         val base = initialSnapshot ?: WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
-                        val finalSpanX = ((base.spanX + dragDeltaX / unitWidthPx) * 2).roundToInt() / 2f
+                        val snapFactor = com.samidevstudio.neoglide.ui.utils.LayoutManager.SNAP_FACTOR
+                        val finalSpanX = ((base.spanX + dragDeltaX / unitWidthPx) * snapFactor).roundToInt() / snapFactor
                         currentOnResize(base.row, base.col, finalSpanX.coerceAtLeast(0.5f), base.spanY)
                         activeHandle = Handle.NONE; dragDeltaX = 0f; initialSnapshot = null
                     } else {

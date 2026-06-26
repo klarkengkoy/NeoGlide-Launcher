@@ -276,9 +276,14 @@ private fun DrawerContent(
         }
     }
 
-    val screenWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
-    val layoutConfig = remember(preferences.gridSize, screenWidthDp) {
-        LayoutManager.calculateConfig(screenWidthDp.dp, preferences.gridSize)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
+    val containerSize = windowInfo.containerSize
+    val screenWidthDp = with(density) { containerSize.width.toDp() }
+    val screenHeightDp = with(density) { containerSize.height.toDp() }
+
+    val layoutConfig = remember(preferences.gridSize, screenWidthDp, screenHeightDp) {
+        LayoutManager.calculateConfig(screenWidthDp, screenHeightDp, preferences.gridSize)
     }
     
     val columns = layoutConfig.columns
