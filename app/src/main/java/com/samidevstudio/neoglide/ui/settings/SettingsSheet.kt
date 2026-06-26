@@ -2154,9 +2154,10 @@ fun GridSettingsDialog(
                     ) {
                         Text(
                             text = when (selectedSize) {
-                                GridSize.SMALL -> "Compact layout with 48dp icons and smaller text. Fits the most items on one screen."
-                                GridSize.MEDIUM -> "Standard layout with 56dp icons. Balanced density for most users."
-                                GridSize.LARGE -> "Comfortable layout with 64dp icons and larger text. Ideal for easy visibility."
+                                GridSize.TINY -> "Maximum density with 48dp icons. Ideal for users who want to fit as much as possible on one screen."
+                                GridSize.SMALL -> "Compact layout with 60dp icons. A balance between density and visibility."
+                                GridSize.MEDIUM -> "Standard layout with 72dp icons. The recommended size for most modern displays."
+                                GridSize.LARGE -> "Comfortable layout with 84dp icons and larger text. Ideal for maximum ease of use."
                             },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface

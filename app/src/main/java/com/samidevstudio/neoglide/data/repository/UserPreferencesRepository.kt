@@ -29,7 +29,7 @@ enum class SortingMode {
 }
 
 enum class GridSize {
-    SMALL, MEDIUM, LARGE
+    TINY, SMALL, MEDIUM, LARGE
 }
 
 enum class SearchProvider(val searchUrl: String, val displayName: String) {

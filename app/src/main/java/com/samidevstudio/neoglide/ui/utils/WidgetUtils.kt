@@ -55,18 +55,19 @@ object WidgetUtils {
         val tightFitThreshold = 12f
 
         fun calculateTightSpan(minSize: Float, unitSize: Float): Float {
+            val snapFactor = LayoutManager.SNAP_FACTOR
             val rawSpan = minSize / unitSize
-            // Round to nearest 0.5 first
-            val snappedSpan = Math.round(rawSpan * 2) / 2f
+            // Round to nearest snap increment
+            val snappedSpan = kotlin.math.round(rawSpan * snapFactor) / snapFactor
             
-            // If we are over a 0.5 boundary by less than the threshold, snap down anyway
-            val halfUnitSize = unitSize / 2f
-            val overflow = minSize % halfUnitSize
-            if (overflow > 0 && overflow <= tightFitThreshold && snappedSpan > 0.5f) {
-                return Math.floor((rawSpan * 2).toDouble()).toFloat() / 2f
+            // If we are over a boundary by less than the threshold, snap down anyway
+            val incrementSize = unitSize / snapFactor
+            val overflow = minSize % incrementSize
+            if (overflow > 0 && overflow <= tightFitThreshold && snappedSpan > (1f / snapFactor)) {
+                return kotlin.math.floor((rawSpan * snapFactor).toDouble()).toFloat() / snapFactor
             }
             
-            return snappedSpan.coerceAtLeast(0.5f)
+            return snappedSpan.coerceAtLeast(1f / snapFactor)
         }
 
         val minSpanX = calculateTightSpan(totalMinWidth, unitWidthDp)
@@ -97,13 +98,14 @@ object WidgetUtils {
         
         val tightFitThreshold = 12f
         val rawHeightDp = rawSpanY * unitHeightDp
-        val halfUnitDp = unitHeightDp / 2f
-        val overflow = rawHeightDp % halfUnitDp
+        val snapFactor = LayoutManager.SNAP_FACTOR
+        val incrementDp = unitHeightDp / snapFactor
+        val overflow = rawHeightDp % incrementDp
         
-        val spanY = if (overflow > 0 && overflow <= tightFitThreshold && rawSpanY > 0.5f) {
-            (Math.floor((rawSpanY * 2).toDouble()) / 2f).toFloat()
+        val spanY = if (overflow > 0 && overflow <= tightFitThreshold && rawSpanY > (1f / snapFactor)) {
+            (kotlin.math.floor((rawSpanY * snapFactor).toDouble()) / snapFactor).toFloat()
         } else {
-            Math.round(rawSpanY * 2) / 2f
+            kotlin.math.round(rawSpanY * snapFactor) / snapFactor
         }.coerceIn(0.5f, 15f)
 
         return spanX to spanY

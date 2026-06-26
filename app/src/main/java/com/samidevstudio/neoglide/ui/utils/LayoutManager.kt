@@ -7,108 +7,156 @@ import androidx.compose.ui.unit.sp
 import com.samidevstudio.neoglide.data.repository.GridSize
 import kotlin.math.floor
 
+// UNIVERSAL BASELINE (Design Intent)
+private const val TRAY_MARGIN = 16f // dp from screen edge (Side/Bottom fallback)
+private const val MIN_SPACING = 10f // dp
+
+// OPTICAL WEIGHTING (48dp top safety / 16dp bottom safety)
+private const val TOP_MARGIN = 48f
+private const val BOTTOM_MARGIN = 16f
+private const val VERTICAL_INSET_TOTAL = TOP_MARGIN + BOTTOM_MARGIN
+
+// FIXED SIZE LOOKUP TABLE (Standard Launcher Dimensions)
+private const val TINY_ICON_SIZE = 48f
+private const val TINY_FONT_SIZE = 11f
+
+private const val SMALL_ICON_SIZE = 60f
+private const val SMALL_FONT_SIZE = 12f
+
+private const val MEDIUM_ICON_SIZE = 72f
+private const val MEDIUM_FONT_SIZE = 14f
+
+private const val LARGE_ICON_SIZE = 84f
+private const val LARGE_FONT_SIZE = 16f
+
 object LayoutManager {
-    // UNIVERSAL BASELINE (Design Intent)
-    private const val DEFAULT_COLUMNS = 5
-    private val DEFAULT_ICON_SIZE = 56.dp
-    private val DEFAULT_LABEL_SIZE = 12.sp
-    private val DEFAULT_SPACING = 16.dp
-    private val DEFAULT_SIDE_PADDING = 16.dp
-    private val MIN_ICON_SIZE = 40.dp
+    const val SNAP_FACTOR = 4f
 
     data class LayoutConfig(
-        val columns: Int,
+        val columns: Int, // Whole columns
+        val rows: Int,    // Whole rows
+        val totalColumns: Float, // Full capacity including subgrids (e.g. 5.5)
+        val totalRows: Float,
         val iconSize: Dp,
         val spacing: Dp,
         val fontSize: TextUnit,
         val sidePadding: Dp,
+        val topPadding: Dp,
+        val trayWidth: Dp,
+        val trayHeight: Dp,
         val unitWidth: Dp,
-        val unitHeight: Dp
+        val unitHeight: Dp,
+        val actualGridWidth: Dp,
+        val actualGridHeight: Dp,
+        val snapUnitWidth: Float,
+        val snapUnitHeight: Float,
+        val expansionOffsetW: Float,
+        val expansionOffsetH: Float,
     )
 
-    fun calculateConfig(screenWidthDp: Dp, densitySetting: GridSize): LayoutConfig {
+    fun calculateConfig(screenWidthDp: Dp, screenHeightDp: Dp, densitySetting: GridSize): LayoutConfig {
         val screenWidth = screenWidthDp.value
+        val screenHeight = screenHeightDp.value
         
-        // 1. Calculate space needed for baseline 5 columns
-        val baselineSpaceNeeded = (DEFAULT_COLUMNS * DEFAULT_ICON_SIZE.value) +
-                ((DEFAULT_COLUMNS - 1) * DEFAULT_SPACING.value) +
-                (2 * DEFAULT_SIDE_PADDING.value)
-
-        var adaptedColumns = DEFAULT_COLUMNS
+        // 1. Define the Fixed Tray Dimensions
+        val trayWidthBase = screenWidth - (2 * TRAY_MARGIN)
+        val trayHeightBase = screenHeight - VERTICAL_INSET_TOTAL
         
-        if (baselineSpaceNeeded <= screenWidth) {
-            // PHASE 3A: Surplus (Wide Screen)
-            val surplus = screenWidth - baselineSpaceNeeded
-            // How many extra "cells" (icon + spacing) fit in the surplus?
-            val extraCols = floor(surplus / (DEFAULT_ICON_SIZE.value + DEFAULT_SPACING.value)).toInt()
-            adaptedColumns = DEFAULT_COLUMNS + extraCols
-        } else {
-            // PHASE 3B: Compression (Narrow Screen)
-            var currentCols = DEFAULT_COLUMNS
-            var found = false
-            while (currentCols >= 1 && !found) {
-                val spaceForN = (currentCols * DEFAULT_ICON_SIZE.value) +
-                        ((currentCols - 1) * DEFAULT_SPACING.value) +
-                        (2 * DEFAULT_SIDE_PADDING.value)
-                val scaleFactor = screenWidth / spaceForN
-                val scaledIcon = DEFAULT_ICON_SIZE.value * scaleFactor
-                
-                if (scaledIcon >= MIN_ICON_SIZE.value || currentCols == 1) {
-                    adaptedColumns = currentCols
-                    found = true
-                } else {
-                    currentCols--
-                }
+        // 2. Select Icon Size (Downgrade to fit at least 5 core columns)
+        val sizesToTry = GridSize.entries.asSequence().filter { it.ordinal <= densitySetting.ordinal }.sortedByDescending { it.ordinal }
+        
+        var selectedIconSize = TINY_ICON_SIZE
+        var selectedFontSize = TINY_FONT_SIZE
+        
+        for (setting in sizesToTry) {
+            val (icon, font) = when (setting) {
+                GridSize.TINY -> TINY_ICON_SIZE to TINY_FONT_SIZE
+                GridSize.SMALL -> SMALL_ICON_SIZE to SMALL_FONT_SIZE
+                GridSize.MEDIUM -> MEDIUM_ICON_SIZE to MEDIUM_FONT_SIZE
+                GridSize.LARGE -> LARGE_ICON_SIZE to LARGE_FONT_SIZE
+            }
+            
+            // Check if 5 core columns fit (5 icons + 4 spaces)
+            val coreWidth = (5 * icon) + (4 * MIN_SPACING)
+            if (coreWidth <= trayWidthBase) {
+                selectedIconSize = icon
+                selectedFontSize = font
+                break
             }
         }
 
-        // PHASE 5: Apply Density Modifier
-        val finalColumns = when (densitySetting) {
-            GridSize.MEDIUM -> adaptedColumns
-            GridSize.SMALL -> adaptedColumns + 1
-            GridSize.LARGE -> (adaptedColumns - 1).coerceAtLeast(3)
-        }
+        // 3. Balanced Adaptive Expansion
+        val iconSizeDp = selectedIconSize.dp
+        val spacingDp = MIN_SPACING.dp
+        val fontSizeSp = selectedFontSize.sp
 
-        // RECALCULATE FINAL SIZES to fill width perfectly
-        // available = cols * icon + (cols - 1) * spacing + 2 * side_padding
-        // Keep the ratio between icon and spacing the same as baseline
-        val spacingRatio = DEFAULT_SPACING.value / DEFAULT_ICON_SIZE.value
-        val paddingRatio = DEFAULT_SIDE_PADDING.value / DEFAULT_ICON_SIZE.value
-        
-        // screenWidth = iconSize * (cols + (cols - 1) * spacingRatio + 2 * paddingRatio)
-        val totalUnits = finalColumns + (finalColumns - 1) * spacingRatio + 2 * paddingRatio
-        val finalIconSizeValue = screenWidth / totalUnits
-        
-        val finalIconSize = finalIconSizeValue.dp
-        val finalSpacing = (finalIconSizeValue * spacingRatio).dp
-        val finalSidePadding = (finalIconSizeValue * paddingRatio).dp
-        val finalFontSize = (DEFAULT_LABEL_SIZE.value * (finalIconSizeValue / DEFAULT_ICON_SIZE.value)).sp
+        val unitWidthBase = selectedIconSize + MIN_SPACING
+        val unitHeightBase = unitWidthBase + (selectedFontSize * 1.5f)
+        val snapUnitW = unitWidthBase / SNAP_FACTOR
+        val snapUnitH = unitHeightBase / SNAP_FACTOR
 
-        // unitWidth is the logical bounding box of one "slot" in the grid
-        // It should include the icon width and the gap to the next icon
-        val unitWidth = finalIconSize + finalSpacing
+        // Calculate horizontal expansion (in pairs of snap units)
+        val coreWidth = (5 * selectedIconSize) + (4 * MIN_SPACING)
+        val remainingW = trayWidthBase - coreWidth
+        val pairsW = floor(remainingW / (2 * snapUnitW)).toInt()
+        val expansionOffsetW = pairsW.toFloat() / SNAP_FACTOR
+        val finalColsFloat = 5f + ((2f * pairsW) / SNAP_FACTOR)
+        val actualGridWidth = finalColsFloat * unitWidthBase
+
+        // Calculate vertical expansion (in pairs of snap units)
+        val baseRows = floor(trayHeightBase / unitHeightBase).toInt().coerceAtLeast(1)
+        val remainingH = trayHeightBase - ((baseRows * unitHeightBase) - MIN_SPACING)
+        val pairsH = floor(remainingH / (2 * snapUnitH)).toInt()
+        val expansionOffsetH = pairsH.toFloat() / SNAP_FACTOR
+        val finalRowsFloat = baseRows.toFloat() + (2f * pairsH / SNAP_FACTOR)
+        val actualGridHeight = finalRowsFloat * unitHeightBase
+
+        // 4. Center Everything with Optical Weighting
+        val finalSidePadding = TRAY_MARGIN + (trayWidthBase - actualGridWidth) / 2f
         
-        // For a square grid, unitHeight = unitWidth
-        // If we want more vertical space for labels, we add it here
-        val unitHeight = unitWidth + (finalFontSize.value.dp * 1.5f) // Approximate space for label + padding
+        // The mesh centers itself within the offset tray (48dp top, 16dp bottom)
+        val finalTopPadding = TOP_MARGIN + (trayHeightBase - actualGridHeight) / 2f
+
+        // 5. Symmetric Core Anchors
+        val dockRow = (floor(finalRowsFloat) - 1f).coerceAtLeast(0f)
+
+        android.util.Log.d("LayoutManager", 
+            """
+            SYMMETRY_CHECK:
+            Screen: ${screenWidth}dp x ${screenHeight}dp
+            Mesh: ${actualGridWidth}dp x ${actualGridHeight}dp
+            Expansion Offset: W=$expansionOffsetW, H=$expansionOffsetH
+            Final Padding: Side=${finalSidePadding}dp, Top=${finalTopPadding}dp
+            Dock Row: $dockRow
+        """.trimIndent())
 
         return LayoutConfig(
-            columns = finalColumns,
-            iconSize = finalIconSize,
-            spacing = finalSpacing,
-            fontSize = finalFontSize,
-            sidePadding = finalSidePadding,
-            unitWidth = unitWidth,
-            unitHeight = unitHeight
+            columns = 5, // Core Columns
+            rows = floor(finalRowsFloat).toInt(),
+            totalColumns = finalColsFloat,
+            totalRows = finalRowsFloat,
+            iconSize = iconSizeDp,
+            spacing = spacingDp,
+            fontSize = fontSizeSp,
+            sidePadding = finalSidePadding.dp,
+            topPadding = finalTopPadding.dp,
+            trayWidth = trayWidthBase.dp,
+            trayHeight = trayHeightBase.dp,
+            unitWidth = unitWidthBase.dp,
+            unitHeight = unitHeightBase.dp,
+            actualGridWidth = actualGridWidth.dp,
+            actualGridHeight = actualGridHeight.dp,
+            snapUnitWidth = snapUnitW,
+            snapUnitHeight = snapUnitH,
+            expansionOffsetW = expansionOffsetW,
+            expansionOffsetH = expansionOffsetH
         )
     }
 
     /**
-     * Calculates a distributed column index for items in the bottom dock (row 99).
-     * This spreads a fixed number of items (usually 5) across the entire grid width.
+     * Standardized Dock Row calculation to ensure ViewModel and UI are in sync.
      */
-    fun getDistributedColumn(index: Int, totalItems: Int, columns: Int): Float {
-        if (totalItems <= 1) return (columns - 1) / 2f
-        return index.toFloat() * (columns - 1) / (totalItems - 1).toFloat()
+    fun getDockRow(totalRows: Float): Float {
+        return (floor(totalRows) - 1f).coerceAtLeast(0f)
     }
 }
