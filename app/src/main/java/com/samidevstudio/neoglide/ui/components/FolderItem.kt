@@ -75,25 +75,30 @@ fun FolderItem(
         verticalArrangement = Arrangement.Center
     ) {
         Box(
-            modifier = Modifier
-                .size(iconSize)
-                .clip(CircleShape)
-                .background(if (isBlocked) Color.Red.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            modifier = Modifier.size(iconSize),
             contentAlignment = Alignment.Center
         ) {
-            // 2x2 Grid of mini icons
-            val miniIconSize = (iconSize.value * 0.4f).dp
-            Column(
-                modifier = Modifier.padding((iconSize.value * 0.125f).dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+                    .background(if (isBlocked) Color.Red.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    MiniAppIcon(apps.getOrNull(0), useMonochrome, miniIconSize)
-                    MiniAppIcon(apps.getOrNull(1), useMonochrome, miniIconSize)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    MiniAppIcon(apps.getOrNull(2), useMonochrome, miniIconSize)
-                    MiniAppIcon(apps.getOrNull(3), useMonochrome, miniIconSize)
+                // 2x2 Grid of mini icons
+                val miniIconSize = (iconSize.value * 0.4f).dp
+                Column(
+                    modifier = Modifier.padding((iconSize.value * 0.125f).dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        MiniAppIcon(apps.getOrNull(0), useMonochrome, miniIconSize)
+                        MiniAppIcon(apps.getOrNull(1), useMonochrome, miniIconSize)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        MiniAppIcon(apps.getOrNull(2), useMonochrome, miniIconSize)
+                        MiniAppIcon(apps.getOrNull(3), useMonochrome, miniIconSize)
+                    }
                 }
             }
 
@@ -104,7 +109,7 @@ fun FolderItem(
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .offset(x = 2.dp, y = (-2).dp)
+                            .offset(x = 4.dp, y = (-4).dp)
                             .background(borderColor, CircleShape)
                             .padding(1.5.dp)
                             .background(BadgeRed, CircleShape)
@@ -124,7 +129,7 @@ fun FolderItem(
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(2.dp)
+                            .offset(x = 2.dp, y = (-2).dp)
                             .size(10.dp)
                             .background(borderColor, CircleShape)
                             .padding(1.5.dp)
