@@ -50,9 +50,9 @@ object WidgetUtils {
         val totalMinHeight = (effectiveMinHeight.toFloat() - defaultPadding.top - defaultPadding.bottom).coerceAtLeast(40f)
 
         // "Tight Fit" Logic: 
-        // We allow up to 12dp of "squeezing" if it allows us to snap to a 0.5 unit smaller span.
+        // We allow up to 8dp of "squeezing" if it allows us to snap to a 0.5 unit smaller span.
         // This is safe because most widgets have internal transparent space.
-        val tightFitThreshold = 12f
+        val tightFitThreshold = 8f
 
         fun calculateTightSpan(minSize: Float, unitSize: Float): Float {
             val snapFactor = LayoutManager.SNAP_FACTOR

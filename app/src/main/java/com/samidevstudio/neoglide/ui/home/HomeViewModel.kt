@@ -4,7 +4,6 @@ import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProviderInfo
 import android.content.Context
-import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.samidevstudio.neoglide.data.local.entity.WidgetEntity
@@ -41,7 +40,7 @@ sealed class HomeItem {
     abstract val column: Float
     abstract val spanX: Float
     abstract val spanY: Float
-    
+
     val uniqueKey: String get() = when(this) {
         is App -> "APP_$id"
         is Folder -> "FOLDER_$id"
@@ -163,18 +162,25 @@ class HomeViewModel @Inject constructor(
                 .collect { (size, labelMode) ->
                     val screenWidthDp = context.resources.configuration.screenWidthDp
                     val screenHeightDp = context.resources.configuration.screenHeightDp
-                    
-                    val layoutConfig = LayoutManager.calculateConfig(screenWidthDp.dp, screenHeightDp.dp, size)
-                    val columns = layoutConfig.totalColumns.toInt()
-                    val maxRows = layoutConfig.totalRows.toInt()
-                    
+
+                    // VM STABILITY: Use estimated standard insets to match UI grid capacity
+                    val layoutConfig = LayoutManager.calculateConfig(
+                        screenWidthDp = screenWidthDp.dp, 
+                        screenHeightDp = screenHeightDp.dp, 
+                        densitySetting = size,
+                        topInset = 80.dp,
+                        bottomInset = 48.dp
+                    )
+                    val columns = layoutConfig.totalColumns
+                    val maxRows = layoutConfig.totalRows
+
                     // Only sanitize if the grid actually shrank
                     if ((lastColumns != -1) && ((columns < lastColumns) || (maxRows < lastMaxRows))) {
                         sanitizeGridItems(columns, maxRows)
                     }
-                    
-                    lastColumns = columns
-                    lastMaxRows = maxRows
+
+                    lastColumns = columns.toInt()
+                    lastMaxRows = maxRows.toInt()
                 }
         }
     }
@@ -185,37 +191,43 @@ class HomeViewModel @Inject constructor(
             val prefs = userPreferencesRepository.userPreferencesFlow.first()
             val screenWidthDp = context.resources.configuration.screenWidthDp
             val screenHeightDp = context.resources.configuration.screenHeightDp
-            val layoutConfig = LayoutManager.calculateConfig(screenWidthDp.dp, screenHeightDp.dp, prefs.gridSize)
+            val layoutConfig = LayoutManager.calculateConfig(
+                screenWidthDp = screenWidthDp.dp, 
+                screenHeightDp = screenHeightDp.dp, 
+                densitySetting = prefs.gridSize,
+                topInset = 80.dp,
+                bottomInset = 48.dp
+            )
             val snapFactor = LayoutManager.SNAP_FACTOR
-            
+
             val appCount = coreApps.size
+            val totalCols = layoutConfig.totalColumns
+
+            // Symmetric Balanced Math:
+            // 1. Calculate a unified gap by distributing space across apps AND margins
+            val rawGap = if (appCount > 1) (totalCols - appCount) / appCount else 0f
+            val snappedGap = Math.floor(rawGap.toDouble() * snapFactor).toFloat() / snapFactor
+
+            // 2. Center the group based on this gap and snap the start position
+            val groupWidth = appCount + (appCount - 1) * snappedGap
+            val startCol = Math.round(((totalCols - groupWidth) / 2f) * snapFactor) / snapFactor
 
             coreApps.forEachIndexed { index, packageName ->
-                // Calculate symmetric center position for core apps
-                // We center the group of apps within the CORE 5 columns.
-                // Note: Coordinates are now relative to the Core Grid (bold lines).
-                val startCol = (5f - appCount.coerceAtMost(5)) / 2f
-                
-                // Deterministic placement on the dock (last whole integer row)
-                val rawCol = startCol + index
-                val rawRow = LayoutManager.getDockRow(layoutConfig.totalRows)
-                
-                // Snap to 0.25 precision
-                val snappedCol = Math.round(rawCol * snapFactor) / snapFactor
-                
+                // Calculate position using snapped parameters to ensure grid alignment and symmetry
+                val rawCol = startCol + index * (1f + snappedGap)
+                val rawRow = 99f // Use Dock Marker for dynamic positioning
+
                 homeRepository.addHomeApp(
                     com.samidevstudio.neoglide.data.local.entity.HomeAppEntity(
                         packageName = packageName,
                         row = rawRow,
-                        column = snappedCol
+                        column = rawCol
                     )
                 )
             }
         }
         userPreferencesRepository.setFirstInstallRun(isFirst = false)
     }
-
-
 
     val activeNotifications: StateFlow<Map<String, Int>> = NeoGlideNotificationListener.activeNotifications
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
@@ -254,7 +266,7 @@ class HomeViewModel @Inject constructor(
                 spanY = widget.spanY
             )
         }
-        
+
         val folderItems = folders.map { folderWithApps ->
             HomeItem.Folder(
                 id = folderWithApps.folder.id,
@@ -266,7 +278,7 @@ class HomeViewModel @Inject constructor(
                 column = folderWithApps.folder.column
             )
         }
-        
+
         appItems + widgetItems + folderItems
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -329,7 +341,7 @@ class HomeViewModel @Inject constructor(
         return appWidgetManager.installedProviders.filter { it.provider.packageName == packageName }
     }
 
-    fun updateItemPosition(item: HomeItem, newRow: Float, newCol: Float, maxRows: Int = 10) {
+    fun updateItemPosition(item: HomeItem, newRow: Float, newCol: Float, maxRows: Float = 10f) {
         viewModelScope.launch {
             // Check for collisions and potential merges
             when (val collisionResult = checkCollision(item, newRow, newCol, maxRows = maxRows, ignoreUniqueKey = item.uniqueKey)) {
@@ -379,20 +391,20 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun sanitizeGridItems(columns: Int, maxRows: Int) {
+    fun sanitizeGridItems(columns: Float, maxRows: Float) {
         viewModelScope.launch {
             val items = homeItems.value
             val removedItems = mutableListOf<String>()
-            
+
             // Keep track of spots we've already "booked" during this sanitization pass
             // We use a local list to prevent stacking before the repository updates the Flow
             val bookedRects = items.mapNotNull { item ->
                 val isAppOrFolder = (item is HomeItem.App) || (item is HomeItem.Folder)
-                val showLabels = userPreferencesRepository.userPreferencesFlow.first().let { 
-                    (it.appLabelMode == AppLabelMode.HOME_ONLY) || (it.appLabelMode == AppLabelMode.BOTH) 
+                val showLabels = userPreferencesRepository.userPreferencesFlow.first().let {
+                    (it.appLabelMode == AppLabelMode.HOME_ONLY) || (it.appLabelMode == AppLabelMode.BOTH)
                 }
                 val effectiveSpanY = if (isAppOrFolder && showLabels) 1.5f else item.spanY
-                
+
                 // If it's already inside, book it. If outside, don't book yet.
                 if (item.column + item.spanX <= columns && item.row + effectiveSpanY <= maxRows) {
                     android.graphics.RectF(item.column, item.row, item.column + item.spanX, item.row + effectiveSpanY)
@@ -401,17 +413,17 @@ class HomeViewModel @Inject constructor(
 
             items.forEach { item ->
                 val isAppOrFolder = (item is HomeItem.App) || (item is HomeItem.Folder)
-                val showLabels = userPreferencesRepository.userPreferencesFlow.first().let { 
-                    (it.appLabelMode == AppLabelMode.HOME_ONLY) || (it.appLabelMode == AppLabelMode.BOTH) 
+                val showLabels = userPreferencesRepository.userPreferencesFlow.first().let {
+                    (it.appLabelMode == AppLabelMode.HOME_ONLY) || (it.appLabelMode == AppLabelMode.BOTH)
                 }
                 val effectiveSpanY = if (isAppOrFolder && showLabels) 1.5f else item.spanY
-                
+
                 val isOutside = item.column + item.spanX > columns || item.row + effectiveSpanY > maxRows
 
                 if (isOutside) {
                     var foundRow = -1f
                     var foundCol = -1f
-                    
+
                     val snapFactor = LayoutManager.SNAP_FACTOR
                     val step = 1f / snapFactor
 
@@ -419,21 +431,21 @@ class HomeViewModel @Inject constructor(
                         for (colIdx in 0 until (columns * snapFactor).toInt()) {
                             val row = rowIdx * step
                             val col = colIdx * step
-                            
+
                             if (col + item.spanX > columns || row + effectiveSpanY > maxRows) continue
-                            
+
                             val targetRect = android.graphics.RectF(col, row, col + item.spanX, row + effectiveSpanY)
-                            
+
                             // Check if this spot is booked by any other item
                             val isOccupied = bookedRects.any { android.graphics.RectF.intersects(it, targetRect) }
                             if (isOccupied) continue
-                            
+
                             foundRow = row
                             foundCol = col
                             break@outer
                         }
                     }
-                    
+
                     if (foundRow != -1f) {
                         bookedRects.add(android.graphics.RectF(foundCol, foundRow, foundCol + item.spanX, foundRow + effectiveSpanY))
                         when (item) {
@@ -448,7 +460,7 @@ class HomeViewModel @Inject constructor(
                             is HomeItem.Folder -> item.label
                         }
                         removedItems.add(label)
-                        
+
                         when (item) {
                             is HomeItem.App -> homeRepository.removeHomeAppById(item.id)
                             is HomeItem.Widget -> widgetRepository.removeWidget(item.id)
@@ -472,12 +484,12 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun findAvailableSpace(
-        prefRow: Float, 
-        prefCol: Float, 
-        spanX: Float, 
-        spanY: Float, 
-        maxRows: Int,
-        columns: Int = 5
+        prefRow: Float,
+        prefCol: Float,
+        spanX: Float,
+        spanY: Float,
+        maxRows: Float,
+        columns: Float
     ): Pair<Float, Float>? {
         // 1. Check if preferred spot is available
         val tempItem = HomeItem.App(-1, AppModel("", "", com.samidevstudio.neoglide.domain.model.AppCategory.OTHER), prefRow, prefCol, spanX, spanY)
@@ -493,10 +505,10 @@ class HomeViewModel @Inject constructor(
             for (colIdx in 0 until (columns * snapFactor).toInt()) {
                 val row = rowIdx * step
                 val col = colIdx * step
-                
+
                 // Stay within grid bounds
-                if (col + spanX > columns.toFloat() || row + spanY > maxRows.toFloat()) continue
-                
+                if (col + spanX > columns || row + spanY > maxRows) continue
+
                 if (checkCollision(tempItem, row, col, maxRows) is CollisionResult.None) {
                     return row to col
                 }
@@ -506,19 +518,19 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun checkCollision(
-        draggedItem: HomeItem, 
-        newRow: Float, 
+        draggedItem: HomeItem,
+        newRow: Float,
         newCol: Float,
-        maxRows: Int,
+        maxRows: Float,
         ignoreUniqueKey: String? = null
     ): CollisionResult {
         val currentItems = homeItems.value
         val draggedRect = android.graphics.RectF(newCol, newRow, newCol + draggedItem.spanX, newRow + draggedItem.spanY)
-        
+
         currentItems.forEach { item ->
             // Skip self or ignored item via uniqueKey
             if (item.uniqueKey == ignoreUniqueKey) return@forEach
-            
+
             val effectiveRow = when {
                 item.row >= 99.5f -> (maxRows - 1.5f).coerceAtLeast(0f)
                 item.row >= 99f -> (maxRows - 1f).coerceAtLeast(0f)
@@ -528,7 +540,7 @@ class HomeViewModel @Inject constructor(
             val visualCol = item.column
 
             val itemRect = android.graphics.RectF(visualCol, effectiveRow, visualCol + item.spanX, effectiveRow + item.spanY)
-            
+
             if (android.graphics.RectF.intersects(draggedRect, itemRect)) {
                 // Potential merge if both are apps and overlap is significant (e.g. centers are close)
                 if (draggedItem is HomeItem.App) {
@@ -551,12 +563,28 @@ class HomeViewModel @Inject constructor(
         return CollisionResult.None
     }
 
+    fun isSpaceOccupied(row: Float, col: Float, spanX: Float, spanY: Float, maxRows: Float, ignoreUniqueKey: String?): Boolean {
+        val rect = android.graphics.RectF(col, row, col + spanX, row + spanY)
+        return homeItems.value.any { item ->
+            if (item.uniqueKey == ignoreUniqueKey) return@any false
+            
+            val effectiveRow = when {
+                item.row >= 99.5f -> (maxRows - 1.5f).coerceAtLeast(0f)
+                item.row >= 99f -> (maxRows - 1f).coerceAtLeast(0f)
+                else -> item.row
+            }
+            val itemRect = android.graphics.RectF(item.column, effectiveRow, item.column + item.spanX, effectiveRow + item.spanY)
+            android.graphics.RectF.intersects(rect, itemRect)
+        }
+    }
+
     fun launchApp(packageName: String, options: android.os.Bundle? = null) {
         appRepository.launchApp(packageName, options)
     }
 
     suspend fun getShortcuts(packageName: String): List<AppShortcut> {
-        return appRepository.getShortcuts(packageName)
+        val shortcuts = appRepository.getShortcuts(packageName)
+        return shortcuts
     }
 
     fun launchShortcut(shortcut: AppShortcut) {
@@ -593,16 +621,22 @@ class HomeViewModel @Inject constructor(
             val prefs = userPreferencesRepository.userPreferencesFlow.first()
             val screenWidthDp = context.resources.configuration.screenWidthDp
             val screenHeightDp = context.resources.configuration.screenHeightDp
-            
-            val layoutConfig = LayoutManager.calculateConfig(screenWidthDp.dp, screenHeightDp.dp, prefs.gridSize)
-            val columns = layoutConfig.totalColumns.toInt()
-            val effectiveMaxRows = layoutConfig.totalRows.toInt()
+
+            val layoutConfig = LayoutManager.calculateConfig(
+                screenWidthDp = screenWidthDp.dp, 
+                screenHeightDp = screenHeightDp.dp, 
+                densitySetting = prefs.gridSize,
+                topInset = 80.dp,
+                bottomInset = 48.dp
+            )
+            val columns = layoutConfig.totalColumns
+            val effectiveMaxRows = layoutConfig.totalRows
 
             val (finalRow, finalCol) = findAvailableSpace(row, col, 1f, 1f, effectiveMaxRows, columns) ?: run {
                 _uiEvent.emit(UiEvent.ShowToast("Home screen is full"))
                 return@launch
             }
-            
+
             homeRepository.addHomeApp(
                 com.samidevstudio.neoglide.data.local.entity.HomeAppEntity(
                     packageName = packageName,
@@ -621,8 +655,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             val info = try {
                 appWidgetManager.getAppWidgetInfo(widgetId)
-            } catch (e: Exception) {
-                Log.e("HomeViewModel", "Failed to get widget info for ID $widgetId", e)
+            } catch (_: Exception) {
                 null
             } ?: return@launch
 
@@ -630,19 +663,32 @@ class HomeViewModel @Inject constructor(
             val prefs = userPreferencesRepository.userPreferencesFlow.first()
             val screenWidthDp = context.resources.configuration.screenWidthDp
             val screenHeightDp = context.resources.configuration.screenHeightDp
-            
-            val layoutConfig = LayoutManager.calculateConfig(screenWidthDp.dp, screenHeightDp.dp, prefs.gridSize)
-            val columns = layoutConfig.totalColumns.toInt()
-            val effectiveMaxRows = layoutConfig.totalRows.toInt()
-            // Widget spans are usually based on the full cell size including gaps
+
+            val layoutConfig = LayoutManager.calculateConfig(
+                screenWidthDp = screenWidthDp.dp, 
+                screenHeightDp = screenHeightDp.dp, 
+                densitySetting = prefs.gridSize,
+                topInset = 80.dp,
+                bottomInset = 48.dp
+            )
+            val columns = layoutConfig.totalColumns
+            val effectiveMaxRows = layoutConfig.totalRows
+            // Widget spans are based on the full cell size
             val cellWidthDp = layoutConfig.unitWidth.value
-            
-            val (spanX, spanY) = WidgetUtils.calculateProjectedWidgetSpan(context, info, cellWidthDp, cellWidthDp, columns)
+            val cellHeightDp = layoutConfig.unitHeight.value
+
+            val (spanX, spanY) = WidgetUtils.calculateProjectedWidgetSpan(
+                context = context, 
+                info = info, 
+                unitWidthDp = cellWidthDp, 
+                unitHeightDp = cellHeightDp, 
+                maxColumns = columns.toInt()
+            )
 
             // Find available space if preferred spot is taken
             val preferredRow = _pendingWidgetRow.value
             val preferredCol = _pendingWidgetCol.value
-            
+
             val (finalRow, finalCol) = findAvailableSpace(
                 preferredRow, preferredCol, spanX, spanY, effectiveMaxRows, columns
             ) ?: run {
@@ -650,8 +696,6 @@ class HomeViewModel @Inject constructor(
                 appWidgetHost.deleteAppWidgetId(widgetId)
                 return@launch
             }
-
-            Log.d("HomeViewModel", "Completing widget config: ID=$widgetId, Span=$spanX x $spanY, Pos=($finalRow, $finalCol)")
 
             widgetRepository.addWidget(
                 WidgetEntity(
@@ -676,11 +720,11 @@ class HomeViewModel @Inject constructor(
 
     // Removed unused onDragStart
 
-    fun updateWidgetBounds(widgetId: Int, row: Float, col: Float, spanX: Float, spanY: Float, maxRows: Int = 10) {
+    fun updateWidgetBounds(widgetId: Int, row: Float, col: Float, spanX: Float, spanY: Float, maxRows: Float = 10f) {
         viewModelScope.launch {
             val currentWidget = homeItems.value.find { it.id == widgetId && it is HomeItem.Widget } as? HomeItem.Widget ?: return@launch
             val tempWidget = currentWidget.copy(row = row, column = col, spanX = spanX, spanY = spanY)
-            
+
             val collisionResult = checkCollision(tempWidget, row, col, maxRows = maxRows, ignoreUniqueKey = tempWidget.uniqueKey)
             if (collisionResult is CollisionResult.None) {
                 widgetRepository.updateWidgetBounds(widgetId, row, col, spanX, spanY)
@@ -696,7 +740,7 @@ class HomeViewModel @Inject constructor(
             val lastPromptTime = userPreferencesRepository.userPreferencesFlow.first().lastDefaultPromptTime
             val currentTime = System.currentTimeMillis()
             val oneDayInMillis = 24 * 60 * 60 * 1000L
-            
+
             if (!isDefault && (currentTime - lastPromptTime > oneDayInMillis)) {
                 _shouldShowDefaultPrompt.value = true
             }
@@ -718,6 +762,12 @@ class HomeViewModel @Inject constructor(
     fun updateFolderLabel(folderId: Int, label: String) {
         viewModelScope.launch {
             homeRepository.updateFolderLabel(folderId, label)
+        }
+    }
+
+    fun dissolveFolder(folderId: Int) {
+        viewModelScope.launch {
+            homeRepository.dissolveFolder(folderId)
         }
     }
 
@@ -758,18 +808,18 @@ class HomeViewModel @Inject constructor(
                 row = targetRow,
                 column = targetCol
             )
-            
+
             // Ignore the folder we are coming from during collision check
             // Use default maxRows (10) as a fallback for folder removal if not provided,
             // though ideally this should also be passed from UI.
             val collisionResult = checkCollision(
-                tempApp, 
-                targetRow, 
+                tempApp,
+                targetRow,
                 targetCol,
-                maxRows = 10,
+                maxRows = 10f,
                 ignoreUniqueKey = sourceFolder?.uniqueKey
             )
-            
+
             if (collisionResult is CollisionResult.None) {
                 homeRepository.removeAppFromFolder(folderId, packageName, targetRow, targetCol)
             } else {
