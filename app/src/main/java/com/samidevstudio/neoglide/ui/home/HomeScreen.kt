@@ -1,7 +1,5 @@
 package com.samidevstudio.neoglide.ui.home
 
-import android.appwidget.AppWidgetProviderInfo
-import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -22,13 +20,15 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -49,6 +49,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -107,7 +108,6 @@ fun HomeScreen(
     sharedTransitionScope: SharedTransitionScope,
     drawerViewModel: com.samidevstudio.neoglide.ui.drawer.DrawerViewModel = hiltViewModelV2(),
 ) {
-    val activeNotifications by viewModel.activeNotifications.collectAsStateWithLifecycle()
     val preferences by settingsViewModel.userPreferences.collectAsStateWithLifecycle()
     val hapticFeedback = rememberHapticFeedback(preferences)
     val shouldShowDefaultPrompt by viewModel.shouldShowDefaultPrompt.collectAsStateWithLifecycle()
@@ -120,7 +120,8 @@ fun HomeScreen(
     var showWidgetMenu by remember { mutableStateOf(value = false) }
     var showFolderMenu by remember { mutableStateOf(value = false) }
     var showFolderMenuId by remember { mutableIntStateOf(-1) }
-    var showFolderMenuLabel by remember { mutableStateOf("") }
+    var isRightAligned by remember { mutableStateOf(false) }
+    var isBottomAligned by remember { mutableStateOf(false) }
     var contextMenuOffset by remember { mutableStateOf(DpOffset.Zero) }
     var editingWidgetId by remember { mutableIntStateOf(-1) }
     var showAppPicker by remember { mutableStateOf(value = false) }
@@ -146,11 +147,15 @@ fun HomeScreen(
 
     // DRAG STATE FOR ICON REPOSITIONING
     var draggingUniqueKey by remember { mutableStateOf<String?>(null) }
+    var hoveredUniqueKey by remember { mutableStateOf<String?>(null) }
+    var blockedUniqueKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var dragOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var grabPoint by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var dragTargetBounds by remember { mutableStateOf<RectBounds?>(null) }
+    var isDragBlocked by remember { mutableStateOf(false) }
     var accumulatedDrag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var isDragConfirmed by remember { mutableStateOf(value = false) }
+    var isCurrentDragBlocked by remember { mutableStateOf(false) }
 
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val coroutineScope = rememberCoroutineScope()
@@ -260,12 +265,11 @@ fun HomeScreen(
             contentWindowInsets = WindowInsets.safeDrawing
         ) { paddingValues -> 
             @Suppress("UNUSED_VARIABLE")
-            val _ignore = paddingValues 
-            
+            val ignore = paddingValues 
             Box(
                 modifier = Modifier.fillMaxSize()
             ) {
-                BoxWithConstraints(
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .onGloballyPositioned { gridCoords = it }
@@ -280,9 +284,21 @@ fun HomeScreen(
                             )
                         }
                 ) {
-                    val layoutConfig = LayoutManager.calculateConfig(screenWidthDp, screenHeightDp, preferences.gridSize)
+                    val statusBars = WindowInsets.statusBars.asPaddingValues()
+                    val navigationBars = WindowInsets.navigationBars.asPaddingValues()
+                    
+                    val topInset = statusBars.calculateTopPadding()
+                    val bottomInset = navigationBars.calculateBottomPadding()
+
+                    val layoutConfig = LayoutManager.calculateConfig(
+                        screenWidthDp = screenWidthDp, 
+                        screenHeightDp = screenHeightDp, 
+                        densitySetting = preferences.gridSize,
+                        topInset = topInset,
+                        bottomInset = bottomInset
+                    )
+
                     val columns = layoutConfig.columns
-                    val maxRows = layoutConfig.rows
                     val totalColumns = layoutConfig.totalColumns
                     val totalRows = layoutConfig.totalRows
                     val unitWidth = layoutConfig.unitWidth
@@ -293,18 +309,94 @@ fun HomeScreen(
                     val unitWidthPx = with(density) { unitWidth.toPx() }
                     val unitHeightPx = with(density) { unitHeight.toPx() }
 
+                    fun calculateTargetBounds(fingerPosition: androidx.compose.ui.geometry.Offset, spanX: Float = 1f, spanY: Float = 1f): RectBounds? {
+                        val meshOffset = meshCoords?.positionInWindow() ?: androidx.compose.ui.geometry.Offset.Zero
+                        val localX = fingerPosition.x - meshOffset.x
+                        val localY = fingerPosition.y - meshOffset.y
+                        
+                        val meshWidthPx = with(density) { layoutConfig.actualGridWidth.toPx() }
+                        val meshHeightPx = with(density) { layoutConfig.actualGridHeight.toPx() }
+
+                        if (localX !in 0f..meshWidthPx || localY !in 0f..meshHeightPx) {
+                            return null
+                        }
+
+                        val snapFactor = LayoutManager.SNAP_FACTOR
+                        
+                        val rawColRelative = (localX / unitWidthPx) - (spanX / 2f)
+                        val rawRowRelative = (localY / unitHeightPx) - (spanY / 2f)
+                        
+                        val snappedCol = kotlin.math.round(rawColRelative * snapFactor) / snapFactor
+                        val snappedRow = kotlin.math.round(rawRowRelative * snapFactor) / snapFactor
+
+                        return RectBounds(
+                            snappedRow.coerceIn(0f, (totalRows - spanY).coerceAtLeast(0f)),
+                            snappedCol.coerceIn(0f, (totalColumns - spanX).coerceAtLeast(0f)),
+                            spanX,
+                            spanY
+                        )
+                    }
+
                     val dockRow = LayoutManager.getDockRow(totalRows)
                     val showLabels = (preferences.appLabelMode == AppLabelMode.HOME_ONLY) || (preferences.appLabelMode == AppLabelMode.BOTH)
+                    val isPremium = preferences.isPremium
+
+                    /**
+                     * Calculates the optimal anchor and alignment for the context menu.
+                     * Uses a "Double-Anchor" strategy to let the system handle actual width/height.
+                     */
+                    fun calculateSmartMenuOffset(
+                        itemRow: Float,
+                        itemCol: Float,
+                        spanX: Float,
+                        spanY: Float
+                    ): Triple<DpOffset, Boolean, Boolean> {
+                        val meshOffset = meshCoords?.positionInWindow() ?: androidx.compose.ui.geometry.Offset.Zero
+                        val meshLeft = with(density) { meshOffset.x.toDp() }.value
+                        val meshTop = with(density) { meshOffset.y.toDp() }.value
+                        
+                        val unitW = unitWidth.value
+                        val unitH = unitHeight.value
+                        
+                        val itemTop = meshTop + itemRow * unitH
+                        val itemBottom = meshTop + (itemRow + spanY) * unitH
+                        val itemLeft = meshLeft + itemCol * unitW
+                        val itemRight = meshLeft + (itemCol + spanX) * unitW
+                        
+                        val itemCenterX = itemLeft + (spanX * unitW) / 2f
+                        val screenWidth = screenWidthDp.value
+                        val meshCenterX = meshLeft + (totalColumns * unitW) / 2f
+                        
+                        val screenHeight = screenHeightDp.value
+                        val itemCenterY = itemTop + (spanY * unitH) / 2f
+                        val screenCenterY = screenHeight / 2f
+
+                        // X: Anchor to the edge that gives more room
+                        val isRightAligned = itemCenterX > meshCenterX
+                        val x = if (isRightAligned) (itemRight - screenWidth).dp else itemLeft.dp
+                        
+                        // Y: Anchor to Top edge if flipping UP, Bottom edge if flipping DOWN
+                        val isBottomAligned = itemCenterY > screenCenterY
+                        val y = if (isBottomAligned) {
+                            // Anchor BOTTOM of menu to TOP of icon (with 8dp gap)
+                            (itemTop - 8 - screenHeight).dp
+                        } else {
+                            // Anchor TOP of menu to BOTTOM of icon (with 8dp gap)
+                            (itemBottom + 8).dp
+                        }
+                        
+                        return Triple(DpOffset(x, y), isRightAligned, isBottomAligned)
+                    }
 
                     val draggingItem = remember(draggingUniqueKey, homeItems) {
                         homeItems.find { it.uniqueKey == draggingUniqueKey }
                     }
                     val isLifting = (draggingUniqueKey != null || draggingAppFromFolder != null)
 
-                    // 1. THE TRAY (Offset for Optical Balance: 48dp Top, 16dp Bottom)
+                    // 1. THE TRAY (Offset for Optical Balance: Symmetric 56dp)
                     Box(
                         modifier = Modifier
-                            .padding(top = 48.dp, bottom = 16.dp, start = 16.dp, end = 16.dp)
+                            .padding(top = layoutConfig.topPadding, bottom = layoutConfig.bottomPadding, start = 16.dp, end = 16.dp)
                             .fillMaxSize()
                     ) {
                         if (isLifting || editingWidgetId != -1) {
@@ -319,22 +411,33 @@ fun HomeScreen(
                         // 2. THE MESH BOX (Centered inside Tray)
                         Box(
                             modifier = Modifier
-                                .align(androidx.compose.ui.Alignment.Center)
+                                .align(Alignment.Center)
                                 .size(width = layoutConfig.actualGridWidth, height = layoutConfig.actualGridHeight)
                                 .onGloballyPositioned { meshCoords = it }
                                 .graphicsLayer { clip = true }
                                 .pointerInput(Unit) {
                                     detectTapGestures(
+                                        onTap = {
+                                            editingWidgetId = -1
+                                            showWidgetMenu = false
+                                            showAppMenuPackage = null
+                                            focusManager.clearFocus()
+                                        },
                                         onLongPress = { offset ->
                                             if ((editingWidgetId == -1) && (!preferences.lockLayout)) {
                                                 hapticFeedback(HapticEngine.HapticType.LONG_PRESS)
-                                                val meshInWindow = meshCoords?.positionInWindow() ?: androidx.compose.ui.geometry.Offset.Zero
-                                                contextMenuOffset = DpOffset(
-                                                    x = with(density) { (meshInWindow.x + offset.x).toDp() },
-                                                    y = with(density) { (meshInWindow.y + offset.y).toDp() }
+                                                val (offset, right, bottom) = calculateSmartMenuOffset(
+                                                    itemRow = offset.y / unitHeightPx,
+                                                    itemCol = offset.x / unitWidthPx,
+                                                    spanX = 0f,
+                                                    spanY = 0f
                                                 )
+                                                contextMenuOffset = offset
+                                                isRightAligned = right
+                                                isBottomAligned = bottom
                                                 showContextMenu = true
-                                            } else if (preferences.lockLayout) {
+                                            }
+else if (preferences.lockLayout) {
                                                 Toast.makeText(context, "Locked from launcher settings", Toast.LENGTH_SHORT).show()
                                             }
                                         }
@@ -343,84 +446,18 @@ fun HomeScreen(
                         ) {
                             // LOCAL COORDINATES (0,0 is top-left of this Mesh Box)
                             
-                            fun calculateTargetBounds(fingerPosition: androidx.compose.ui.geometry.Offset, spanX: Float = 1f, spanY: Float = 1f): RectBounds? {
-                                val meshOffset = meshCoords?.positionInWindow() ?: androidx.compose.ui.geometry.Offset.Zero
-                                val localX = fingerPosition.x - meshOffset.x
-                                val localY = fingerPosition.y - meshOffset.y
-                                
-                                val meshWidthPx = with(density) { layoutConfig.actualGridWidth.toPx() }
-                                val meshHeightPx = with(density) { layoutConfig.actualGridHeight.toPx() }
-
-                                if (localX < 0 || localX > meshWidthPx || localY < 0 || localY > meshHeightPx) {
-                                    return null
-                                }
-
-                                val snapFactor = LayoutManager.SNAP_FACTOR
-                                val offsetW = layoutConfig.expansionOffsetW
-                                val offsetH = layoutConfig.expansionOffsetH
-                                
-                                val rawColRelative = (localX / unitWidthPx) - (spanX / 2f)
-                                val rawRowRelative = (localY / unitHeightPx) - (spanY / 2f)
-                                
-                                val snappedCol = kotlin.math.round((rawColRelative - offsetW) * snapFactor) / snapFactor
-                                val snappedRow = kotlin.math.round((rawRowRelative - offsetH) * snapFactor) / snapFactor
-
-                                return RectBounds(
-                                    snappedRow.coerceIn(-offsetH, (totalRows - spanY - offsetH).coerceAtLeast(-offsetH)),
-                                    snappedCol.coerceIn(-offsetW, (totalColumns - spanX - offsetW).coerceAtLeast(-offsetW)),
-                                    spanX,
-                                    spanY
-                                )
-                            }
-
                             // 3. THE CORE BOX (Aligned to bold lines)
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .offset(
-                                        x = layoutConfig.unitWidth * layoutConfig.expansionOffsetW,
-                                        y = layoutConfig.unitHeight * layoutConfig.expansionOffsetH
-                                    )
                             ) {
-                                androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize().offset(x = -layoutConfig.unitWidth * layoutConfig.expansionOffsetW, y = -layoutConfig.unitHeight * layoutConfig.expansionOffsetH)) {
-                                    val snapFactor = LayoutManager.SNAP_FACTOR
-                                    val gridWidthPx = size.width
-                                    val gridHeightPx = size.height
-                                    val minorStepXPx = unitWidthPx / snapFactor
-                                    val minorStepYPx = unitHeightPx / snapFactor
-                                    
-                                    for (i in 0..(totalColumns * snapFactor).roundToInt()) {
-                                        val x = i * minorStepXPx
-                                        if (x > gridWidthPx + 0.5f) continue
-                                        drawLine(Color.Black.copy(alpha = 0.12f), androidx.compose.ui.geometry.Offset(x, 0f), androidx.compose.ui.geometry.Offset(x, gridHeightPx), 1f)
-                                    }
-                                    for (i in 0..(totalRows * snapFactor).roundToInt()) {
-                                        val y = i * minorStepYPx
-                                        if (y > gridHeightPx + 0.5f) continue
-                                        drawLine(Color.Black.copy(alpha = 0.12f), androidx.compose.ui.geometry.Offset(0f, y), androidx.compose.ui.geometry.Offset(gridWidthPx, y), 1f)
-                                    }
-
-                                    val offX = layoutConfig.expansionOffsetW * unitWidthPx
-                                    val offY = layoutConfig.expansionOffsetH * unitHeightPx
-                                    for (i in 0..5) {
-                                        val x = offX + (i * unitWidthPx)
-                                        if (x > gridWidthPx + 0.5f) continue
-                                        drawLine(Color.Black.copy(alpha = 0.35f), androidx.compose.ui.geometry.Offset(x, 0f), androidx.compose.ui.geometry.Offset(x, gridHeightPx), 2f)
-                                    }
-                                    for (i in 0..floor(totalRows).toInt()) {
-                                        val y = offY + (i * unitHeightPx)
-                                        if (y > gridHeightPx + 0.5f) continue
-                                        drawLine(Color.Black.copy(alpha = 0.35f), androidx.compose.ui.geometry.Offset(0f, y), androidx.compose.ui.geometry.Offset(gridWidthPx, y), 2f)
-                                    }
-
-                                    drawLine(Color.Black.copy(alpha = 0.35f), androidx.compose.ui.geometry.Offset(gridWidthPx, 0f), androidx.compose.ui.geometry.Offset(gridWidthPx, gridHeightPx), 2f)
-                                    drawLine(Color.Black.copy(alpha = 0.35f), androidx.compose.ui.geometry.Offset(0f, gridHeightPx), androidx.compose.ui.geometry.Offset(gridWidthPx, gridHeightPx), 2f)
-                                }
-
+                                // GHOST TARGET / PLACEHOLDER
                                 val ghostTargetX by animateDpAsState(targetValue = dragTargetBounds?.let { unitWidth * it.col } ?: 0.dp, label = "ghostX")
                                 val ghostTargetY by animateDpAsState(targetValue = dragTargetBounds?.let { unitHeight * it.row } ?: 0.dp, label = "ghostY")
                                 val ghostTargetWidth by animateDpAsState(targetValue = dragTargetBounds?.let { unitWidth * it.spanX } ?: 0.dp, label = "ghostW")
                                 val ghostTargetHeight by animateDpAsState(targetValue = dragTargetBounds?.let { unitHeight * it.spanY } ?: 0.dp, label = "ghostH")
+
+                                val ghostColor = Color.Black.copy(alpha = 0.15f)
 
                                 if (draggingUniqueKey != null || draggingAppFromFolder != null || (editingWidgetId != -1 && dragTargetBounds != null)) {
                                     Box(
@@ -428,75 +465,215 @@ fun HomeScreen(
                                             .offset { IntOffset(ghostTargetX.toPx().roundToInt(), ghostTargetY.toPx().roundToInt()) }
                                             .size(ghostTargetWidth, ghostTargetHeight)
                                             .padding(4.dp)
-                                            .background(Color.Black.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                                            .background(ghostColor, RoundedCornerShape(12.dp))
                                     )
                                 }
 
                                 homeItems.forEach { item ->
                                     key(item.uniqueKey) {
                                         val isDragging = draggingUniqueKey == item.uniqueKey
+                                        val isHovered = hoveredUniqueKey == item.uniqueKey
+                                        val isBlocked = item.uniqueKey in blockedUniqueKeys
                                         val rowToUse = if (item.row >= 99f) dockRow else item.row
+                                        val isDockItem = rowToUse == dockRow
                                         Box(
                                             modifier = Modifier
-                                                .offset(x = unitWidth * item.column, y = unitHeight * rowToUse)
-                                                .size(unitWidth * item.spanX, unitHeight * item.spanY)
-                                                .graphicsLayer { alpha = if (isDragging) 0f else 1f }
-                                                .pointerInput(item.id, item.row, item.column) {
-                                                    detectDragGesturesAfterLongPress(
-                                                        onDragStart = { offset ->
-                                                            if (!preferences.lockLayout) {
-                                                                hapticFeedback(HapticEngine.HapticType.LONG_PRESS)
-                                                                isDragConfirmed = false
-                                                                accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
-                                                                showAppMenuPackage = null
-                                                                originalRow = item.row
-                                                                originalCol = item.column
-                                                                grabPoint = offset
-                                                                val meshInWindow = meshCoords?.positionInWindow() ?: androidx.compose.ui.geometry.Offset.Zero
-                                                                dragOffset = androidx.compose.ui.geometry.Offset(
-                                                                    meshInWindow.x + (layoutConfig.expansionOffsetW + item.column) * unitWidthPx,
-                                                                    meshInWindow.y + (layoutConfig.expansionOffsetH + rowToUse) * unitHeightPx
-                                                                )
-                                                                dragTargetBounds = calculateTargetBounds(dragOffset + grabPoint, item.spanX, item.spanY)
-                                                            }
-                                                        },
-                                                        onDrag = { change, dragAmount ->
-                                                            if (!preferences.lockLayout) {
-                                                                change.consume()
-                                                                accumulatedDrag += dragAmount
-                                                                dragOffset += dragAmount
-                                                                if (!isDragConfirmed && accumulatedDrag.getDistance() > 10.dp.toPx()) {
-                                                                    isDragConfirmed = true
-                                                                    hapticFeedback(HapticEngine.HapticType.DRAG_START)
-                                                                    draggingUniqueKey = item.uniqueKey
+                                                .then(
+                                                    if (item !is HomeItem.Widget) {
+                                                        Modifier
+                                                            .offset(x = unitWidth * item.column, y = unitHeight * rowToUse)
+                                                            .size(unitWidth * item.spanX, unitHeight * item.spanY)
+                                                    } else Modifier.fillMaxSize()
+                                                )
+                                                .zIndex(if (item.id == editingWidgetId || draggingUniqueKey == item.uniqueKey) 100f else 0f)
+                                                .graphicsLayer { alpha = if (isDragging && item !is HomeItem.Widget) 0f else 1f }
+                                                .then(
+                                                    if (item !is HomeItem.Widget) {
+                                                        Modifier.pointerInput(item.id, item.row, item.column) {
+                                                            detectDragGesturesAfterLongPress(
+                                                                onDragStart = { offset ->
+                                                                    if (!preferences.lockLayout) {
+                                                                        hapticFeedback(HapticEngine.HapticType.LONG_PRESS)
+                                                                        isDragConfirmed = false
+                                                                        accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
+                                                                        showAppMenuPackage = null
+                                                                        originalRow = item.row
+                                                                        originalCol = item.column
+                                                                        grabPoint = offset
+                                                                        val meshInWindow = meshCoords?.positionInWindow() ?: androidx.compose.ui.geometry.Offset.Zero
+                                                                        dragOffset = androidx.compose.ui.geometry.Offset(
+                                                                            meshInWindow.x + item.column * unitWidthPx,
+                                                                            meshInWindow.y + rowToUse * unitHeightPx
+                                                                        )
+                                                                        dragTargetBounds = calculateTargetBounds(dragOffset + grabPoint, item.spanX, item.spanY)
+                                                                    }
+                                                                },
+                                                                onDrag = { change, dragAmount ->
+                                                                    if (!preferences.lockLayout) {
+                                                                        change.consume()
+                                                                        accumulatedDrag += dragAmount
+                                                                        dragOffset += dragAmount
+                                                                        if (!isDragConfirmed && accumulatedDrag.getDistance() > 10.dp.toPx()) {
+                                                                            isDragConfirmed = true
+                                                                            hapticFeedback(HapticEngine.HapticType.DRAG_START)
+                                                                            draggingUniqueKey = item.uniqueKey
+                                                                        }
+                                                                        dragTargetBounds = calculateTargetBounds(dragOffset + grabPoint, item.spanX, item.spanY)
+                                                                        
+                                                                        // Real-time hover detection
+                                                                        val newHoveredKey = if (isDragConfirmed) {
+                                                                            dragTargetBounds?.let { b ->
+                                                                                homeItems.find { other ->
+                                                                                    if (other.uniqueKey == item.uniqueKey) return@find false
+                                                                                    val otherRow = if (other.row >= 99f) dockRow else other.row
+                                                                                    val distSq = (b.row - otherRow) * (b.row - otherRow) + (b.col - other.column) * (b.col - other.column)
+                                                                                    distSq < 0.0625f // 0.25 unit radius
+                                                                                }?.uniqueKey
+                                                                            }
+                                                                        } else null
+
+                                                                        if (newHoveredKey != hoveredUniqueKey) {
+                                                                            if (newHoveredKey != null) hapticFeedback(HapticEngine.HapticType.GRID_SNAP)
+                                                                            hoveredUniqueKey = newHoveredKey
+                                                                        }
+
+                                                                        blockedUniqueKeys = if (isDragConfirmed && dragTargetBounds != null) {
+                                                                            val targetRect = android.graphics.RectF(
+                                                                                dragTargetBounds!!.col,
+                                                                                dragTargetBounds!!.row,
+                                                                                dragTargetBounds!!.col + item.spanX,
+                                                                                dragTargetBounds!!.row + item.spanY
+                                                                            )
+                                                                            homeItems.filter { other ->
+                                                                                if (other.uniqueKey == item.uniqueKey || other.uniqueKey == newHoveredKey) return@filter false
+                                                                                val otherRow = if (other.row >= 99f) dockRow else other.row
+                                                                                val otherRect = android.graphics.RectF(other.column, otherRow, other.column + other.spanX, otherRow + other.spanY)
+                                                                                android.graphics.RectF.intersects(targetRect, otherRect)
+                                                                            }.map { it.uniqueKey }.toSet()
+                                                                        } else emptySet()
+
+                                                                        isCurrentDragBlocked = blockedUniqueKeys.isNotEmpty()
+                                                                    }
+                                                                },
+                                                                onDragEnd = {
+                                                                    if (isDragConfirmed) {
+                                                                        hapticFeedback(HapticEngine.HapticType.DRAG_END)
+                                                                        dragTargetBounds?.let { viewModel.updateItemPosition(item, it.row, it.col, totalRows) }
+                                                                    } else {
+                                                                        showAppMenuId = item.id
+                                                                        if (item is HomeItem.App) {
+                                                                            coroutineScope.launch {
+                                                                                val shortcuts = viewModel.getShortcuts(item.appModel.packageName)
+                                                                                appMenuShortcuts = shortcuts
+                                                                                val (offset, right, bottom) = calculateSmartMenuOffset(rowToUse, item.column, 1f, 1f)
+                                                contextMenuOffset = offset
+                                                isRightAligned = right
+                                                isBottomAligned = bottom
+                                                appMenuLabel = item.appModel.label
+                                                showAppMenuPackage = item.appModel.packageName
+                                                                            }
+                                                                        } else if (item is HomeItem.Folder) {
+                                                                            val (offset, right, bottom) = calculateSmartMenuOffset(rowToUse, item.column, 1f, 1f)
+                                                                            contextMenuOffset = offset
+                                                                            isRightAligned = right
+                                                                            isBottomAligned = bottom
+                                                                            showFolderMenuId = item.id
+                                                                            showFolderMenu = true
+                                                                        }
+                                                                    }
+                                                                    draggingUniqueKey = null
+                                                                    hoveredUniqueKey = null
+                                                                    blockedUniqueKeys = emptySet()
+                                                                    dragTargetBounds = null
                                                                 }
-                                                                dragTargetBounds = calculateTargetBounds(dragOffset + grabPoint, item.spanX, item.spanY)
-                                                            }
-                                                        },
-                                                        onDragEnd = {
-                                                            if (isDragConfirmed) {
-                                                                hapticFeedback(HapticEngine.HapticType.DRAG_END)
-                                                                dragTargetBounds?.let { viewModel.updateItemPosition(item, it.row, it.col, maxRows) }
-                                                            } else {
-                                                                appMenuLabel = if (item is HomeItem.App) item.appModel.label else ""
-                                                                showAppMenuId = item.id
-                                                                val meshInWindow = meshCoords?.positionInWindow() ?: androidx.compose.ui.geometry.Offset.Zero
-                                                                contextMenuOffset = DpOffset(x = with(density) { (meshInWindow.x + (layoutConfig.expansionOffsetW + item.column) * unitWidthPx).toDp() }, y = with(density) { (meshInWindow.y + (layoutConfig.expansionOffsetH + rowToUse) * unitHeightPx + unitHeightPx).toDp() })
-                                                                if (item is HomeItem.App) coroutineScope.launch {
-                                                                    appMenuShortcuts = viewModel.getShortcuts(item.appModel.packageName)
-                                                                    showAppMenuPackage = item.appModel.packageName
-                                                                }
-                                                            }
-                                                            draggingUniqueKey = null
-                                                            dragTargetBounds = null
+                                                            )
                                                         }
-                                                    )
-                                                }
+                                                    } else Modifier
+                                                ),
+                                            contentAlignment = if (item is HomeItem.Widget) Alignment.TopStart else if (isDockItem) Alignment.BottomCenter else Alignment.TopCenter
                                         ) {
                                             when (item) {
-                                                is HomeItem.App -> AppItem(app = item.appModel, sharedTransitionScope = sharedTransitionScope, animatedVisibilityScope = animatedVisibilityScope, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, refreshTrigger = refreshTrigger, onClick = { if (draggingUniqueKey == null) viewModel.launchApp(item.appModel.packageName) })
-                                                is HomeItem.Folder -> FolderItem(label = item.label, apps = item.apps, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, onClick = { if (draggingUniqueKey == null) expandedFolderId = item.id })
-                                                is HomeItem.Widget -> NeoGlideWidgetHost(widgetId = item.id, appWidgetHost = viewModel.appWidgetHost, appWidgetManager = viewModel.appWidgetManager, row = rowToUse, column = item.column, spanX = item.spanX, spanY = item.spanY, columns = columns, maxRows = maxRows, unitWidth = unitWidth, unitHeight = unitHeight, isEditing = editingWidgetId == item.id, modifier = Modifier.zIndex(if (editingWidgetId == item.id) 1f else 0f), onDragStart = { editingWidgetId = item.id }, onInteractionUpdate = { r, c, sx, sy -> dragTargetBounds = RectBounds(r, c, sx, sy) }, onResize = { nr, nc, nsx, nsy -> viewModel.updateWidgetBounds(item.id, nr, nc, nsx, nsy, maxRows); editingWidgetId = -1; dragTargetBounds = null })
+                                                is HomeItem.App -> AppItem(app = item.appModel, sharedTransitionScope = sharedTransitionScope, animatedVisibilityScope = animatedVisibilityScope, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, refreshTrigger = refreshTrigger, isHovered = isHovered, isBlocked = isBlocked, onClick = { 
+                                                    if (editingWidgetId != -1) {
+                                                        editingWidgetId = -1
+                                                        return@AppItem
+                                                    }
+                                                    if (draggingUniqueKey == null) {
+                                                        hapticFeedback(HapticEngine.HapticType.CLICK)
+                                                        viewModel.launchApp(item.appModel.packageName) 
+                                                    }
+                                                })
+                                                is HomeItem.Folder -> FolderItem(label = item.label, apps = item.apps, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, isHovered = isHovered, isBlocked = isBlocked, onClick = { 
+                                                    if (editingWidgetId != -1) {
+                                                        editingWidgetId = -1
+                                                        return@FolderItem
+                                                    }
+                                                    if (draggingUniqueKey == null) {
+                                                        hapticFeedback(HapticEngine.HapticType.CLICK)
+                                                        expandedFolderId = item.id 
+                                                    }
+                                                })
+                                                is HomeItem.Widget -> NeoGlideWidgetHost(
+                                                    widgetId = item.id,
+                                                    appWidgetHost = viewModel.appWidgetHost,
+                                                    appWidgetManager = viewModel.appWidgetManager,
+                                                    row = rowToUse,
+                                                    column = item.column,
+                                                    spanX = item.spanX,
+                                                    spanY = item.spanY,
+                                                    totalColumns = totalColumns,
+                                                    totalRows = totalRows,
+                                                    unitWidth = unitWidth,
+                                                    unitHeight = unitHeight,
+                                                    isEditing = editingWidgetId == item.id,
+                                                    isBlocked = isBlocked || ((draggingUniqueKey == item.uniqueKey) && isCurrentDragBlocked),
+                                                    modifier = Modifier,
+                                                    onHapticFeedback = { hapticFeedback(it) },
+                                                    onDragStart = { 
+                                                        draggingUniqueKey = item.uniqueKey
+                                                        showWidgetMenu = false
+                                                    },
+                                                    onResizeStart = {
+                                                        showWidgetMenu = false
+                                                    },
+                                                    onLongClick = {
+                                                        if (editingWidgetId != -1) {
+                                                            editingWidgetId = -1
+                                                        } else {
+                                                            coroutineScope.launch {
+                                                                appMenuShortcuts = viewModel.getShortcuts(item.widgetEntity.providerPackage)
+                                                                editingWidgetId = item.id
+                                                                showAppMenuId = item.id
+                                                                appMenuLabel = item.widgetEntity.label
+                                                                val (offset, right, bottom) = calculateSmartMenuOffset(rowToUse, item.column, item.spanX, item.spanY)
+                                                                contextMenuOffset = offset
+                                                                isRightAligned = right
+                                                                isBottomAligned = bottom
+                                                                showWidgetMenu = true
+                                                            }
+                                                        }
+                                                    },
+                                                    onClick = {
+                                                        if (editingWidgetId != -1) {
+                                                            editingWidgetId = -1
+                                                        }
+                                                    },
+                                                    onInteractionUpdate = { r, c, sx, sy -> 
+                                                        dragTargetBounds = RectBounds(r, c, sx, sy)
+                                                        isCurrentDragBlocked = viewModel.isSpaceOccupied(r, c, sx, sy, totalRows, item.uniqueKey)
+                                                    },
+                                                    onInteractionEnd = {
+                                                        draggingUniqueKey = null
+                                                        dragTargetBounds = null
+                                                        isCurrentDragBlocked = false
+                                                    },
+                                                    onResize = { nr, nc, nsx, nsy ->
+                                                        viewModel.updateWidgetBounds(item.id, nr, nc, nsx, nsy, totalRows)
+                                                        dragTargetBounds = null
+                                                        draggingUniqueKey = null
+                                                        isCurrentDragBlocked = false
+                                                    }
+                                                )
                                             }
                                         }
                                     }
@@ -505,35 +682,188 @@ fun HomeScreen(
                         }
                     }
 
-                    if (isLifting && draggingItem != null) {
-                        val liftScaleOverlay by animateFloatAsState(targetValue = getLiftScale(draggingItem.spanX, draggingItem.spanY), animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow), label = "liftScale")
-                        Box(
-                            modifier = Modifier
-                                .offset { IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt()) }
-                                .size(unitWidth * draggingItem.spanX, unitHeight * draggingItem.spanY)
-                                .zIndex(110f)
-                                .graphicsLayer {
-                                    alpha = 0.8f
-                                    scaleX = liftScaleOverlay
-                                    scaleY = liftScaleOverlay
-                                    shadowElevation = 16.dp.toPx()
-                                    shape = RoundedCornerShape(16.dp)
-                                    clip = true
+                    if (isLifting && (draggingItem != null || draggingAppFromFolder != null)) {
+                        val isWidget = draggingItem is HomeItem.Widget
+                        if (!isWidget) {
+                            val spanX = draggingItem?.spanX ?: 1f
+                            val spanY = draggingItem?.spanY ?: 1f
+                            val liftScaleOverlay by animateFloatAsState(targetValue = getLiftScale(spanX, spanY), animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow), label = "liftScale")
+                            Box(
+                                modifier = Modifier
+                                    .offset { IntOffset(dragOffset.x.roundToInt(), dragOffset.y.roundToInt()) }
+                                    .size(unitWidth * spanX, unitHeight * spanY)
+                                    .zIndex(110f)
+                                    .graphicsLayer {
+                                        alpha = 1.0f
+                                        scaleX = liftScaleOverlay
+                                        scaleY = liftScaleOverlay
+                                        shadowElevation = 16.dp.toPx()
+                                        shape = RoundedCornerShape(16.dp)
+                                        clip = true
+                                    }
+                            ) {
+                                if (draggingItem != null && draggingItem !is HomeItem.Widget) {
+                                    when (draggingItem) {
+                                        is HomeItem.App -> AppItem(app = draggingItem.appModel, sharedTransitionScope = sharedTransitionScope, animatedVisibilityScope = animatedVisibilityScope, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, refreshTrigger = refreshTrigger, sharedElementKeyPrefix = "drag-overlay", onClick = {})
+                                        is HomeItem.Folder -> FolderItem(label = draggingItem.label, apps = draggingItem.apps, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, onClick = {})
+                                        is HomeItem.Widget -> {}
+                                    }
+                                } else if (draggingAppFromFolder != null) {
+                                    AppItem(app = draggingAppFromFolder!!, sharedTransitionScope = sharedTransitionScope, animatedVisibilityScope = animatedVisibilityScope, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, refreshTrigger = refreshTrigger, sharedElementKeyPrefix = "drag-overlay", onClick = {})
                                 }
-                        ) {
-                            when (draggingItem) {
-                                is HomeItem.App -> AppItem(app = draggingItem.appModel, sharedTransitionScope = sharedTransitionScope, animatedVisibilityScope = animatedVisibilityScope, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, refreshTrigger = refreshTrigger, onClick = {})
-                                is HomeItem.Folder -> FolderItem(label = draggingItem.label, apps = draggingItem.apps, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, onClick = {})
-                                else -> {}
                             }
                         }
                     }
 
-                    HomeContextMenu(expanded = showContextMenu, onDismissRequest = { showContextMenu = false }, offset = contextMenuOffset, onOpenWidgets = { showWidgetPicker = true }, onAddApp = { showAppPicker = true }, onOpenLauncherSettings = { showSettings = true })
-                    if (showAppMenuPackage != null) AppContextMenu(expanded = true, onDismissRequest = { showAppMenuPackage = null }, packageName = showAppMenuPackage!!, label = appMenuLabel, shortcuts = appMenuShortcuts, offset = contextMenuOffset, onShortcutClick = { viewModel.launchShortcut(it) }, onHideToggle = { viewModel.hideApp(showAppMenuPackage!!) }, onRemove = { viewModel.removeHomeApp(showAppMenuId) })
+                    HomeContextMenu(
+                        expanded = showContextMenu, 
+                        onDismissRequest = { showContextMenu = false }, 
+                        offset = contextMenuOffset, 
+                        isRightAligned = isRightAligned,
+                        isBottomAligned = isBottomAligned,
+                        onOpenWidgets = { showWidgetPicker = true }, 
+                        onAddApp = { showAppPicker = true }, 
+                        onOpenLauncherSettings = { showSettings = true }
+                    )
+                    
+                    if (showFolderMenu) {
+                        val folderItem = homeItems.find { it.id == showFolderMenuId && it is HomeItem.Folder } as? HomeItem.Folder
+                        FolderContextMenu(
+                            expanded = true,
+                            onDismissRequest = { showFolderMenu = false; showFolderMenuId = -1 },
+                            label = folderItem?.label ?: "Folder",
+                            offset = contextMenuOffset,
+                            onEditName = {
+                                expandedFolderId = showFolderMenuId
+                                autoFocusFolderName = true
+                            },
+                            onRemove = {
+                                viewModel.removeFolder(showFolderMenuId)
+                                showFolderMenu = false
+                                showFolderMenuId = -1
+                            }
+                        )
+                    }
+
+                    if (showAppMenuPackage != null) AppContextMenu(
+                        expanded = true, 
+                        onDismissRequest = { showAppMenuPackage = null }, 
+                        packageName = showAppMenuPackage!!, 
+                        label = appMenuLabel, 
+                        shortcuts = appMenuShortcuts, 
+                        offset = contextMenuOffset, 
+                        isRightAligned = isRightAligned,
+                        isBottomAligned = isBottomAligned,
+                        isPremium = isPremium,
+                        onShortcutClick = { viewModel.launchShortcut(it) }, 
+                        onHideToggle = { viewModel.hideApp(showAppMenuPackage!!) }, 
+                        onRemove = { viewModel.removeHomeApp(showAppMenuId) },
+                        onShowPaywall = { /* Trigger paywall logic */ }
+                    )
+                    if (showWidgetMenu) {
+                        val widgetItem = homeItems.find { it.id == showAppMenuId && it is HomeItem.Widget } as? HomeItem.Widget
+                        WidgetContextMenu(
+                            expanded = true,
+                            onDismissRequest = { showWidgetMenu = false },
+                            onRemove = { 
+                                viewModel.removeWidget(showAppMenuId)
+                                showWidgetMenu = false
+                                editingWidgetId = -1
+                            },
+                            onOpenApp = { 
+                                widgetItem?.let { viewModel.launchApp(it.widgetEntity.providerPackage) }
+                                showWidgetMenu = false 
+                                editingWidgetId = -1
+                            },
+                            onAppInfo = {
+                                widgetItem?.let {
+                                    val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = android.net.Uri.fromParts("package", it.widgetEntity.providerPackage, null)
+                                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                }
+                                showWidgetMenu = false
+                                editingWidgetId = -1
+                            },
+                            label = appMenuLabel,
+                            shortcuts = appMenuShortcuts,
+                            onShortcutClick = { 
+                                viewModel.launchShortcut(it)
+                                editingWidgetId = -1
+                            },
+                            offset = contextMenuOffset,
+                            isRightAligned = isRightAligned,
+                            isBottomAligned = isBottomAligned
+                        )
+                    }
                     
                     val expandedFolder = remember(homeItems, expandedFolderId) { homeItems.find { it.id == expandedFolderId && it is HomeItem.Folder } as? HomeItem.Folder }
-                    if (expandedFolder != null) FolderExpansion(folderId = expandedFolder.id, label = expandedFolder.label, apps = expandedFolder.apps, unitWidth = unitWidth, unitHeight = unitHeight, iconSize = iconSize, fontSize = fontSize, onDismiss = { expandedFolderId = -1 }, onDissolve = { viewModel.removeFolder(expandedFolder.id) }, onAddApps = { pendingFolderIdForAdd = expandedFolder.id; showAppPicker = true }, onLabelChange = { viewModel.updateFolderLabel(expandedFolder.id, it) }, onAppClick = { pkg, opts -> viewModel.launchApp(pkg, opts); expandedFolderId = -1 }, sharedTransitionScope = sharedTransitionScope, animatedVisibilityScope = animatedVisibilityScope, useMonochrome = preferences.useMonochromeIcons, refreshTrigger = refreshTrigger, onHapticFeedback = hapticFeedback, getShortcuts = { viewModel.getShortcuts(it) }, onShortcutClick = { viewModel.launchShortcut(it) }, onHideToggle = { viewModel.hideApp(it) }, onAppDragStart = { app, startPos, grab -> draggingAppFromFolder = app; dragOffset = startPos; grabPoint = grab; isDragConfirmed = true }, onAppDrag = { dragOffset += it }, onAppDragEnd = { if (isDragConfirmed) { dragTargetBounds?.let { viewModel.removeAppFromFolder(expandedFolder.id, draggingAppFromFolder!!.packageName, it.row, it.col) } }; draggingAppFromFolder = null; dragTargetBounds = null; expandedFolderId = -1 }, onAppDragCancel = { draggingAppFromFolder = null; expandedFolderId = -1 })
+                    if (expandedFolder != null) FolderExpansion(folderId = expandedFolder.id, label = expandedFolder.label, apps = expandedFolder.apps, unitWidth = unitWidth, unitHeight = unitHeight, iconSize = iconSize, fontSize = fontSize, onDismiss = { expandedFolderId = -1 }, onRemove = { viewModel.removeFolder(expandedFolder.id) }, onAddApps = { pendingFolderIdForAdd = expandedFolder.id; showAppPicker = true }, onLabelChange = { viewModel.updateFolderLabel(expandedFolder.id, it) }, onAppClick = { pkg, opts -> 
+                        if (editingWidgetId != -1) {
+                            editingWidgetId = -1
+                            expandedFolderId = -1
+                            return@FolderExpansion
+                        }
+                        hapticFeedback(HapticEngine.HapticType.CLICK)
+                        viewModel.launchApp(pkg, opts)
+                        expandedFolderId = -1 
+                    }, sharedTransitionScope = sharedTransitionScope, animatedVisibilityScope = animatedVisibilityScope, useMonochrome = preferences.useMonochromeIcons, refreshTrigger = refreshTrigger, onHapticFeedback = hapticFeedback, getShortcuts = { viewModel.getShortcuts(it) }, onShortcutClick = { viewModel.launchShortcut(it) }, onHideToggle = { viewModel.hideApp(it) }, onAddToHome = { viewModel.addHomeApp(it, 0f, 0f) }, isDrawerFolder = false, onAppDragStart = { app, startPos, grab -> 
+                        hapticFeedback(HapticEngine.HapticType.DRAG_START)
+                        draggingAppFromFolder = app
+                        dragOffset = startPos
+                        grabPoint = grab
+                        isDragConfirmed = true 
+                        draggingUniqueKey = "APP_FOLDER_DRAG" // Sentinel to trigger tray/mesh state
+                    }, onAppDrag = { dragAmount -> 
+                        dragOffset += dragAmount
+                        dragTargetBounds = calculateTargetBounds(dragOffset + grabPoint, 1f, 1f)
+                        
+                        // Hover/Collision check for dragging OUT of folder
+                        val newHoveredKey = dragTargetBounds?.let { b ->
+                            homeItems.find { other ->
+                                // Skip the folder we are coming from if possible, or just use center distance
+                                if (other.id == expandedFolderId) return@find false 
+                                val otherRow = if (other.row >= 99f) dockRow else other.row
+                                val distSq = (b.row - otherRow) * (b.row - otherRow) + (b.col - other.column) * (b.col - other.column)
+                                distSq < 0.0625f
+                            }?.uniqueKey
+                        }
+                        if (newHoveredKey != hoveredUniqueKey) {
+                            if (newHoveredKey != null) hapticFeedback(HapticEngine.HapticType.GRID_SNAP)
+                            hoveredUniqueKey = newHoveredKey
+                        }
+
+                        blockedUniqueKeys = dragTargetBounds?.let { b ->
+                            val targetRect = android.graphics.RectF(b.col, b.row, b.col + 1f, b.row + 1f)
+                            homeItems.filter { other ->
+                                if (other.id == expandedFolderId || other.uniqueKey == newHoveredKey) return@filter false
+                                val otherRow = if (other.row >= 99f) dockRow else other.row
+                                val otherRect = android.graphics.RectF(other.column, otherRow, other.column + other.spanX, otherRow + other.spanY)
+                                android.graphics.RectF.intersects(targetRect, otherRect)
+                            }.map { it.uniqueKey }.toSet()
+                        } ?: emptySet()
+
+                        isCurrentDragBlocked = blockedUniqueKeys.isNotEmpty()
+                    }, onAppDragEnd = { 
+                        if (isDragConfirmed) { 
+                            hapticFeedback(HapticEngine.HapticType.DRAG_END)
+                            dragTargetBounds?.let { viewModel.removeAppFromFolder(expandedFolder.id, draggingAppFromFolder!!.packageName, it.row, it.col) } 
+                        }
+                        draggingAppFromFolder = null
+                        draggingUniqueKey = null
+                        hoveredUniqueKey = null
+                        blockedUniqueKeys = emptySet()
+                        dragTargetBounds = null
+                        expandedFolderId = -1 
+                    }, onAppDragCancel = { 
+                        draggingAppFromFolder = null
+                        draggingUniqueKey = null
+                        hoveredUniqueKey = null
+                        blockedUniqueKeys = emptySet()
+                        dragTargetBounds = null
+                        expandedFolderId = -1 
+                    })
 
                     if (showAppPicker) AppPickerDialog(title = "Add Application", apps = viewModel.availableAppsForPicker.collectAsStateWithLifecycle().value, recentlyUsedApps = viewModel.recentlyUsedApps.collectAsStateWithLifecycle().value, onAppSelected = { viewModel.addHomeApp(it.packageName, pendingAddAppRow, pendingAddAppCol); showAppPicker = false }, onDismissRequest = { showAppPicker = false })
                     if (showWidgetPicker) WidgetPickerDialog(appsWithWidgets = viewModel.appsWithWidgets.collectAsStateWithLifecycle().value, allWidgetProviders = viewModel.appWidgetManager.installedProviders, unitWidthDp = unitWidth.value, unitHeightDp = unitHeight.value, maxColumns = columns, onGetWidgets = { viewModel.getWidgetsForApp(it) }, onWidgetSelected = { info -> showWidgetPicker = false; val id = viewModel.allocateWidgetId(); if (viewModel.appWidgetManager.bindAppWidgetIdIfAllowed(id, info.provider)) viewModel.completeWidgetConfiguration(id) }, onDismissRequest = { showWidgetPicker = false })
@@ -546,7 +876,22 @@ fun HomeScreen(
 
         AnimatedVisibility(visible = showDrawer, enter = slideInVertically(initialOffsetY = { it }) + fadeIn(), exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()) {
             Surface(modifier = Modifier.fillMaxSize(), shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)) {
-                DrawerScreen(viewModel = drawerViewModel, sharedTransitionScope = sharedTransitionScope, animatedVisibilityScope = this@AnimatedVisibility, onAppClick = { pkg, opts -> viewModel.recordDrawerAppLaunch(); viewModel.launchApp(pkg, opts) }, onShortcutClick = { viewModel.recordDrawerAppLaunch(); viewModel.launchShortcut(it) })
+                DrawerScreen(
+                    viewModel = drawerViewModel, 
+                    sharedTransitionScope = sharedTransitionScope, 
+                    animatedVisibilityScope = this@AnimatedVisibility, 
+                    onAppClick = { pkg, opts -> 
+                        viewModel.recordDrawerAppLaunch()
+                        viewModel.launchApp(pkg, opts) 
+                    }, 
+                    onShortcutClick = { 
+                        viewModel.recordDrawerAppLaunch()
+                        viewModel.launchShortcut(it) 
+                    },
+                    onAddToHome = { pkg ->
+                        viewModel.addHomeApp(pkg, 0f, 0f) // Add to home logic
+                    }
+                )
             }
         }
     }

@@ -56,6 +56,7 @@ class HapticEngine @Inject constructor() {
             } else {
                 HapticFeedbackConstants.LONG_PRESS
             }
+            HapticType.CLICK -> HapticFeedbackConstants.VIRTUAL_KEY
         }
         view.isHapticFeedbackEnabled = true
         view.performHapticFeedback(constant, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING)
@@ -69,6 +70,7 @@ class HapticEngine @Inject constructor() {
         FOLDER_OPEN,
         DRAWER_OPEN,
         TOGGLE,
-        REJECT
+        REJECT,
+        CLICK
     }
 }

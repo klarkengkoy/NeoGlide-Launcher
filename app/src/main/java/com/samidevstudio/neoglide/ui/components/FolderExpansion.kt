@@ -85,6 +85,7 @@ fun FolderExpansion(
     onLabelChange: (String) -> Unit,
     onAppClick: (String, android.os.Bundle?) -> Unit,
     onDissolve: () -> Unit = {},
+    onRemove: () -> Unit = {},
     onAddApps: () -> Unit = {},
     onMoveToCategory: (AppCategory) -> Unit = {},
     isDrawerFolder: Boolean = true,
@@ -98,6 +99,7 @@ fun FolderExpansion(
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: (String) -> Unit = {},
+    onAddToHome: ((String) -> Unit)? = null,
     onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
     isLocked: Boolean = false,
     autoFocusLabel: Boolean = false,
@@ -267,16 +269,27 @@ fun FolderExpansion(
 
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-                                DropdownMenuItem(
-                                    text = { 
-                                        Text(if (isDrawerFolder) "Dissolve folder" else "Remove from Home") 
-                                    },
-                                    onClick = {
-                                        showMenu = false
-                                        onDissolve()
-                                        onDismiss()
-                                    }
-                                )
+                                if (isDrawerFolder) {
+                                    DropdownMenuItem(
+                                        text = { Text("Dissolve folder") },
+                                        onClick = {
+                                            showMenu = false
+                                            onDissolve()
+                                            onDismiss()
+                                        }
+                                    )
+                                }
+
+                                if (!isDrawerFolder) {
+                                    DropdownMenuItem(
+                                        text = { Text("Remove folder") },
+                                        onClick = {
+                                            showMenu = false
+                                            onRemove()
+                                            onDismiss()
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -403,7 +416,8 @@ fun FolderExpansion(
                                         label = app.label,
                                         shortcuts = shortcuts,
                                         onShortcutClick = onShortcutClick,
-                                        onHideToggle = { onHideToggle(app.packageName) }
+                                        onHideToggle = { onHideToggle(app.packageName) },
+                                        onAddToHome = if (onAddToHome != null) { { onAddToHome(app.packageName) } } else null
                                     )
                                 }
                             }
