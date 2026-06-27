@@ -2,7 +2,6 @@ package com.samidevstudio.neoglide.data.billing
 
 import android.app.Activity
 import android.content.Context
-import android.util.Log
 import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
@@ -89,17 +88,13 @@ class BillingManager @Inject constructor(
             object : BillingClientStateListener {
                 override fun onBillingSetupFinished(billingResult: BillingResult) {
                 if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                    Log.d("BillingManager", "Billing setup finished")
                     _isBillingReady.value = true
                     queryProductDetails()
                     checkPurchases()
-                } else {
-                    Log.e("BillingManager", "Billing setup failed: ${billingResult.debugMessage}")
                 }
             }
 
             override fun onBillingServiceDisconnected() {
-                Log.d("BillingManager", "Billing service disconnected")
                 _isBillingReady.value = false
             }
         })
@@ -115,9 +110,6 @@ class BillingManager @Inject constructor(
                 val productDetailsList = queryProductDetailsResult.productDetailsList
                 val detailsMap = productDetailsList.associateBy { it.productId }
                 _productDetails.update { it + detailsMap }
-                Log.d("BillingManager", "In-app product details queried: ${detailsMap.keys}")
-            } else {
-                Log.e("BillingManager", "Failed to query in-app products: ${billingResult.responseCode} - ${billingResult.debugMessage}")
             }
         }
 
@@ -130,9 +122,6 @@ class BillingManager @Inject constructor(
                 val productDetailsList = queryProductDetailsResult.productDetailsList
                 val detailsMap = productDetailsList.associateBy { it.productId }
                 _productDetails.update { it + detailsMap }
-                Log.d("BillingManager", "Subscription product details queried: ${detailsMap.keys}")
-            } else {
-                Log.e("BillingManager", "Failed to query subscription products: ${billingResult.responseCode} - ${billingResult.debugMessage}")
             }
         }
     }
@@ -276,10 +265,6 @@ class BillingManager @Inject constructor(
                 }
             }
             BillingClient.BillingResponseCode.USER_CANCELED -> {
-                Log.d("BillingManager", "User canceled purchase")
-            }
-            else -> {
-                Log.e("BillingManager", "Purchase failed: ${billingResult.debugMessage}")
             }
         }
     }
@@ -292,7 +277,6 @@ class BillingManager @Inject constructor(
                     .build()
                 billingClient.acknowledgePurchase(acknowledgeParams) { billingResult ->
                     if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                        Log.d("BillingManager", "Purchase acknowledged")
                         updatePremiumStatus(true)
                     }
                 }

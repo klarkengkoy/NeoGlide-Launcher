@@ -7,7 +7,6 @@ import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
-import android.util.Log
 import androidx.core.net.toUri
 import com.samidevstudio.neoglide.data.local.dao.AppDao
 import com.samidevstudio.neoglide.data.local.dao.FolderDao
@@ -57,7 +56,6 @@ class AppRepository @Inject constructor(
     fun warmUpIcons(iconLoader: IconLoader, scope: CoroutineScope) {
         warmUpJob?.cancel()
         warmUpJob = scope.launch(Dispatchers.Default) {
-            Log.d("NeoGlideInit", "Step 5: Starting icon warm-up sequence...")
             // Wait for the first database refresh to complete if it hasn't already
             if (!_isDatabaseReady.value) {
                 _isDatabaseReady.first { it }
@@ -94,7 +92,6 @@ class AppRepository @Inject constructor(
             }
             
             // Critical warm-up (what user sees immediately) is done
-            Log.d("NeoGlideInit", "Step 5: Critical warm-up complete (First 12 icons).")
             yield()
 
             // Priority 3: The rest (deeper storage)
@@ -111,7 +108,6 @@ class AppRepository @Inject constructor(
                     delay(400.milliseconds) 
                 }
             }
-            Log.d("NeoGlideInit", "Step 5: Full icon warm-up finished (Processed ${apps.size} apps).")
         }
     }
 
@@ -130,7 +126,6 @@ class AppRepository @Inject constructor(
         forceRecategorize: Boolean = false,
         forceRecalculateColors: Boolean = false,
     ) = withContext(Dispatchers.IO) {
-        Log.d("NeoGlideInit", "Step 3: Starting app database refresh...")
         val userHandle = android.os.Process.myUserHandle()
         val activityList = launcherApps.getActivityList(null, userHandle)
         
@@ -167,7 +162,6 @@ class AppRepository @Inject constructor(
         }
         appDao.insertApps(appEntities)
         _isDatabaseReady.value = true
-        Log.d("NeoGlideInit", "Step 3: App database refresh complete (Total: ${appEntities.size} apps).")
     }
 
     suspend fun updatePackage(packageName: String) = withContext(Dispatchers.IO) {
@@ -287,7 +281,7 @@ class AppRepository @Inject constructor(
                     icon = icon
                 )
             }.take(5)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             emptyList()
         }
     }
@@ -301,6 +295,17 @@ class AppRepository @Inject constructor(
         } catch (_: Exception) {
             launchApp(packageName)
         }
+    }
+
+    suspend fun addDebugApp(packageName: String, label: String) = withContext(Dispatchers.IO) {
+        appDao.insertApp(
+            AppEntity(
+                packageName = packageName,
+                label = label,
+                category = "DEBUG",
+                installTime = System.currentTimeMillis()
+            )
+        )
     }
 
 

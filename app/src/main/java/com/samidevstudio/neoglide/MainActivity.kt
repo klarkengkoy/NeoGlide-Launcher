@@ -15,7 +15,6 @@ import android.graphics.PorterDuffXfermode
 import android.graphics.RectF
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import android.view.animation.DecelerateInterpolator
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -140,7 +139,6 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
-        Log.d("NeoGlideInit", "Step 5: Main Activity Resumed.")
         // Cancel any pending cleanup as user returned
         delayedCleanupJob?.cancel()
 
@@ -225,10 +223,8 @@ class MainActivity : FragmentActivity() {
 
     @OptIn(ExperimentalSharedTransitionApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
-        Log.d("NeoGlideInit", "Step 2: Activity onCreate started.")
         val startTime = System.currentTimeMillis()
 
-        Log.d("NeoGlideInit", "Step 2: Installing SplashScreen API.")
         val splashScreen = installSplashScreen()
 
         var hasLoggedDismissal = false
@@ -239,13 +235,11 @@ class MainActivity : FragmentActivity() {
             val shouldStay = (!isDatabaseReady) && (elapsed < 5000)
             if (!shouldStay && !hasLoggedDismissal) {
                 hasLoggedDismissal = true
-                Log.d("NeoGlideInit", "Step 2: Splash screen condition met. Ready to transition.")
             }
             shouldStay
         }
 
         splashScreen.setOnExitAnimationListener { vp ->
-            Log.d("NeoGlideInit", "Step 4: Starting Unified Overlay Animation (Erase then Un-Scribble Reveal).")
             val iconView = vp.iconView
             val iconWidth = iconView.width
             val iconHeight = iconView.height
@@ -406,7 +400,6 @@ class MainActivity : FragmentActivity() {
             appRepository.refreshApps()
         }
 
-        Log.d("NeoGlideInit", "Step 3: Setting up Compose UI content...")
         setContent {
             CompositionLocalProvider(
                 LocalHapticEngine provides hapticEngine,
@@ -414,7 +407,6 @@ class MainActivity : FragmentActivity() {
                 LocalIconLoader provides iconLoader,
                 LocalWallpaperIsLight provides wallpaperIsLight,
             ) {
-                Log.d("NeoGlideInit", "Step 3: UI Composition entered.")
                 NeoGlideLauncherTheme {
                     Box(modifier = Modifier.fillMaxSize()) {
                         val navigationState = rememberNavigationState(

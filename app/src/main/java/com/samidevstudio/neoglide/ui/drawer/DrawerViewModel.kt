@@ -99,6 +99,15 @@ class DrawerViewModel @Inject constructor(
         _refreshTrigger.value += 1
     }
 
+    private val _drawerColumns = MutableStateFlow(5)
+    val drawerColumns = _drawerColumns.asStateFlow()
+
+    fun updateDrawerColumns(columns: Int) {
+        if (_drawerColumns.value != columns) {
+            _drawerColumns.value = columns
+        }
+    }
+
     val allApps: StateFlow<List<AppModel>> = appRepository.allApps
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -262,10 +271,9 @@ class DrawerViewModel @Inject constructor(
 
     val gridItems: StateFlow<Map<AppCategory?, List<DrawerItem?>>> = combine(
         categorizedApps,
-
+        _drawerColumns,
         preferences
-    ) { categorized, prefs ->
-        val columns = 4 
+    ) { categorized, columns, prefs ->
         val sortingMode = prefs.sortingMode
         val isReverse = prefs.isSortReverse
         val verticalAnchor = prefs.verticalAnchor
