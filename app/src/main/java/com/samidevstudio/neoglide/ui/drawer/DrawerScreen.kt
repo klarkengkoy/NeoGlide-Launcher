@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -162,6 +163,7 @@ fun DrawerScreen(
     animatedVisibilityScope: AnimatedVisibilityScope,
     onAppClick: (String, android.os.Bundle?) -> Unit,
     onShortcutClick: (AppShortcut) -> Unit,
+    onAddToHome: (String) -> Unit = {},
 ) {
     val dragInfo = remember { DragTargetInfo() }
     
@@ -174,6 +176,7 @@ fun DrawerScreen(
             animatedVisibilityScope = animatedVisibilityScope,
             onAppClick = onAppClick,
             onShortcutClick = onShortcutClick,
+            onAddToHome = onAddToHome,
             dragInfo = dragInfo
         )
     }
@@ -189,6 +192,7 @@ private fun DrawerContent(
     animatedVisibilityScope: AnimatedVisibilityScope,
     onAppClick: (String, android.os.Bundle?) -> Unit,
     onShortcutClick: (AppShortcut) -> Unit,
+    onAddToHome: (String) -> Unit,
     dragInfo: DragTargetInfo
 ) {
     val categorizedApps by viewModel.categorizedApps.collectAsStateWithLifecycle()
@@ -282,15 +286,34 @@ private fun DrawerContent(
     val screenWidthDp = with(density) { containerSize.width.toDp() }
     val screenHeightDp = with(density) { containerSize.height.toDp() }
 
-    val layoutConfig = remember(preferences.gridSize, screenWidthDp, screenHeightDp) {
-        LayoutManager.calculateConfig(screenWidthDp, screenHeightDp, preferences.gridSize)
+    val statusBars = WindowInsets.statusBars.asPaddingValues()
+    val navigationBars = WindowInsets.navigationBars.asPaddingValues()
+    val topInset = statusBars.calculateTopPadding()
+    val bottomInset = navigationBars.calculateBottomPadding()
+
+    val isVerticalRail = showCategoryBar && (orientation == CategoryOrientation.VERTICAL_LEFT || orientation == CategoryOrientation.VERTICAL_RIGHT)
+    val railWidth = if (isVerticalRail) 56.dp else 0.dp
+    val forcedWidth = screenWidthDp - 32.dp - railWidth
+
+    val layoutConfig = remember(preferences.gridSize, forcedWidth, screenHeightDp, topInset, bottomInset) {
+        LayoutManager.calculateConfig(
+            screenWidthDp = screenWidthDp, 
+            screenHeightDp = screenHeightDp, 
+            densitySetting = preferences.gridSize, 
+            forcedWidth = forcedWidth,
+            topInset = topInset,
+            bottomInset = bottomInset
+        )
     }
-    
+
+    LaunchedEffect(layoutConfig.columns) {
+        viewModel.updateDrawerColumns(layoutConfig.columns)
+    }
+
     val columns = layoutConfig.columns
     val iconSize = layoutConfig.iconSize
     val fontSize = layoutConfig.fontSize
     val unitWidth = layoutConfig.unitWidth
-    val sidePadding = layoutConfig.sidePadding
 
     Box(
         modifier = modifier
@@ -312,6 +335,7 @@ private fun DrawerContent(
             animatedVisibilityScope = animatedVisibilityScope,
             onAppClick = onAppClick,
             onShortcutClick = onShortcutClick,
+            onAddToHome = onAddToHome,
             activeNotifications = activeNotifications,
             gridItems = gridItems,
             categories = categories,
@@ -323,11 +347,11 @@ private fun DrawerContent(
             onSearchActiveChange = { isSearchActive = it },
             onSettingsClick = { showSettings = true },
             onFolderClick = { expandedFolderId = it },
-            layoutConfig = layoutConfig,
             columns = columns,
             iconSize = iconSize,
             fontSize = fontSize,
-            sidePadding = sidePadding
+            topPadding = layoutConfig.topPadding,
+            bottomPadding = layoutConfig.bottomPadding
         )
 
         DrawerOverlays(
@@ -347,6 +371,7 @@ private fun DrawerContent(
             animatedVisibilityScope = animatedVisibilityScope,
             onAppClick = onAppClick,
             onShortcutClick = onShortcutClick,
+            onAddToHome = onAddToHome,
             hapticFeedback = hapticFeedback,
             dragInfo = dragInfo,
             drawerRootCoords = drawerRootCoords,
@@ -383,6 +408,7 @@ private fun DrawerMainLayout(
     animatedVisibilityScope: AnimatedVisibilityScope,
     onAppClick: (String, android.os.Bundle?) -> Unit,
     onShortcutClick: (AppShortcut) -> Unit,
+    onAddToHome: (String) -> Unit,
     activeNotifications: Map<String, Int>,
     gridItems: Map<AppCategory?, List<DrawerItem?>>,
     categories: List<AppCategory?>,
@@ -394,21 +420,19 @@ private fun DrawerMainLayout(
     onSearchActiveChange: (Boolean) -> Unit,
     onSettingsClick: () -> Unit,
     onFolderClick: (Int) -> Unit,
-    layoutConfig: LayoutManager.LayoutConfig,
     columns: Int,
     iconSize: androidx.compose.ui.unit.Dp,
     fontSize: androidx.compose.ui.unit.TextUnit,
-    sidePadding: androidx.compose.ui.unit.Dp
+    topPadding: androidx.compose.ui.unit.Dp,
+    bottomPadding: androidx.compose.ui.unit.Dp
 ) {
     val context = LocalContext.current
     
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .windowInsetsPadding(WindowInsets.navigationBars)
             .imePadding()
-            .padding(top = 16.dp),
+            .padding(top = topPadding, bottom = bottomPadding),
     ) {
         DrawerHeader(
             selectedCategory = selectedCategory,
@@ -445,6 +469,9 @@ private fun DrawerMainLayout(
                     animatedVisibilityScope = animatedVisibilityScope,
                     onAppClick = onAppClick,
                     onShortcutClick = onShortcutClick,
+                    onAddToHome = onAddToHome,
+                    isPremium = preferences.isPremium,
+                    onShowPaywall = { /* Show paywall */ },
                     getShortcuts = { viewModel.getShortcuts(it) },
                     onHideToggle = { packageName, isHidden ->
                         if (isHidden) viewModel.unhideApp(packageName) else viewModel.hideApp(packageName)
@@ -490,8 +517,7 @@ private fun DrawerMainLayout(
                                 columns = columns,
                                 onFolderClick = onFolderClick,
                                 bottomPadding = if (showCategoryBar && orientation == CategoryOrientation.HORIZONTAL_BOTTOM) 8.dp else 20.dp,
-                                sidePadding = sidePadding,
-                                spacing = layoutConfig.spacing,
+                                sidePadding = 0.dp,
                                 modifier = Modifier.weight(1f),
                                 sharedTransitionScope = sharedTransitionScope,
                                 animatedVisibilityScope = animatedVisibilityScope,
@@ -525,6 +551,9 @@ private fun DrawerMainLayout(
                                 onFolderMove = { folderId, category ->
                                     viewModel.moveFolderToCategory(folderId, category)
                                 },
+                                onAddToHome = onAddToHome,
+                                isPremium = preferences.isPremium,
+                                onShowPaywall = { /* Show paywall */ },
                                 onAppClick = onAppClick
                             )
 
@@ -584,6 +613,7 @@ private fun DrawerOverlays(
     animatedVisibilityScope: AnimatedVisibilityScope,
     onAppClick: (String, android.os.Bundle?) -> Unit,
     onShortcutClick: (AppShortcut) -> Unit,
+    onAddToHome: (String) -> Unit,
     hapticFeedback: (HapticEngine.HapticType) -> Unit,
     dragInfo: DragTargetInfo,
     drawerRootCoords: LayoutCoordinates?,
@@ -661,6 +691,7 @@ private fun DrawerOverlays(
                         getShortcuts = { viewModel.getShortcuts(it) },
                         onShortcutClick = onShortcutClick,
                         onHideToggle = { viewModel.hideApp(it) },
+                        onAddToHome = onAddToHome,
                         onHapticFeedback = hapticFeedback,
                         onAppDragStart = { app, windowOffset, grabPoint ->
                             hapticFeedback(HapticEngine.HapticType.DRAG_START)
@@ -1046,8 +1077,11 @@ private fun DrawerSearchResults(
     animatedVisibilityScope: AnimatedVisibilityScope,
     onAppClick: (String, android.os.Bundle?) -> Unit,
     onShortcutClick: (AppShortcut) -> Unit,
+    onAddToHome: (String) -> Unit,
     getShortcuts: suspend (String) -> List<AppShortcut>,
     onHideToggle: (String, Boolean) -> Unit,
+    isPremium: Boolean,
+    onShowPaywall: () -> Unit,
     onWebSearch: (String) -> Unit,
     iconSize: androidx.compose.ui.unit.Dp,
     fontSize: androidx.compose.ui.unit.TextUnit
@@ -1070,6 +1104,9 @@ private fun DrawerSearchResults(
         getShortcuts = getShortcuts,
         onShortcutClick = onShortcutClick,
         onHideToggle = onHideToggle,
+        onAddToHome = onAddToHome,
+        isPremium = isPremium,
+        onShowPaywall = onShowPaywall,
         onWebSearch = onWebSearch,
         iconSize = iconSize,
         fontSize = fontSize
@@ -1342,7 +1379,6 @@ fun AppGrid(
     modifier: Modifier = Modifier,
     bottomPadding: androidx.compose.ui.unit.Dp = 20.dp,
     sidePadding: androidx.compose.ui.unit.Dp = 16.dp,
-    spacing: androidx.compose.ui.unit.Dp = 0.dp,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     useMonochrome: Boolean = false,
@@ -1365,13 +1401,16 @@ fun AppGrid(
     onMerge: (AppModel, AppModel) -> Unit = { _, _ -> },
     onFolderMerge: (AppModel, Int) -> Unit = { _, _ -> },
     onFolderMove: (Int, AppCategory) -> Unit = { _, _ -> },
+    onAddToHome: (String) -> Unit = {},
+    isPremium: Boolean = false,
+    onShowPaywall: () -> Unit = {},
     onAppClick: (String, android.os.Bundle?) -> Unit
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
         reverseLayout = false,
-        contentPadding = PaddingValues(bottom = bottomPadding, start = sidePadding - (spacing / 2f), end = sidePadding - (spacing / 2f)),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(bottom = bottomPadding, start = sidePadding, end = sidePadding),
+        horizontalArrangement = Arrangement.Center,
         verticalArrangement = if (verticalAnchor == VerticalAnchor.BOTTOM) {
             Arrangement.spacedBy(16.dp, Alignment.Bottom)
         } else {
@@ -1564,7 +1603,10 @@ fun AppGrid(
                                     refreshTrigger = refreshTrigger,
                                     getShortcuts = getShortcuts,
                                     onShortcutClick = onShortcutClick,
-                                    onHideToggle = { onHideToggle(drawerItem.appModel.packageName, drawerItem.appModel.packageName in hiddenPackages) }
+                                    onHideToggle = { onHideToggle(drawerItem.appModel.packageName, drawerItem.appModel.packageName in hiddenPackages) },
+                                    onAddToHome = { onAddToHome(drawerItem.appModel.packageName) },
+                                    isPremium = isPremium,
+                                    onShowPaywall = onShowPaywall
                                 ) { options ->
                                     onAppClick(drawerItem.appModel.packageName, options)
                                 }
@@ -1577,7 +1619,10 @@ fun AppGrid(
                                         label = drawerItem.appModel.label,
                                         shortcuts = shortcuts,
                                         onShortcutClick = onShortcutClick,
-                                        onHideToggle = { onHideToggle(drawerItem.appModel.packageName, drawerItem.appModel.packageName in hiddenPackages) }
+                                        onHideToggle = { onHideToggle(drawerItem.appModel.packageName, drawerItem.appModel.packageName in hiddenPackages) },
+                                        onAddToHome = { onAddToHome(drawerItem.appModel.packageName) },
+                                        isPremium = isPremium,
+                                        onShowPaywall = onShowPaywall
                                     )
                                 }
                             }
@@ -1640,6 +1685,9 @@ fun SearchResults(
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: (String, Boolean) -> Unit = { _, _ -> },
+    onAddToHome: (String) -> Unit = {},
+    isPremium: Boolean = false,
+    onShowPaywall: () -> Unit = {},
     onWebSearch: (String) -> Unit,
     iconSize: androidx.compose.ui.unit.Dp = 56.dp,
     fontSize: androidx.compose.ui.unit.TextUnit = 13.sp
@@ -1681,7 +1729,10 @@ fun SearchResults(
                                 refreshTrigger = refreshTrigger,
                                 getShortcuts = getShortcuts,
                                 onShortcutClick = onShortcutClick,
-                                onHideToggle = { onHideToggle(app.packageName, app.packageName in hiddenPackages) }
+                                onHideToggle = { onHideToggle(app.packageName, app.packageName in hiddenPackages) },
+                                onAddToHome = { onAddToHome(app.packageName) },
+                                isPremium = isPremium,
+                                onShowPaywall = onShowPaywall
                             ) { options ->
                                 onAppClick(app.packageName, options)
                             }
@@ -1721,6 +1772,9 @@ fun SearchResults(
                     getShortcuts = getShortcuts,
                     onShortcutClick = onShortcutClick,
                     onHideToggle = { onHideToggle(app.packageName, app.packageName in hiddenPackages) },
+                    onAddToHome = { onAddToHome(app.packageName) },
+                    isPremium = isPremium,
+                    onShowPaywall = onShowPaywall,
                     onClick = { options -> onAppClick(app.packageName, options) }
                 )
             }

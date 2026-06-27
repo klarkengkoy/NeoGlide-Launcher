@@ -75,6 +75,9 @@ fun AppItem(
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: () -> Unit = {},
+    onAddToHome: (() -> Unit)? = null,
+    isPremium: Boolean = false,
+    onShowPaywall: () -> Unit = {},
     onLongClick: (() -> Unit)? = null,
     onClick: (android.os.Bundle?) -> Unit
 ) {
@@ -85,7 +88,7 @@ fun AppItem(
     val isWallpaperLight = LocalWallpaperIsLight.current
 
     val hoverScale by animateFloatAsState(
-        targetValue = if (isHovered) 0.8f else 1f,
+        targetValue = if (isHovered) 1.2f else 1f,
         animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessLow),
         label = "hoverScale"
     )
@@ -239,8 +242,11 @@ fun AppItem(
                             label = app.label,
                             shortcuts = shortcuts,
                             isHidden = isHidden,
+                            isPremium = isPremium,
                             onShortcutClick = onShortcutClick,
-                            onHideToggle = onHideToggle
+                            onHideToggle = onHideToggle,
+                            onAddToHome = onAddToHome,
+                            onShowPaywall = onShowPaywall
                         )
                     }
                 }
@@ -278,6 +284,9 @@ fun SearchAppItem(
     showLabel: Boolean = true,
     refreshTrigger: Int = 0,
     onLongClick: (() -> Unit)? = null,
+    onAddToHome: (() -> Unit)? = null,
+    isPremium: Boolean = false,
+    onShowPaywall: () -> Unit = {},
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: () -> Unit = {},
@@ -399,8 +408,11 @@ fun SearchAppItem(
                             label = app.label,
                             shortcuts = shortcuts,
                             isHidden = isHidden,
+                            isPremium = isPremium,
                             onShortcutClick = onShortcutClick,
-                            onHideToggle = onHideToggle
+                            onHideToggle = onHideToggle,
+                            onAddToHome = onAddToHome,
+                            onShowPaywall = onShowPaywall
                         )
                     }
                 }

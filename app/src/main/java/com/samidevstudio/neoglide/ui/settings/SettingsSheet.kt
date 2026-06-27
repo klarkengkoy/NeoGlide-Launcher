@@ -581,7 +581,7 @@ fun SettingsSheet(
                     SettingsGroup(title = "HOME & APPEARANCE") {
                         SettingsItem(
                             icon = Icons.Default.GridView,
-                            title = "Home Screen Layout",
+                            title = "Layout Size",
                             onClick = { activeDialog = "grid" },
                             trailing = { ValueLabel(preferences.gridSize.name.lowercase().replaceFirstChar { it.uppercase() }) }
                         )
@@ -2099,7 +2099,7 @@ fun GridSettingsDialog(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.GridView, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(12.dp))
-                Text("Home Screen Layout")
+                Text("Layout Size")
             }
         },
         text = {
