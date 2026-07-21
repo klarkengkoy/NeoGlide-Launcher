@@ -29,7 +29,7 @@ class PackageChangeReceiver : BroadcastReceiver() {
                 Intent.ACTION_PACKAGE_ADDED, Intent.ACTION_PACKAGE_CHANGED -> {
                     repository.updatePackage(packageName)
                 }
-                Intent.ACTION_PACKAGE_REMOVED -> {
+                Intent.ACTION_PACKAGE_REMOVED, Intent.ACTION_PACKAGE_FULLY_REMOVED -> {
                     val replacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
                     if (!replacing) {
                         repository.removePackage(packageName)

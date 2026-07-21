@@ -1,5 +1,6 @@
 package com.samidevstudio.neoglide.data.repository
 
+import android.appwidget.AppWidgetHost
 import com.samidevstudio.neoglide.data.local.dao.FolderDao
 import com.samidevstudio.neoglide.data.local.dao.HomeAppDao
 import com.samidevstudio.neoglide.data.local.dao.WidgetDao
@@ -21,6 +22,7 @@ class HomeRepository @Inject constructor(
     private val folderDao: FolderDao,
     private val appRepositoryProvider: Provider<AppRepository>,
     private val userPreferencesRepository: UserPreferencesRepository,
+    private val appWidgetHost: AppWidgetHost,
 ) {
     private val appRepository get() = appRepositoryProvider.get()
     val allHomeApps: Flow<List<HomeAppEntity>> = homeAppDao.getAllHomeApps()
@@ -206,7 +208,15 @@ class HomeRepository @Inject constructor(
         // 3. Remove from home screen
         homeAppDao.deleteHomeAppByPackageName(packageName)
         
-        // 4. Dissolve folders if they now have < 2 apps
+        // 4. Remove widgets
+        val widgetIds = widgetDao.getWidgetIdsByPackageName(packageName)
+        widgetIds.forEach { appWidgetHost.deleteAppWidgetId(it) }
+        widgetDao.deleteWidgetsByPackageName(packageName)
+        
+        // 5. Clean up preferences
+        userPreferencesRepository.cleanupPackage(packageName)
+        
+        // 6. Dissolve folders if they now have < 2 apps
         folderIds.forEach { dissolveFolderIfNeeded(it) }
     }
 

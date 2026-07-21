@@ -29,7 +29,7 @@ class IconLoader @Inject constructor(
         refreshTrigger: Int = 0
     ): Pair<Drawable?, Boolean> = withContext(Dispatchers.IO) {
         val cacheKey = "$packageName-$useMonochrome-$iconPackPackageName"
-        
+
         iconCache.withLoadLock(cacheKey) {
             // Check cache again inside lock
             val cached = iconCache.get(cacheKey)
@@ -40,7 +40,7 @@ class IconLoader @Inject constructor(
             try {
                 val userHandle = Process.myUserHandle()
                 val activities = launcherApps.getActivityList(packageName, userHandle)
-                
+
                 if (activities.isNotEmpty()) {
                     val info = activities[0]
                     var icon = info.getIcon(0)
@@ -49,7 +49,7 @@ class IconLoader @Inject constructor(
                     val CALENDAR_METADATA = "com.google.android.calendar.dynamic_icons"
                     val CALENDAR_LEVEL_METADATA = "com.android.launcher3.LEVEL_PER_DAY"
                     val CLOCK_METADATA = "com.google.android.apps.deskclock.dynamic_icons"
-                    
+
                     val activityInfo = pm.getActivityInfo(info.componentName, PackageManager.GET_META_DATA)
                     val metaData = activityInfo.metaData
 
@@ -89,7 +89,7 @@ class IconLoader @Inject constructor(
                     val finalIcon: Drawable?
                     val isMonochromeResult: Boolean
 
-                    if (useMonochrome && (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) && 
+                    if (useMonochrome && (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) &&
                         (icon is AdaptiveIconDrawable) && (icon.monochrome != null)) {
                         finalIcon = icon.monochrome
                         isMonochromeResult = true
@@ -99,12 +99,12 @@ class IconLoader @Inject constructor(
                     }
 
                     val result = finalIcon to isMonochromeResult
-                    
+
                     iconCache.setDynamic(packageName, isDynamic)
                     if (!isDynamic) {
                         iconCache.put(cacheKey, result)
                     }
-                    
+
                     result
                 } else {
                     null to false

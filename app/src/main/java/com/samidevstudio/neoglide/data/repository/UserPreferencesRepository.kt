@@ -252,6 +252,18 @@ class UserPreferencesRepository @Inject constructor(
         context.dataStore.edit { preferences -> preferences[PreferencesKeys.SHOW_HIDDEN_APPS] = show }
     }
 
+    suspend fun cleanupPackage(packageName: String) {
+        context.dataStore.edit { preferences ->
+            val currentHidden = preferences[PreferencesKeys.HIDDEN_PACKAGES] ?: emptySet()
+            if (packageName in currentHidden) {
+                preferences[PreferencesKeys.HIDDEN_PACKAGES] = currentHidden - packageName
+            }
+            if (preferences[PreferencesKeys.ICON_PACK_PACKAGE_NAME] == packageName) {
+                preferences.remove(PreferencesKeys.ICON_PACK_PACKAGE_NAME)
+            }
+        }
+    }
+
     suspend fun updateLastDefaultPromptTime(time: Long) {
         context.dataStore.edit { preferences -> preferences[PreferencesKeys.LAST_DEFAULT_PROMPT_TIME] = time }
     }
