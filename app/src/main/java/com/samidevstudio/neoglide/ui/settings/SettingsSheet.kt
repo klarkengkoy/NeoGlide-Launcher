@@ -335,9 +335,11 @@ fun SettingsSheet(
             AddCategoryDialogRefined(
                 onDismiss = { activeDialog = null },
                 drawerViewModel = drawerViewModel,
-                onAddBuiltIn = { drawerViewModel.addBuiltInCategory(it) },
-                onAddCustom = { name, icon -> 
-                    drawerViewModel.addCustomCategory(name, icon)
+                onAddBuiltIn = { name, selected -> 
+                    drawerViewModel.addBuiltInCategory(name, selected)
+                },
+                onAddCustom = { name, icon, selected -> 
+                    drawerViewModel.addCustomCategory(name, icon, selected)
                 },
                 onSwitchToVertical = { viewModel.setCategoryBarType(CategoryBarType.LEFT) }
             )
@@ -349,7 +351,7 @@ fun SettingsSheet(
                 drawerViewModel = drawerViewModel,
                 onRemove = { category -> drawerViewModel.removeCustomCategory(category) },
                 onReorder = { order -> viewModel.updateCategoryOrder(order) },
-                onUpdate = { old, new, icon -> viewModel.updateCategory(old, new, icon) }
+                onUpdate = { category, newLabel, icon -> viewModel.updateCategory(category, newLabel, icon) }
             )
         }
         "add_folder" -> {
@@ -522,10 +524,10 @@ fun SettingsSheet(
                         )
                         SettingsItem(
                             icon = Icons.Default.Category,
-                            title = "Add Category",
+                            title = "Manage Categories",
                             onClick = {
                                 if (!preferences.lockLayout) {
-                                    activeDialog = "add_category"
+                                    activeDialog = "manage_categories"
                                 } else {
                                     android.widget.Toast.makeText(context, "Locked from launcher settings", android.widget.Toast.LENGTH_SHORT).show()
                                 }

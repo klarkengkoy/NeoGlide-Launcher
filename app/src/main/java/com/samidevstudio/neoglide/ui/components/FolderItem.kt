@@ -50,7 +50,7 @@ fun FolderItem(
     hasNotification: Boolean = false,
     notificationCount: Int = 0,
     onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
-    onClick: () -> Unit = {}
+    onClick: (() -> Unit)? = null
 ) {
     val isWallpaperLight = LocalWallpaperIsLight.current
     val hoverScale by animateFloatAsState(
@@ -62,10 +62,14 @@ fun FolderItem(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .clickable { 
-                onHapticFeedback(HapticEngine.HapticType.FOLDER_OPEN)
-                onClick() 
-            }
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable { 
+                        onHapticFeedback(HapticEngine.HapticType.FOLDER_OPEN)
+                        onClick.invoke() 
+                    }
+                } else Modifier
+            )
             .padding(4.dp)
             .graphicsLayer {
                 scaleX = hoverScale

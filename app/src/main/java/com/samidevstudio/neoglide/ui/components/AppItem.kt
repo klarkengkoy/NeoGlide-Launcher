@@ -79,7 +79,7 @@ fun AppItem(
     isPremium: Boolean = false,
     onShowPaywall: () -> Unit = {},
     onLongClick: (() -> Unit)? = null,
-    onClick: (android.os.Bundle?) -> Unit
+    onClick: ((android.os.Bundle?) -> Unit)?
 ) {
     var showMenu by remember { mutableStateOf(false) }
     var shortcuts by remember { mutableStateOf<List<AppShortcut>>(emptyList()) }
@@ -107,7 +107,8 @@ fun AppItem(
     }
 
     with(sharedTransitionScope) {
-        val sharedIconModifier = if (sharedElementKeyPrefix != "drawer") {
+        val isDragOverlay = sharedElementKeyPrefix == "drag-overlay"
+        val sharedIconModifier = if (sharedElementKeyPrefix != "drawer" && !isDragOverlay) {
             Modifier.sharedElement(
                 rememberSharedContentState(key = "$sharedElementKeyPrefix-icon-${app.packageName}"),
                 animatedVisibilityScope = animatedVisibilityScope,
@@ -115,7 +116,7 @@ fun AppItem(
             )
         } else Modifier
 
-        val sharedLabelModifier = if (sharedElementKeyPrefix == "dock" || sharedElementKeyPrefix == "home") {
+        val sharedLabelModifier = if ((sharedElementKeyPrefix == "dock" || sharedElementKeyPrefix == "home") && !isDragOverlay) {
             Modifier.sharedElement(
                 rememberSharedContentState(key = "$sharedElementKeyPrefix-label-${app.packageName}"),
                 animatedVisibilityScope = animatedVisibilityScope
@@ -153,10 +154,14 @@ fun AppItem(
             modifier = modifier
                 .onGloballyPositioned { coords = it }
                 .fillMaxWidth()
-                .graphicsLayer {
-                    scaleX = hoverScale
-                    scaleY = hoverScale
-                },
+                .then(
+                    if (isHovered) {
+                        Modifier.graphicsLayer {
+                            scaleX = hoverScale
+                            scaleY = hoverScale
+                        }
+                    } else Modifier
+                ),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Column(
@@ -164,25 +169,29 @@ fun AppItem(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
                     .background(if (isBlocked) Color.Red.copy(alpha = 0.2f) else Color.Transparent)
-                    .combinedClickable(
-                        onClick = {
-                            val bundle = coords?.let {
-                                val pos = it.positionInWindow()
-                                ActivityOptions.makeScaleUpAnimation(
-                                    view,
-                                    pos.x.toInt(),
-                                    pos.y.toInt(),
-                                    it.size.width,
-                                    it.size.height
-                                ).toBundle()
-                            }
-                            onClick(bundle)
-                        },
-                        onLongClick = if (isLongClickEnabled && onLongClick != null) { 
-                            { 
-                                onLongClick()
-                            } 
-                        } else null
+                    .then(
+                        if (onClick != null) {
+                            Modifier.combinedClickable(
+                                onClick = {
+                                    val bundle = coords?.let {
+                                        val pos = it.positionInWindow()
+                                        ActivityOptions.makeScaleUpAnimation(
+                                            view,
+                                            pos.x.toInt(),
+                                            pos.y.toInt(),
+                                            it.size.width,
+                                            it.size.height
+                                        ).toBundle()
+                                    }
+                                    onClick.invoke(bundle)
+                                },
+                                onLongClick = if (isLongClickEnabled && onLongClick != null) { 
+                                    { 
+                                        onLongClick()
+                                    } 
+                                } else null
+                            )
+                        } else Modifier
                     )
                     .padding(4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally

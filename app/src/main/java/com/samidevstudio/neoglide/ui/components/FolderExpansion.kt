@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -81,6 +82,8 @@ fun FolderExpansion(
     unitHeight: androidx.compose.ui.unit.Dp = 96.dp,
     iconSize: androidx.compose.ui.unit.Dp = 56.dp,
     fontSize: androidx.compose.ui.unit.TextUnit = 13.sp,
+    spacing: androidx.compose.ui.unit.Dp = 16.dp,
+    columns: Int = 4,
     onDismiss: () -> Unit,
     onLabelChange: (String) -> Unit,
     onAppClick: (String, android.os.Bundle?) -> Unit,
@@ -247,7 +250,7 @@ fun FolderExpansion(
 
                                             sortedCats.forEach { category ->
                                                 DropdownMenuItem(
-                                                    text = { Text(category.name.lowercase().replaceFirstChar { it.uppercase() }) },
+                                                    text = { Text(category.displayName) },
                                                     leadingIcon = {
                                                         Icon(
                                                             imageVector = category.toIcon(),
@@ -296,10 +299,10 @@ fun FolderExpansion(
 
                     // Apps Grid
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(4),
+                        columns = GridCells.Fixed(columns),
                         modifier = Modifier.heightIn(max = 400.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                        horizontalArrangement = Arrangement.spacedBy(spacing),
+                        verticalArrangement = Arrangement.spacedBy(spacing)
                     ) {
                         items(apps, key = { it.packageName }) { app ->
                             var itemCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
@@ -462,23 +465,14 @@ fun FolderExpansion(
                                 grabPoint.x / with(density) { unitWidth.toPx() },
                                 grabPoint.y / with(density) { unitHeight.toPx() }
                             )
-                            shadowElevation = liftShadow.toPx()
-                            shape = RoundedCornerShape(16.dp)
-                            clip = liftScale > 1f
-                        }
+                        },
+                    contentAlignment = Alignment.Center
                 ) {
-                    AppItem(
-                        app = app,
-                        sharedTransitionScope = sharedTransitionScope,
-                        animatedVisibilityScope = animatedVisibilityScope,
-                        iconSize = iconSize,
-                        fontSize = fontSize,
-                        useMonochrome = useMonochrome,
-                        iconPackPackageName = iconPackPackageName,
-                        showLabel = false,
-                        isLongClickEnabled = false,
-                        refreshTrigger = refreshTrigger,
-                        onClick = {}
+                    AppIcon(
+                        packageName = app.packageName,
+                        contentDescription = null,
+                        size = iconSize,
+                        useMonochrome = useMonochrome
                     )
                 }
             }

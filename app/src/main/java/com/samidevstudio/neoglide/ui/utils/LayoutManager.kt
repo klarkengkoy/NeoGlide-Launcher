@@ -59,7 +59,9 @@ object LayoutManager {
         densitySetting: GridSize, 
         forcedWidth: Dp? = null,
         topInset: Dp = 48.dp,
-        bottomInset: Dp = 48.dp
+        bottomInset: Dp = 48.dp,
+        minSpacing: Float = MIN_SPACING,
+        coreColumns: Int = 5
     ): LayoutConfig {
         val screenWidth = screenWidthDp.value
         val screenHeight = screenHeightDp.value
@@ -76,7 +78,7 @@ object LayoutManager {
         // to ensure the grid doesn't shrink/grow when toggling gesture navigation.
         val capacityTrayHeight = screenHeight - stableTopInset - RESERVE_NAV_DP
         
-        // 2. Select Icon Size (Downgrade to fit at least 5 core columns)
+        // 2. Select Icon Size (Downgrade to fit core columns)
         val sizesToTry = GridSize.entries.asSequence().filter { it.ordinal <= densitySetting.ordinal }.sortedByDescending { it.ordinal }
 
         var selectedIconSize = TINY_ICON_SIZE
@@ -90,8 +92,8 @@ object LayoutManager {
                 GridSize.LARGE -> LARGE_ICON_SIZE to LARGE_FONT_SIZE
             }
 
-            // Check if 5 core columns fit (5 icons + 4 spaces)
-            val coreWidth = (5 * icon) + (4 * MIN_SPACING)
+            // Check if core columns fit (N icons + (N-1) spaces)
+            val coreWidth = (coreColumns * icon) + ((coreColumns - 1) * minSpacing)
             if (coreWidth <= trayWidthBase) {
                 selectedIconSize = icon
                 selectedFontSize = font
@@ -101,25 +103,25 @@ object LayoutManager {
 
         // 3. Balanced Adaptive Expansion
         val iconSizeDp = selectedIconSize.dp
-        val spacingDp = MIN_SPACING.dp
+        val spacingDp = minSpacing.dp
         val fontSizeSp = selectedFontSize.sp
 
-        val unitWidthBase = selectedIconSize + MIN_SPACING
+        val unitWidthBase = selectedIconSize + minSpacing
         val unitHeightBase = unitWidthBase + (selectedFontSize * 1.5f)
         val snapUnitW = unitWidthBase / SNAP_FACTOR
         val snapUnitH = unitHeightBase / SNAP_FACTOR
 
         // Calculate horizontal expansion (in pairs of snap units)
-        val coreWidth = (5 * selectedIconSize) + (4 * MIN_SPACING)
+        val coreWidth = (coreColumns * selectedIconSize) + ((coreColumns - 1) * minSpacing)
         val remainingW = trayWidthBase - coreWidth
         val pairsW = floor(remainingW / (2 * snapUnitW)).toInt()
         val expansionOffsetW = pairsW.toFloat() / SNAP_FACTOR
-        val finalColsFloat = 5f + ((2f * pairsW) / SNAP_FACTOR)
+        val finalColsFloat = coreColumns.toFloat() + ((2f * pairsW) / SNAP_FACTOR)
         val actualGridWidth = finalColsFloat * unitWidthBase
 
         // Calculate vertical expansion (in pairs of snap units) based on CAPACITY height
         val baseRows = floor(capacityTrayHeight / unitHeightBase).toInt().coerceAtLeast(1)
-        val remainingH = capacityTrayHeight - ((baseRows * unitHeightBase) - MIN_SPACING)
+        val remainingH = capacityTrayHeight - ((baseRows * unitHeightBase) - minSpacing)
         val pairsH = floor(remainingH / (2 * snapUnitH)).toInt()
         val expansionOffsetH = pairsH.toFloat() / SNAP_FACTOR
         val finalRowsFloat = baseRows.toFloat() + (2f * pairsH / SNAP_FACTOR)

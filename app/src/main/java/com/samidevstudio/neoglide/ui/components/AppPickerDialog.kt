@@ -145,7 +145,7 @@ fun AppPickerDialog(
                         grouped.forEach { (category, categoryApps) ->
                             item(key = category.name) {
                                 Text(
-                                    text = category.name,
+                                    text = category.displayName,
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold,
@@ -303,7 +303,7 @@ fun MultiAppPickerDialog(
                         grouped.forEach { (category, categoryApps) ->
                             item(key = category.name) {
                                 Text(
-                                    text = category.name,
+                                    text = category.displayName,
                                     style = MaterialTheme.typography.labelLarge,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontWeight = FontWeight.Bold,
@@ -338,7 +338,7 @@ fun MultiAppPickerDialog(
 }
 
 @Composable
-private fun MultiAppPickerItem(
+fun MultiAppPickerItem(
     app: AppModel,
     isChecked: Boolean,
     onToggle: (Boolean) -> Unit

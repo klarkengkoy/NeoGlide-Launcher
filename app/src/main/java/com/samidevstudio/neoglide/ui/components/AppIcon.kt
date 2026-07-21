@@ -36,8 +36,8 @@ fun rememberDrawablePainter(drawable: Drawable?): Painter {
     return remember(drawable) {
         object : Painter() {
             override val intrinsicSize: Size
-                get() = drawable?.let { 
-                    Size(it.intrinsicWidth.toFloat(), it.intrinsicHeight.toFloat()) 
+                get() = drawable?.let {
+                    Size(it.intrinsicWidth.toFloat(), it.intrinsicHeight.toFloat())
                 } ?: Size.Unspecified
 
             override fun DrawScope.onDraw() {
@@ -68,9 +68,9 @@ fun AppIcon(
     val colorScheme = MaterialTheme.colorScheme
 
     val cacheKey = "$packageName-$useMonochrome-$iconPackPackageName"
-    
-    val initialValue = remember(cacheKey) { 
-        iconCache.get(cacheKey) ?: (null to false) 
+
+    val initialValue = remember(cacheKey) {
+        iconCache.get(cacheKey) ?: (null to false)
     }
 
     val iconResult by produceState(
@@ -82,7 +82,7 @@ fun AppIcon(
     ) {
         value = iconLoader.loadIcon(packageName, useMonochrome, iconPackPackageName, refreshTrigger)
     }
-    
+
     val iconData = iconResult.first
     val isActuallyMonochrome = iconResult.second
 
@@ -91,7 +91,7 @@ fun AppIcon(
             .size(size)
             .clip(CircleShape)
             .background(
-                if (isActuallyMonochrome) colorScheme.primaryContainer 
+                if (isActuallyMonochrome) colorScheme.primaryContainer
                 else colorScheme.surfaceVariant.copy(alpha = 0.1f)
             ),
         contentAlignment = Alignment.Center
