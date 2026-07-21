@@ -61,6 +61,27 @@ class AppCategoryClassifier(
     }
 
     /**
+     * Checks if an app matches any signal for a specific target category.
+     */
+    fun fitsCategory(
+        packageName: String,
+        label: String,
+        appInfoCategory: Int,
+        permissions: List<String>,
+        target: AppCategory
+    ): Boolean {
+        val detailed = classifyDetailed(packageName, label, appInfoCategory, permissions)
+        
+        // Signal 1: Natural
+        if (detailed.natural?.name == target.name) return true
+        
+        // Signal 2 & 3: Heuristic (Keyword or Permission)
+        if (detailed.heuristic?.name == target.name) return true
+        
+        return false
+    }
+
+    /**
      * Returns both the natural and heuristic matches.
      */
     fun classifyDetailed(

@@ -18,8 +18,8 @@ interface CategoryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertCategory(category: CategoryEntity)
 
-    @Query("UPDATE custom_categories SET name = :newName, iconName = :newIcon WHERE name = :oldName")
-    suspend fun updateCategory(oldName: String, newName: String, newIcon: String?)
+    @Query("UPDATE custom_categories SET name = :newName, iconName = :newIcon, label = :newLabel WHERE name = :oldName")
+    suspend fun updateCategory(oldName: String, newName: String, newIcon: String?, newLabel: String?)
 
     @Query("DELETE FROM custom_categories WHERE name = :name")
     suspend fun deleteCategory(name: String)

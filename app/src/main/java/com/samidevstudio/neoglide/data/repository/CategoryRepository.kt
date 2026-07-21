@@ -17,7 +17,7 @@ class CategoryRepository @Inject constructor(
 
     suspend fun getCustomCategoriesMap(): Map<AppCategory, List<String>> = withContext(Dispatchers.IO) {
         categoryDao.getAllCategoriesList().associate { 
-            AppCategory(it.name, isCustom = true, iconName = it.iconName) to emptyList()
+            AppCategory(it.name, isCustom = true, iconName = it.iconName, label = it.label) to emptyList()
         }
     }
 
@@ -25,8 +25,12 @@ class CategoryRepository @Inject constructor(
         categoryDao.insertCategory(CategoryEntity(name, iconName))
     }
 
-    suspend fun updateCategory(oldName: String, newName: String, newIcon: String?) = withContext(Dispatchers.IO) {
-        categoryDao.updateCategory(oldName, newName, newIcon)
+    suspend fun updateCategory(oldName: String, newName: String, newIcon: String?, newLabel: String?) = withContext(Dispatchers.IO) {
+        categoryDao.updateCategory(oldName, newName, newIcon, newLabel)
+    }
+
+    suspend fun upsertCategoryOverride(name: String, label: String?, icon: String?) = withContext(Dispatchers.IO) {
+        categoryDao.insertCategory(CategoryEntity(name, icon, label))
     }
 
     suspend fun removeCategory(name: String) = withContext(Dispatchers.IO) {

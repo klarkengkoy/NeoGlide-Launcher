@@ -25,6 +25,9 @@ interface AppDao {
     @Query("SELECT * FROM apps WHERE category = :category ORDER BY label ASC")
     fun getAppsByCategory(category: String): Flow<List<AppEntity>>
 
+    @Query("SELECT * FROM apps WHERE category = :category")
+    suspend fun getAppsByCategoryList(category: String): List<AppEntity>
+
     @Query("SELECT * FROM apps WHERE packageName = :packageName")
     suspend fun getAppByPackageName(packageName: String): AppEntity?
 

@@ -42,7 +42,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -222,7 +221,7 @@ private fun DrawerContent(
     var drawerRootCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
 
     val categories = remember(categorizedApps) {
-        categorizedApps.keys.toList()
+        categorizedApps.map { it.first }
     }
 
     val showCategoryBar = preferences.categoryBarType != CategoryBarType.NONE
@@ -293,7 +292,8 @@ private fun DrawerContent(
 
     val isVerticalRail = showCategoryBar && (orientation == CategoryOrientation.VERTICAL_LEFT || orientation == CategoryOrientation.VERTICAL_RIGHT)
     val railWidth = if (isVerticalRail) 56.dp else 0.dp
-    val forcedWidth = screenWidthDp - 32.dp - railWidth
+    val drawerSpacing = 30.dp
+    val forcedWidth = screenWidthDp - (drawerSpacing * 2) - railWidth
 
     val layoutConfig = remember(preferences.gridSize, forcedWidth, screenHeightDp, topInset, bottomInset) {
         LayoutManager.calculateConfig(
@@ -302,7 +302,9 @@ private fun DrawerContent(
             densitySetting = preferences.gridSize, 
             forcedWidth = forcedWidth,
             topInset = topInset,
-            bottomInset = bottomInset
+            bottomInset = bottomInset,
+            minSpacing = 30f,
+            coreColumns = 4
         )
     }
 
@@ -348,6 +350,8 @@ private fun DrawerContent(
             onSettingsClick = { showSettings = true },
             onFolderClick = { expandedFolderId = it },
             columns = columns,
+            spacing = layoutConfig.spacing,
+            iconSpacing = drawerSpacing,
             iconSize = iconSize,
             fontSize = fontSize,
             topPadding = layoutConfig.topPadding,
@@ -385,6 +389,8 @@ private fun DrawerContent(
             onShowAppPicker = { showAppPicker = it },
             onSetPendingFolder = { pendingFolderIdForAdd = it },
             unitWidth = unitWidth,
+            spacing = layoutConfig.spacing,
+            columns = columns,
             iconSize = iconSize,
             fontSize = fontSize
         )
@@ -410,7 +416,7 @@ private fun DrawerMainLayout(
     onShortcutClick: (AppShortcut) -> Unit,
     onAddToHome: (String) -> Unit,
     activeNotifications: Map<String, Int>,
-    gridItems: Map<AppCategory?, List<DrawerItem?>>,
+    gridItems: List<Pair<AppCategory?, List<DrawerItem?>>>,
     categories: List<AppCategory?>,
     showCategoryBar: Boolean,
     orientation: CategoryOrientation,
@@ -421,6 +427,8 @@ private fun DrawerMainLayout(
     onSettingsClick: () -> Unit,
     onFolderClick: (Int) -> Unit,
     columns: Int,
+    spacing: androidx.compose.ui.unit.Dp,
+    iconSpacing: androidx.compose.ui.unit.Dp,
     iconSize: androidx.compose.ui.unit.Dp,
     fontSize: androidx.compose.ui.unit.TextUnit,
     topPadding: androidx.compose.ui.unit.Dp,
@@ -489,7 +497,7 @@ private fun DrawerMainLayout(
             } else {
                 val categoryNotifications by viewModel.categoryNotifications.collectAsStateWithLifecycle()
 
-                Box(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                Box(modifier = Modifier.fillMaxSize().padding(horizontal = iconSpacing)) {
                     val isVertical = orientation != CategoryOrientation.HORIZONTAL_BOTTOM
                     val barWidth = if (!showCategoryBar) 0.dp else if (isVertical) 56.dp else 0.dp
 
@@ -510,11 +518,12 @@ private fun DrawerMainLayout(
 
                         Column(modifier = Modifier.weight(1f)) {
                             val currentGridItems = remember(gridItems, selectedCategory) {
-                                gridItems[selectedCategory] ?: emptyList()
+                                gridItems.find { it.first == selectedCategory }?.second ?: emptyList()
                             }
                             AppGrid(
                                 items = currentGridItems,
                                 columns = columns,
+                                spacing = spacing,
                                 onFolderClick = onFolderClick,
                                 bottomPadding = if (showCategoryBar && orientation == CategoryOrientation.HORIZONTAL_BOTTOM) 8.dp else 20.dp,
                                 sidePadding = 0.dp,
@@ -603,7 +612,7 @@ private fun DrawerOverlays(
     showAppPicker: Boolean,
     isFolderInvisibleByDrag: Boolean,
     pendingFolderIdForAdd: Int,
-    categorizedApps: Map<AppCategory?, List<DrawerItem>>,
+    categorizedApps: List<Pair<AppCategory?, List<DrawerItem>>>,
     selectedCategory: AppCategory?,
     categories: List<AppCategory?>,
     preferences: UserPreferences,
@@ -624,6 +633,8 @@ private fun DrawerOverlays(
     onShowAppPicker: (Boolean) -> Unit,
     onSetPendingFolder: (Int) -> Unit,
     unitWidth: androidx.compose.ui.unit.Dp,
+    spacing: androidx.compose.ui.unit.Dp,
+    columns: Int,
     iconSize: androidx.compose.ui.unit.Dp,
     fontSize: androidx.compose.ui.unit.TextUnit
 ) {
@@ -639,7 +650,8 @@ private fun DrawerOverlays(
     val currentExpandedFolder = remember(expandedFolderId, categorizedApps, selectedCategory) {
         if (expandedFolderId == -1) null
         else {
-            categorizedApps[selectedCategory]?.find { it is DrawerItem.Folder && it.id == expandedFolderId } as? DrawerItem.Folder
+            categorizedApps.find { it.first == selectedCategory }?.second
+                ?.find { it is DrawerItem.Folder && it.id == expandedFolderId } as? DrawerItem.Folder
         }
     }
 
@@ -669,6 +681,8 @@ private fun DrawerOverlays(
                         unitHeight = unitWidth * 1.2f,
                         iconSize = iconSize,
                         fontSize = fontSize,
+                        spacing = spacing,
+                        columns = columns,
                         onDismiss = onDismissFolder,
                         onDissolve = { viewModel.dissolveFolder(folder.id) },
                         onAddApps = {
@@ -766,7 +780,7 @@ private fun DrawerOverlays(
         val recentApps by viewModel.recentlyUsedApps.collectAsStateWithLifecycle()
         
         val memberPackageNames = remember(pendingFolderIdForAdd, categorizedApps) {
-            categorizedApps.values.flatten()
+            categorizedApps.flatMap { it.second }
                 .filterIsInstance<DrawerItem.Folder>()
                 .find { it.id == pendingFolderIdForAdd }
                 ?.apps?.map { it.packageName }?.toSet() ?: emptySet()
@@ -871,7 +885,7 @@ private fun DrawerHeader(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                text = selectedCategory?.name?.lowercase()?.replaceFirstChar { it.uppercase() } ?: "Apps",
+                text = selectedCategory?.displayName ?: "Apps",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold,
@@ -1375,6 +1389,7 @@ private fun CategoryIconItem(
 fun AppGrid(
     items: List<DrawerItem?>,
     columns: Int,
+    spacing: androidx.compose.ui.unit.Dp = 16.dp,
     onFolderClick: (Int) -> Unit,
     modifier: Modifier = Modifier,
     bottomPadding: androidx.compose.ui.unit.Dp = 20.dp,
@@ -1410,11 +1425,11 @@ fun AppGrid(
         columns = GridCells.Fixed(columns),
         reverseLayout = false,
         contentPadding = PaddingValues(bottom = bottomPadding, start = sidePadding, end = sidePadding),
-        horizontalArrangement = Arrangement.Center,
+        horizontalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterHorizontally),
         verticalArrangement = if (verticalAnchor == VerticalAnchor.BOTTOM) {
-            Arrangement.spacedBy(16.dp, Alignment.Bottom)
+            Arrangement.spacedBy(spacing, Alignment.Bottom)
         } else {
-            Arrangement.spacedBy(16.dp, Alignment.Top)
+            Arrangement.spacedBy(spacing, Alignment.Top)
         },
         modifier = modifier
     ) {

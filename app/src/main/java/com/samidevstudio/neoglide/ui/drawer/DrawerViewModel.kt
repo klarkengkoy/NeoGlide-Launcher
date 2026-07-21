@@ -108,13 +108,26 @@ class DrawerViewModel @Inject constructor(
         }
     }
 
-    val allApps: StateFlow<List<AppModel>> = appRepository.allApps
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val allApps: StateFlow<List<AppModel>> = combine(
+        appRepository.allApps,
+        categoryRepository.allCategories
+    ) { apps, overrides ->
+        val overrideMap = overrides.associateBy { it.name }
+        apps.map { app ->
+            val override = overrideMap[app.category.name]
+            if (override != null) {
+                app.copy(category = app.category.copy(
+                    label = override.label ?: app.category.label,
+                    iconName = override.iconName ?: app.category.iconName
+                ))
+            } else app
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val activeNotifications: StateFlow<Map<String, Int>> = NeoGlideNotificationListener.activeNotifications
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    val recentlyUsedApps: StateFlow<List<AppModel>> = appRepository.allApps
+    val recentlyUsedApps: StateFlow<List<AppModel>> = allApps
         .map { apps ->
             apps.filter { it.lastUsedTime > 0 }
                 .sortedByDescending { it.lastUsedTime }
@@ -122,8 +135,8 @@ class DrawerViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val categorizedApps: StateFlow<Map<AppCategory?, List<DrawerItem>>> = combine(
-        appRepository.allApps.distinctUntilChanged(),
+    val categorizedApps: StateFlow<List<Pair<AppCategory?, List<DrawerItem>>>> = combine(
+        allApps,
         homeRepository.allDrawerFolders.distinctUntilChanged(),
         categoryRepository.allCategories.distinctUntilChanged(),
         preferences.distinctUntilChanged()
@@ -131,7 +144,7 @@ class DrawerViewModel @Inject constructor(
         val filteredApps = apps.filter { it.packageName !in prefs.hiddenPackages || prefs.showHiddenApps }
         val appsMap = filteredApps.associateBy { it.packageName }
         
-        val result: Map<AppCategory?, List<DrawerItem>> = if (prefs.categoryBarType == CategoryBarType.NONE) {
+        val result: List<Pair<AppCategory?, List<DrawerItem>>> = if (prefs.categoryBarType == CategoryBarType.NONE) {
             // CATEGORYLESS MODE: Show all apps and folders in one unified list
             val unifiedFolders = folders.filter { it.folder.category == "CATEGORYLESS" }.map { folderWithApps ->
                 val folderApps = folderWithApps.apps.mapNotNull { folderApp ->
@@ -145,7 +158,7 @@ class DrawerViewModel @Inject constructor(
                 .map { DrawerItem.App(it) }
             
             // Map to null key for consistency with selectedCategory being null
-            mapOf(null to (unifiedFolders + appItems))
+            listOf(null to (unifiedFolders + appItems))
         } else {
             // CATEGORIZED MODE
             val appItems = filteredApps
@@ -167,31 +180,42 @@ class DrawerViewModel @Inject constructor(
             
             val baseGrouped = (appItems + folderItems).groupBy({ it.first as AppCategory? }, { it.second })
             
-            // Map custom entities to AppCategory instances with correct icons
-            val dbCustomCats = customCatEntities.associate { 
-                it.name to AppCategory(it.name, isCustom = true, iconName = it.iconName)
+            // Map custom entities to AppCategory instances with correct icons and labels
+            val dbCategoryOverrides = customCatEntities.associate { 
+                it.name to AppCategory(it.name, isCustom = true, iconName = it.iconName, label = it.label)
             }
 
             val finalGrouped = mutableMapOf<AppCategory?, List<DrawerItem>>()
             
-            // 1. First, populate with built-ins from baseGrouped
+            // 1. Populate and Apply Overrides (Built-ins and Custom)
             baseGrouped.forEach { (cat, items) ->
-                if (cat == null || !cat.isCustom) {
-                    finalGrouped[cat] = items
+                if (cat != null) {
+                    val override = dbCategoryOverrides[cat.name]
+                    val finalCat = if (override != null) {
+                        // Use override for custom categories OR for built-in renaming
+                        cat.copy(iconName = override.iconName ?: cat.iconName, label = override.label ?: cat.label)
+                    } else cat
+                    finalGrouped[finalCat] = items
+                } else {
+                    finalGrouped[null] = items
                 }
             }
 
-            // 2. Add DB custom categories (using their DB icon, even if baseGrouped used a shell)
-            dbCustomCats.forEach { (name, dbCat) ->
-                // Try to find items in baseGrouped using any instance with this name
-                val items = baseGrouped.entries.find { it.key?.name == name }?.value ?: emptyList()
-                finalGrouped[dbCat] = items
+            // 2. Add remaining DB custom categories (empty ones)
+            dbCategoryOverrides.forEach { (name, dbCat) ->
+                if (!finalGrouped.keys.any { it?.name == name }) {
+                    finalGrouped[dbCat] = emptyList()
+                }
             }
 
             // 3. Add enabled built-in categories that are empty
             AppCategory.builtInValues.forEach { builtIn ->
-                if (builtIn.name in prefs.orderedCategories && !finalGrouped.containsKey(builtIn)) {
-                    finalGrouped[builtIn] = emptyList()
+                if (builtIn.name in prefs.orderedCategories && !finalGrouped.keys.any { it?.name == builtIn.name }) {
+                    val override = dbCategoryOverrides[builtIn.name]
+                    val finalBuiltIn = if (override != null) {
+                        builtIn.copy(iconName = override.iconName ?: builtIn.iconName, label = override.label ?: builtIn.label)
+                    } else builtIn
+                    finalGrouped[finalBuiltIn] = emptyList()
                 }
             }
             
@@ -212,26 +236,24 @@ class DrawerViewModel @Inject constructor(
                     .thenBy { it?.name ?: "" }
             )
             
-            val sortedMap = LinkedHashMap<AppCategory?, List<DrawerItem>>()
-            sortedKeys.forEach { key ->
-                sortedMap[key] = finalGrouped[key] ?: emptyList()
+            sortedKeys.map { key ->
+                key to (finalGrouped[key] ?: emptyList())
             }
-            sortedMap
         }
         result
     }.flowOn(Dispatchers.Default)
     .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyMap()
+        initialValue = emptyList()
     )
 
     val categoryNotifications: StateFlow<Map<AppCategory?, Pair<Boolean, Int>>> = combine(
         categorizedApps,
         activeNotifications
-    ) { categorized, notifications ->
-        categorized.mapValues { (category, items) ->
-            if (category == null) {
+    ) { categorizedList, notifications ->
+        categorizedList.associate { (category, items) ->
+            val result = if (category == null) {
                 notifications.isNotEmpty() to notifications.values.sum()
             } else {
                 val appPackages = items.flatMap { item ->
@@ -244,12 +266,13 @@ class DrawerViewModel @Inject constructor(
                 val count = notifications.filter { it.key in appPackages }.values.sum()
                 hasNotif to count
             }
+            category to result
         }
     }.flowOn(Dispatchers.Default)
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val filteredApps: StateFlow<List<AppModel>> = combine(
-        appRepository.allApps.distinctUntilChanged(),
+        allApps,
         _searchQuery,
         preferences.distinctUntilChanged()
     ) { apps, query, prefs ->
@@ -269,11 +292,11 @@ class DrawerViewModel @Inject constructor(
         initialValue = emptyList()
     )
 
-    val gridItems: StateFlow<Map<AppCategory?, List<DrawerItem?>>> = combine(
+    val gridItems: StateFlow<List<Pair<AppCategory?, List<DrawerItem?>>>> = combine(
         categorizedApps,
         _drawerColumns,
         preferences
-    ) { categorized, columns, prefs ->
+    ) { categorizedList, columns, prefs ->
         val sortingMode = prefs.sortingMode
         val isReverse = prefs.isSortReverse
         val verticalAnchor = prefs.verticalAnchor
@@ -287,8 +310,8 @@ class DrawerViewModel @Inject constructor(
         }
         val finalComparator = if (isReverse) baseComparator.reversed() else baseComparator
 
-        categorized.mapValues { (_, items) ->
-            if (items.isEmpty()) return@mapValues emptyList<DrawerItem?>()
+        categorizedList.map { (cat, items) ->
+            if (items.isEmpty()) return@map cat to emptyList<DrawerItem?>()
 
             val folders = items.filterIsInstance<DrawerItem.Folder>().sortedBy { it.label }
             val apps = items.filterIsInstance<DrawerItem.App>()
@@ -359,19 +382,12 @@ class DrawerViewModel @Inject constructor(
                     result.add(slotToItem[index / columns to index % columns])
                 }
             }
-            result
+            cat to result
         }
     }.flowOn(Dispatchers.Default)
-    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init {
-        viewModelScope.launch {
-            preferences.map { it.orderedCategories }.distinctUntilChanged().collect {
-                // Trigger re-classification when enabled categories change
-                appRepository.reclassifyAll()
-            }
-        }
-
         combine(_searchQuery, preferences) { query, prefs ->
             query to prefs.searchProvider
         }
@@ -494,12 +510,12 @@ class DrawerViewModel @Inject constructor(
 
     suspend fun checkCategoryCapacity(context: Context): Boolean {
         val prefs = preferences.first()
-        val count = categorizedApps.value.keys.size + 1
+        val count = categorizedApps.value.size + 1
         return canFitCategories(context, prefs.categoryBarType, count)
     }
 
     suspend fun canSwitchToCategoryBarType(context: Context, newType: CategoryBarType): Boolean {
-        val count = categorizedApps.value.keys.size
+        val count = categorizedApps.value.size
         return canFitCategories(context, newType, count)
     }
 
@@ -523,40 +539,39 @@ class DrawerViewModel @Inject constructor(
         return minRequired <= totalAvailable
     }
 
-    fun addBuiltInCategory(name: String) {
+    fun addBuiltInCategory(name: String, packageNames: List<String>) {
         viewModelScope.launch {
             userPreferencesRepository.toggleCategoryEnabled(name)
             _selectedCategory.value = AppCategory.fromString(name)
-            appRepository.reclassifyAll()
+            appRepository.moveAppsToCategory(packageNames, name)
+            showToast("Category added with ${packageNames.size} apps.")
         }
     }
 
-    fun addCustomCategory(name: String, iconName: String?) {
+    fun addCustomCategory(name: String, iconName: String?, packageNames: List<String>) {
         viewModelScope.launch {
             categoryRepository.addCategory(name, iconName)
             userPreferencesRepository.toggleCategoryEnabled(name)
             _selectedCategory.value = AppCategory(name, isCustom = true, iconName = iconName)
-            val movements = appRepository.reclassifyAll()
-            val totalMoved = movements.values.sumOf { it.size }
-            showToast("$totalMoved apps moved to new categories")
+            appRepository.moveAppsToCategory(packageNames, name)
+            showToast("Category added with ${packageNames.size} apps.")
         }
     }
 
     fun removeCustomCategory(category: AppCategory) {
-        if (!category.isCustom) {
-            // Built-in category being removed/disabled
-            viewModelScope.launch {
-                userPreferencesRepository.toggleCategoryEnabled(category.name)
-                appRepository.reclassifyAll()
-                showToast("Category removed.")
-            }
-            return
-        }
         viewModelScope.launch {
-            categoryRepository.removeCategory(category.name)
-            userPreferencesRepository.removeCategoryFromOrder(category.name)
-            appRepository.reclassifyAll()
+            if (category.isCustom) {
+                categoryRepository.removeCategory(category.name)
+                userPreferencesRepository.removeCategoryFromOrder(category.name)
+            } else {
+                userPreferencesRepository.toggleCategoryEnabled(category.name)
+            }
+            appRepository.reclassifyAppsFromDeletedCategory(category.name)
             showToast("Category removed. Apps redistributed.")
         }
+    }
+
+    suspend fun getRecommendedApps(category: AppCategory): List<String> {
+        return appRepository.getRecommendedAppsForCategory(category)
     }
 }

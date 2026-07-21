@@ -30,6 +30,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,36 +40,66 @@ import androidx.compose.ui.unit.dp
 import com.samidevstudio.neoglide.domain.model.AppCategory
 import com.samidevstudio.neoglide.ui.drawer.DrawerViewModel
 import com.samidevstudio.neoglide.ui.utils.toIcon
+import kotlinx.coroutines.launch
 
 @Composable
 fun AddCategoryDialogRefined(
     onDismiss: () -> Unit,
     drawerViewModel: DrawerViewModel,
-    onAddCustom: (String, String?) -> Unit,
-    onAddBuiltIn: (String) -> Unit,
+    onAddCustom: (String, String?, List<String>) -> Unit,
+    onAddBuiltIn: (String, List<String>) -> Unit,
     onSwitchToVertical: () -> Unit
 ) {
     val context = LocalContext.current
     val categorizedApps by drawerViewModel.categorizedApps.collectAsState()
     val preferences by drawerViewModel.userPreferences.collectAsState()
     val isBottomRail = preferences.categoryBarType == com.samidevstudio.neoglide.data.repository.CategoryBarType.BOTTOM
+    val scope = rememberCoroutineScope()
     
-    val enabledCategories = categorizedApps.keys.mapNotNull { it?.name }.toSet()
+    val enabledCategories = categorizedApps.mapNotNull { it.first?.name }.toSet()
     val unusedBuiltIn = AppCategory.builtInValues.filter { it.name !in enabledCategories && it != AppCategory.OTHER }
     
     var showCustomFlow by remember { mutableStateOf(false) }
     var capacityExceeded by remember { mutableStateOf(false) }
+    
+    var pendingCategoryForPicker by remember { mutableStateOf<AppCategory?>(null) }
+    var recommendedApps by remember { mutableStateOf<List<String>>(emptyList()) }
 
     LaunchedEffect(Unit) {
         capacityExceeded = !drawerViewModel.checkCategoryCapacity(context)
+    }
+
+    if (pendingCategoryForPicker != null) {
+        val allApps by drawerViewModel.allApps.collectAsState()
+        val recentlyUsed by drawerViewModel.recentlyUsedApps.collectAsState()
+        
+        AppPickerForCategoryDialog(
+            category = pendingCategoryForPicker!!,
+            allApps = allApps,
+            recommendedPackageNames = recommendedApps,
+            recentlyUsedApps = recentlyUsed,
+            onConfirm = { selected ->
+                if (pendingCategoryForPicker!!.isCustom) {
+                    onAddCustom(pendingCategoryForPicker!!.name, pendingCategoryForPicker!!.iconName, selected)
+                } else {
+                    onAddBuiltIn(pendingCategoryForPicker!!.name, selected)
+                }
+                onDismiss()
+            },
+            onDismissRequest = { 
+                pendingCategoryForPicker = null 
+                onDismiss()
+            }
+        )
+        return
     }
 
     if (showCustomFlow) {
         AddCategoryDialog(
             onDismiss = { showCustomFlow = false },
             onConfirm = { name, icon ->
-                onAddCustom(name, icon)
-                onDismiss()
+                pendingCategoryForPicker = AppCategory(name, isCustom = true, iconName = icon)
+                recommendedApps = emptyList()
             },
             showCapacityWarning = capacityExceeded,
             onSwitchToVertical = onSwitchToVertical
@@ -90,7 +121,7 @@ fun AddCategoryDialogRefined(
                 }
 
                 Text(
-                    "Select a built-in category to enable it, or create a custom one.",
+                    "Select a built-in category to enable it, or create a custom one. You can rename these categories later.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -130,8 +161,11 @@ fun AddCategoryDialogRefined(
                                         enabled = !capacityExceeded,
                                         modifier = Modifier.weight(1f),
                                         onClick = { 
-                                            onAddBuiltIn(category.name)
-                                            onDismiss()
+                                            // Handle Built-in: Get recommendations first
+                                            scope.launch {
+                                                recommendedApps = drawerViewModel.getRecommendedApps(category)
+                                                pendingCategoryForPicker = category
+                                            }
                                         }
                                     )
                                 }
@@ -219,7 +253,7 @@ private fun BuiltInSelectionItem(
             )
             Spacer(modifier = Modifier.width(12.dp))
             Text(
-                category.name.lowercase().replaceFirstChar { it.uppercase() },
+                category.displayName,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1
             )

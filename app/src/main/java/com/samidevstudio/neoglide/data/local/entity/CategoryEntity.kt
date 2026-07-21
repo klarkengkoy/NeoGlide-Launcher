@@ -6,5 +6,6 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "custom_categories")
 data class CategoryEntity(
     @PrimaryKey val name: String,
-    val iconName: String? = null
+    val iconName: String? = null,
+    val label: String? = null
 )

@@ -11,6 +11,7 @@ import androidx.core.net.toUri
 import com.samidevstudio.neoglide.data.local.dao.AppDao
 import com.samidevstudio.neoglide.data.local.dao.FolderDao
 import com.samidevstudio.neoglide.data.local.entity.AppEntity
+import com.samidevstudio.neoglide.di.ApplicationScope
 import com.samidevstudio.neoglide.domain.classifier.AppCategoryClassifier
 import com.samidevstudio.neoglide.domain.model.AppCategory
 import com.samidevstudio.neoglide.domain.model.AppModel
@@ -35,6 +36,9 @@ import kotlinx.coroutines.yield
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.time.Duration.Companion.milliseconds
+import android.os.UserHandle
+import android.os.Handler
+import android.os.Looper
 
 @Singleton
 class AppRepository @Inject constructor(
@@ -44,12 +48,41 @@ class AppRepository @Inject constructor(
     private val homeRepository: HomeRepository,
     private val categoryRepository: CategoryRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
+    @ApplicationScope private val applicationScope: CoroutineScope,
 ) {
     private val packageManager: PackageManager = context.packageManager
     private val launcherApps: LauncherApps = context.getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
 
+    private val launcherAppsCallback = object : LauncherApps.Callback() {
+        override fun onPackageAdded(packageName: String, user: UserHandle) {
+            applicationScope.launch { updatePackage(packageName) }
+        }
+
+        override fun onPackageChanged(packageName: String, user: UserHandle) {
+            applicationScope.launch { updatePackage(packageName) }
+        }
+
+        override fun onPackageRemoved(packageName: String, user: UserHandle) {
+            applicationScope.launch { removePackage(packageName) }
+        }
+
+        override fun onPackagesAvailable(packageNames: Array<out String>, user: UserHandle, replacing: Boolean) {
+            packageNames.forEach { applicationScope.launch { updatePackage(it) } }
+        }
+
+        override fun onPackagesUnavailable(packageNames: Array<out String>, user: UserHandle, replacing: Boolean) {
+            if (!replacing) {
+                packageNames.forEach { applicationScope.launch { removePackage(it) } }
+            }
+        }
+    }
+
+    init {
+        launcherApps.registerCallback(launcherAppsCallback, Handler(Looper.getMainLooper()))
+    }
+
     private var warmUpJob: Job? = null
-    
+
     private val _isDatabaseReady = MutableStateFlow(value = false)
     val isDatabaseReady: StateFlow<Boolean> = _isDatabaseReady.asStateFlow()
 
@@ -62,18 +95,18 @@ class AppRepository @Inject constructor(
             }
 
             val apps = appDao.getAllAppsList()
-            
+
             if (apps.isEmpty()) {
                 return@launch
             }
-            
+
             // Priority 1: First 12 apps (likely what's visible on screen)
             apps.take(12).forEach { app ->
                 if (!isActive) {
                     return@launch
                 }
                 iconLoader.loadIcon(app.packageName, useMonochrome = false)
-                delay(20.milliseconds) 
+                delay(20.milliseconds)
             }
             yield()
 
@@ -84,13 +117,13 @@ class AppRepository @Inject constructor(
                     return@launch
                 }
                 chunk.forEach { app ->
-                    launch { 
+                    launch {
                         iconLoader.loadIcon(app.packageName, useMonochrome = false)
                     }
                 }
-                delay(150.milliseconds) 
+                delay(150.milliseconds)
             }
-            
+
             // Critical warm-up (what user sees immediately) is done
             yield()
 
@@ -101,11 +134,11 @@ class AppRepository @Inject constructor(
                         return@launch
                     }
                     chunk.forEach { app ->
-                        launch { 
+                        launch {
                             iconLoader.loadIcon(app.packageName, useMonochrome = false)
                         }
                     }
-                    delay(400.milliseconds) 
+                    delay(400.milliseconds)
                 }
             }
         }
@@ -128,10 +161,10 @@ class AppRepository @Inject constructor(
     ) = withContext(Dispatchers.IO) {
         val userHandle = android.os.Process.myUserHandle()
         val activityList = launcherApps.getActivityList(null, userHandle)
-        
+
         val myPackageName = context.packageName
         val existingApps = appDao.getAllAppsList().associateBy { it.packageName }
-        
+
         val prefsFlow = userPreferencesRepository.userPreferencesFlow.first()
         val classifier = AppCategoryClassifier(prefsFlow.orderedCategories.toSet())
 
@@ -151,7 +184,7 @@ class AppRepository @Inject constructor(
             }
             .distinctBy { it.packageName }
             .toList()
-            
+
         // Use a more surgical approach: delete only what's gone, insert the rest
         val newPackageNames = appEntities.asSequence().map { it.packageName }.toSet()
         existingApps.keys.forEach { pkg ->
@@ -169,7 +202,7 @@ class AppRepository @Inject constructor(
         try {
             val userHandle = android.os.Process.myUserHandle()
             val activities = launcherApps.getActivityList(packageName, userHandle)
-            
+
             if (activities.isNotEmpty()) {
                 val info = activities[0]
                 val existing = appDao.getAppByPackageName(packageName)
@@ -212,7 +245,7 @@ class AppRepository @Inject constructor(
     }
 
     private fun createAppEntity(
-        app: ApplicationInfo, 
+        app: ApplicationInfo,
         classifier: AppCategoryClassifier,
         existingLastUsedTime: Long = 0L,
         existingCategory: String? = null,
@@ -223,7 +256,7 @@ class AppRepository @Inject constructor(
         } catch (_: Exception) {
             System.currentTimeMillis()
         }
-        
+
         val hue = existingHue ?: try {
             val icon = packageManager.getApplicationIcon(app)
             PaletteUtils.extractDominantHue(icon)
@@ -258,9 +291,9 @@ class AppRepository @Inject constructor(
 
     suspend fun getShortcuts(packageName: String): List<AppShortcut> = withContext(Dispatchers.IO) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N_MR1) return@withContext emptyList()
-        
+
         val launcherApps = context.getSystemService(Context.LAUNCHER_APPS_SERVICE) as LauncherApps
-        
+
         val query = LauncherApps.ShortcutQuery().apply {
             setPackage(packageName)
             setQueryFlags(LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST or LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED)
@@ -334,9 +367,9 @@ class AppRepository @Inject constructor(
         // 5. AI Slot Logic
         val googleApp = "com.google.android.googlequicksearchbox"
         val geminiApp = "com.google.android.apps.bard"
-        
+
         val defaultAssistant = findDefaultPackage(Intent(Intent.ACTION_ASSIST))
-        
+
         val aiPackage = when {
             // Case 1: Default is Google App -> Try upgrade to Gemini
             defaultAssistant == googleApp -> {
@@ -373,7 +406,7 @@ class AppRepository @Inject constructor(
                 }
             }
         }
-        
+
         packages
     }
 
@@ -400,7 +433,7 @@ class AppRepository @Inject constructor(
     fun openDefaultLauncherSettings() {
         val intent = Intent(Settings.ACTION_HOME_SETTINGS)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        
+
         try {
             context.startActivity(intent)
         } catch (_: Exception) {
@@ -446,13 +479,13 @@ class AppRepository @Inject constructor(
         val prefsFlow = userPreferencesRepository.userPreferencesFlow.first()
         val enabledCategories = prefsFlow.orderedCategories.toSet()
         val classifier = AppCategoryClassifier(enabledCategories)
-        
+
         val movements = mutableMapOf<AppCategory, MutableList<String>>()
         val categoryCounts = apps.groupingBy { it.category }.eachCount().toMutableMap()
-        
+
         for (app in apps) {
             val currentCategoryName = app.category
-            
+
             // Manual/Custom categories never steal and are never stolen from automatically
             if (currentCategoryName in customCategoryNames) continue
 
@@ -464,13 +497,13 @@ class AppRepository @Inject constructor(
                 }
             } catch (_: Exception) { null } ?: continue
 
-            val permissions = packageInfo.requestedPermissions?.toList() ?: emptyList()
+            val permissions = packageInfo.requestedPermissions?.toList() ?: emptyList<String>()
             val appInfoCategory = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 packageInfo.applicationInfo?.category ?: -1
             } else -1
-            
+
             val detailed = classifier.classifyDetailed(app.packageName, app.label, appInfoCategory, permissions)
-            
+
             val targetCategory = detailed.natural
                 ?: if ((detailed.heuristic != null) && (detailed.heuristic.name in enabledCategories)) {
                     detailed.heuristic
@@ -480,7 +513,7 @@ class AppRepository @Inject constructor(
 
             if (targetCategory.name != currentCategoryName) {
                 val sourceCount = categoryCounts[currentCategoryName] ?: 0
-                
+
                 // Stealing rule: Keep at least 1 app in the source category if it's a heuristic steal.
                 // Natural (Manifest) matches always move to their rightful place.
                 val isHeuristicSteal = detailed.natural == null && detailed.heuristic != null
@@ -489,13 +522,66 @@ class AppRepository @Inject constructor(
                 if (canSteal) {
                     appDao.updateAppCategory(app.packageName, targetCategory.name)
                     movements.getOrPut(targetCategory) { mutableListOf() }.add(app.label)
-                    
+
                     categoryCounts[currentCategoryName] = sourceCount - 1
                     categoryCounts[targetCategory.name] = (categoryCounts[targetCategory.name] ?: 0) + 1
                 }
             }
         }
         movements
+    }
+
+    suspend fun getRecommendedAppsForCategory(category: AppCategory): List<String> = withContext(Dispatchers.IO) {
+        val apps = appDao.getAllAppsList()
+        val classifier = AppCategoryClassifier()
+        
+        apps.filter { app ->
+            val packageInfo = try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    packageManager.getPackageInfo(app.packageName, PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()))
+                } else {
+                    packageManager.getPackageInfo(app.packageName, PackageManager.GET_PERMISSIONS)
+                }
+            } catch (_: Exception) { null } ?: return@filter false
+
+            val permissions = packageInfo.requestedPermissions?.toList() ?: emptyList<String>()
+            val appInfoCategory = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                packageInfo.applicationInfo?.category ?: -1
+            } else -1
+
+            classifier.fitsCategory(app.packageName, app.label, appInfoCategory, permissions, category)
+        }.map { it.packageName }
+    }
+
+    suspend fun moveAppsToCategory(packageNames: List<String>, categoryName: String) = withContext(Dispatchers.IO) {
+        packageNames.forEach { pkg ->
+            appDao.updateAppCategory(pkg, categoryName)
+        }
+    }
+
+    suspend fun reclassifyAppsFromDeletedCategory(categoryName: String) = withContext(Dispatchers.IO) {
+        val appsInDeleted = appDao.getAppsByCategoryList(categoryName)
+        val prefsFlow = userPreferencesRepository.userPreferencesFlow.first()
+        val enabledCategories = prefsFlow.orderedCategories.toSet()
+        val classifier = AppCategoryClassifier(enabledCategories)
+
+        for (app in appsInDeleted) {
+            val packageInfo = try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    packageManager.getPackageInfo(app.packageName, PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()))
+                } else {
+                    packageManager.getPackageInfo(app.packageName, PackageManager.GET_PERMISSIONS)
+                }
+            } catch (_: Exception) { null } ?: continue
+
+            val permissions = packageInfo.requestedPermissions?.toList() ?: emptyList<String>()
+            val appInfoCategory = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                packageInfo.applicationInfo?.category ?: -1
+            } else -1
+
+            val target = classifier.classify(app.packageName, app.label, appInfoCategory, permissions)
+            appDao.updateAppCategory(app.packageName, target.name)
+        }
     }
 
     suspend fun dissolveDrawerFolders() = withContext(Dispatchers.IO) {

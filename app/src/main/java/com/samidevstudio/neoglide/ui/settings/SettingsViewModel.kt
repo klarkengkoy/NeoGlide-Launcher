@@ -17,6 +17,8 @@ import com.samidevstudio.neoglide.data.repository.SortingMode
 import com.samidevstudio.neoglide.data.repository.UserPreferences
 import com.samidevstudio.neoglide.data.repository.UserPreferencesRepository
 import com.samidevstudio.neoglide.data.repository.VerticalAnchor
+import com.samidevstudio.neoglide.domain.model.AppCategory
+import com.samidevstudio.neoglide.domain.model.AppModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -192,12 +194,23 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { preferencesRepository.toggleCategoryEnabled(categoryName) }
     }
 
-    fun updateCategory(oldName: String, newName: String, newIcon: String?) {
+    fun updateCategory(oldCategory: AppCategory, newLabel: String, newIcon: String?) {
         viewModelScope.launch {
-            categoryRepository.updateCategory(oldName, newName, newIcon)
-            appRepository.updateAllAppsInCategory(oldName, newName)
-            homeRepository.updateAllFoldersInCategory(oldName, newName)
-            preferencesRepository.updateCategoryNameInOrder(oldName, newName)
+            if (oldCategory.isCustom) {
+                if (oldCategory.name != newLabel) {
+                    // Real rename for custom categories (ID change)
+                    categoryRepository.updateCategory(oldCategory.name, newLabel, newIcon, null)
+                    appRepository.updateAllAppsInCategory(oldCategory.name, newLabel)
+                    preferencesRepository.updateCategoryNameInOrder(oldCategory.name, newLabel)
+                } else {
+                    // Only icon change for custom
+                    categoryRepository.updateCategory(oldCategory.name, oldCategory.name, newIcon, null)
+                }
+            } else {
+                // Label/Icon override for built-in categories
+                categoryRepository.upsertCategoryOverride(oldCategory.name, newLabel, newIcon)
+            }
+            // Refresh to update UI and re-classify apps if needed
             appRepository.refreshApps()
         }
     }

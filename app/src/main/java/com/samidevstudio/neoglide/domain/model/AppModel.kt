@@ -20,8 +20,11 @@ data class AppShortcut(
 data class AppCategory(
     val name: String, 
     val isCustom: Boolean = false,
-    val iconName: String? = null
+    val iconName: String? = null,
+    val label: String? = null
 ) {
+    val displayName: String get() = label ?: name.lowercase().replaceFirstChar { it.uppercase() }
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is AppCategory) return false
