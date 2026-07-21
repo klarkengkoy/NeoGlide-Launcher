@@ -4,6 +4,7 @@ import android.app.WallpaperColors
 import android.app.WallpaperManager
 import android.appwidget.AppWidgetManager
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -44,6 +45,7 @@ import com.samidevstudio.neoglide.ui.detail.AppDetailScreen
 import com.samidevstudio.neoglide.ui.drawer.DrawerViewModel
 import com.samidevstudio.neoglide.ui.home.HomeScreen
 import com.samidevstudio.neoglide.ui.home.HomeViewModel
+import com.samidevstudio.neoglide.ui.home.UiEvent
 import com.samidevstudio.neoglide.ui.navigation.AppDetailRoute
 import com.samidevstudio.neoglide.ui.navigation.HomeRoute
 import com.samidevstudio.neoglide.ui.navigation.Navigator
@@ -108,7 +110,7 @@ class MainActivity : FragmentActivity() {
     private val bindWidgetLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val data = result.data
         val widgetId = data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1).takeIf { it != -1 } ?: pendingWidgetId
-        
+
         if ((result.resultCode == RESULT_OK) && (widgetId != -1)) {
             val info = try {
                 homeViewModel.appWidgetManager.getAppWidgetInfo(widgetId)
@@ -196,7 +198,7 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    fun startWidgetBind(widgetId: Int, provider: android.content.ComponentName) {
+    fun startWidgetBind(widgetId: Int, provider: ComponentName) {
         pendingWidgetId = widgetId
         val intent = Intent(AppWidgetManager.ACTION_APPWIDGET_BIND).apply {
             putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
@@ -257,7 +259,7 @@ class MainActivity : FragmentActivity() {
                     strokeJoin = Paint.Join.ROUND
                     isAntiAlias = true
                 }
-                
+
                 val clearPaint = Paint().apply {
                     xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
                     style = Paint.Style.FILL
@@ -267,10 +269,10 @@ class MainActivity : FragmentActivity() {
                 val scribblePath = Path()
                 val drawPath = Path()
                 val pathMeasure = PathMeasure()
-                
+
                 val wiperPath = Path()
                 val wiperRectF = RectF()
-                
+
                 var eraseProgress = 0f
                 var revealProgress = 0f
 
@@ -302,11 +304,11 @@ class MainActivity : FragmentActivity() {
                         val pivotX = width / 2f
                         val pivotY = height * 1.3f
                         val r = height * 2.5f
-                        
+
                         val startAngle = -45f
                         val endAngle = -135f
                         val sweep = (endAngle - startAngle) * revealProgress
-                        
+
                         wiperPath.moveTo(pivotX, pivotY)
                         wiperRectF.left = pivotX - r
                         wiperRectF.top = pivotY - r
@@ -314,7 +316,7 @@ class MainActivity : FragmentActivity() {
                         wiperRectF.bottom = pivotY + r
                         wiperPath.arcTo(wiperRectF, startAngle, sweep, false)
                         wiperPath.close()
-                        
+
                         canvas.drawPath(wiperPath, clearPaint)
                     }
 
@@ -398,6 +400,20 @@ class MainActivity : FragmentActivity() {
         // Start app refresh immediately on cold start
         lifecycleScope.launch {
             appRepository.refreshApps()
+        }
+
+        lifecycleScope.launch {
+            homeViewModel.uiEvent.collect { event ->
+                when (event) {
+                    is UiEvent.RequestWidgetBind -> {
+                        startWidgetBind(event.widgetId, event.provider)
+                    }
+                    is UiEvent.RequestWidgetConfig -> {
+                        startWidgetConfig(event.widgetId)
+                    }
+                    else -> {}
+                }
+            }
         }
 
         setContent {

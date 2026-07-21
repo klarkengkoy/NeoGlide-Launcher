@@ -104,10 +104,10 @@ fun NeoGlideWidgetHost(
     var initialSnapshot by remember { mutableStateOf<WidgetBounds?>(null) }
     var grabPoint by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
 
-    var lastSnappedRow by remember { mutableFloatStateOf(-1f) }
-    var lastSnappedCol by remember { mutableFloatStateOf(-1f) }
-    var lastSnappedSpanX by remember { mutableFloatStateOf(-1f) }
-    var lastSnappedSpanY by remember { mutableFloatStateOf(-1f) }
+    var lastSnappedRow by remember { mutableFloatStateOf(row) }
+    var lastSnappedCol by remember { mutableFloatStateOf(column) }
+    var lastSnappedSpanX by remember { mutableFloatStateOf(spanX) }
+    var lastSnappedSpanY by remember { mutableFloatStateOf(spanY) }
 
     var accumulatedDrag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var isDragConfirmed by remember { mutableStateOf(false) }
@@ -137,23 +137,23 @@ fun NeoGlideWidgetHost(
         when (activeHandle) {
             Handle.TOP -> {
                 val dy = dragDeltaY / unitHeightPx
-                val clampedDy = dy.coerceAtMost(base.spanY - 0.5f)
+                val clampedDy = dy.coerceIn(-base.row, base.spanY - 0.5f)
                 r = base.row + clampedDy
                 sy = base.spanY - clampedDy
             }
             Handle.BOTTOM -> {
                 val dy = dragDeltaY / unitHeightPx
-                sy = (base.spanY + dy).coerceAtLeast(0.5f)
+                sy = (base.spanY + dy).coerceIn(0.5f, totalRows - base.row)
             }
             Handle.LEFT -> {
                 val dx = dragDeltaX / unitWidthPx
-                val clampedDx = dx.coerceAtMost(base.spanX - 0.5f)
+                val clampedDx = dx.coerceIn(-base.col, base.spanX - 0.5f)
                 c = base.col + clampedDx
                 sx = base.spanX - clampedDx
             }
             Handle.RIGHT -> {
                 val dx = dragDeltaX / unitWidthPx
-                sx = (base.spanX + dx).coerceAtLeast(0.5f)
+                sx = (base.spanX + dx).coerceIn(0.5f, totalColumns - base.col)
             }
             Handle.MOVE -> {
                 val dx = dragDeltaX / unitWidthPx
@@ -236,6 +236,10 @@ fun NeoGlideWidgetHost(
                                 isDragConfirmed = false
                                 grabPoint = offset
                                 initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
+                                lastSnappedRow = currentRow
+                                lastSnappedCol = currentCol
+                                lastSnappedSpanX = currentSpanX
+                                lastSnappedSpanY = currentSpanY
                             },
                             onDragEnd = {
                                 if (isDragConfirmed) {
@@ -246,8 +250,8 @@ fun NeoGlideWidgetHost(
                                     val finalCol = ((base.col + dragDeltaX / unitWidthPx) * snapFactor).roundToInt() / snapFactor
 
                                     currentOnResize(
-                                        finalRow.coerceAtLeast(0f),
-                                        finalCol.coerceAtLeast(0f).coerceAtMost(totalColumns - base.spanX),
+                                        finalRow.coerceIn(0f, (totalRows - base.spanY).coerceAtLeast(0f)),
+                                        finalCol.coerceIn(0f, (totalColumns - base.spanX).coerceAtLeast(0f)),
                                         base.spanX,
                                         base.spanY
                                     )
@@ -289,37 +293,41 @@ fun NeoGlideWidgetHost(
                 }
         ) {
             if (widgetInfo != null) {
-                AndroidView(
-                    factory = { context ->
-                        appWidgetHost.createView(context, widgetId, widgetInfo).apply {
-                            setAppWidget(widgetId, widgetInfo)
-                            setPadding(0, 0, 0, 0)
-                            
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    AndroidView(
+                        factory = { context ->
+                            appWidgetHost.createView(context, widgetId, widgetInfo).apply {
+                                setAppWidget(widgetId, widgetInfo)
+                                setPadding(0, 0, 0, 0)
+                                
+                                val snapFactor = com.samidevstudio.neoglide.ui.utils.LayoutManager.SNAP_FACTOR
+                                val snapW = (lastSnappedSpanX * snapFactor).roundToInt() / snapFactor
+                                val snapH = (lastSnappedSpanY * snapFactor).roundToInt() / snapFactor
+                                val w = ((unitWidth * snapW) - 8.dp).value.toInt()
+                                val h = ((unitHeight * snapH) - 8.dp).value.toInt()
+                                tag = w to h
+                                updateAppWidgetSize(null, w, h, w, h)
+                            }
+                        },
+                        update = { view ->
                             val snapFactor = com.samidevstudio.neoglide.ui.utils.LayoutManager.SNAP_FACTOR
-                            val snapW = (visualRect[2] * snapFactor).roundToInt() / snapFactor
-                            val snapH = (visualRect[3] * snapFactor).roundToInt() / snapFactor
+                            val snapW = (lastSnappedSpanX * snapFactor).roundToInt() / snapFactor
+                            val snapH = (lastSnappedSpanY * snapFactor).roundToInt() / snapFactor
+                            
                             val w = ((unitWidth * snapW) - 8.dp).value.toInt()
                             val h = ((unitHeight * snapH) - 8.dp).value.toInt()
-                            tag = w to h
-                            updateAppWidgetSize(null, w, h, w, h)
-                        }
-                    },
-                    update = { view ->
-                        val snapFactor = com.samidevstudio.neoglide.ui.utils.LayoutManager.SNAP_FACTOR
-                        val snapW = (visualRect[2] * snapFactor).roundToInt() / snapFactor
-                        val snapH = (visualRect[3] * snapFactor).roundToInt() / snapFactor
-                        
-                        val w = ((unitWidth * snapW) - 8.dp).value.toInt()
-                        val h = ((unitHeight * snapH) - 8.dp).value.toInt()
-                        
-                        if (view.tag != w to h) {
-                            view.tag = w to h
-                            view.updateAppWidgetSize(null, w, h, w, h)
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(24.dp))
-                        .graphicsLayer { alpha = if (isBlocked && !isEditing) 0.5f else 1f }
-                )
+                            
+                            if (view.tag != w to h) {
+                                view.tag = w to h
+                                view.updateAppWidgetSize(null, w, h, w, h)
+                            }
+                        },
+                        modifier = Modifier
+                            .size(unitWidth * lastSnappedSpanX, unitHeight * lastSnappedSpanY)
+                            .clip(RoundedCornerShape(24.dp))
+                            .graphicsLayer { alpha = if (isBlocked && !isEditing) 0.5f else 1f }
+                    )
+                }
             }
 else if (content != null) {
                 content()
@@ -349,6 +357,10 @@ else if (content != null) {
                                     isDragConfirmed = false
                                     grabPoint = offset
                                     initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
+                                    lastSnappedRow = currentRow
+                                    lastSnappedCol = currentCol
+                                    lastSnappedSpanX = currentSpanX
+                                    lastSnappedSpanY = currentSpanY
                                 },
                                 onDragEnd = {
                                     if (isDragConfirmed) {
@@ -358,8 +370,8 @@ else if (content != null) {
                                         val finalCol = ((base.col + dragDeltaX / unitWidthPx) * snapFactor).roundToInt() / snapFactor
 
                                         currentOnResize(
-                                            finalRow.coerceAtLeast(0f),
-                                            finalCol.coerceAtLeast(0f).coerceAtMost(totalColumns - base.spanX),
+                                            finalRow.coerceIn(0f, (totalRows - base.spanY).coerceAtLeast(0f)),
+                                            finalCol.coerceIn(0f, (totalColumns - base.spanX).coerceAtLeast(0f)),
                                             base.spanX,
                                             base.spanY
                                         )
@@ -409,6 +421,10 @@ else if (content != null) {
                             currentOnResizeStart()
                             activeHandle = h
                             initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
+                            lastSnappedRow = currentRow
+                            lastSnappedCol = currentCol
+                            lastSnappedSpanX = currentSpanX
+                            lastSnappedSpanY = currentSpanY
                         }
                         dragDeltaY += d.y
                     }
@@ -429,6 +445,10 @@ else if (content != null) {
                             currentOnResizeStart()
                             activeHandle = h
                             initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
+                            lastSnappedRow = currentRow
+                            lastSnappedCol = currentCol
+                            lastSnappedSpanX = currentSpanX
+                            lastSnappedSpanY = currentSpanY
                         }
                         dragDeltaY += d.y
                     }
@@ -450,6 +470,10 @@ else if (content != null) {
                             currentOnResizeStart()
                             activeHandle = h
                             initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
+                            lastSnappedRow = currentRow
+                            lastSnappedCol = currentCol
+                            lastSnappedSpanX = currentSpanX
+                            lastSnappedSpanY = currentSpanY
                         }
                         dragDeltaX += d.x
                     }
@@ -470,6 +494,10 @@ else if (content != null) {
                             currentOnResizeStart()
                             activeHandle = h
                             initialSnapshot = WidgetBounds(currentRow, currentCol, currentSpanX, currentSpanY)
+                            lastSnappedRow = currentRow
+                            lastSnappedCol = currentCol
+                            lastSnappedSpanX = currentSpanX
+                            lastSnappedSpanY = currentSpanY
                         }
                         dragDeltaX += d.x
                     }

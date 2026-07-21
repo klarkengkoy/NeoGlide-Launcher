@@ -23,13 +23,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -64,9 +63,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import com.samidevstudio.neoglide.data.repository.AppLabelMode
-import com.samidevstudio.neoglide.data.repository.BadgeStyle
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.ui.components.AppContextMenu
+import com.samidevstudio.neoglide.ui.components.AppIcon
 import com.samidevstudio.neoglide.ui.components.AppItem
 import com.samidevstudio.neoglide.ui.components.AppPickerDialog
 import com.samidevstudio.neoglide.ui.components.FolderContextMenu
@@ -83,7 +82,6 @@ import com.samidevstudio.neoglide.ui.utils.HapticEngine
 import com.samidevstudio.neoglide.ui.utils.LayoutManager
 import com.samidevstudio.neoglide.ui.utils.rememberHapticFeedback
 import kotlinx.coroutines.launch
-import kotlin.math.floor
 import kotlin.math.roundToInt
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel as hiltViewModelV2
 
@@ -163,7 +161,7 @@ fun HomeScreen(
     val refreshTrigger by viewModel.refreshTrigger.collectAsStateWithLifecycle()
 
     val lifecycleOwner = LocalLifecycleOwner.current
-    
+
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
@@ -200,6 +198,7 @@ fun HomeScreen(
                     expandedFolderId = event.folderId
                     autoFocusFolderName = true
                 }
+                else -> {}
             }
         }
     }
@@ -250,11 +249,11 @@ fun HomeScreen(
             enter = fadeIn(),
             exit = fadeOut()
         ) {
-                        FrostedGlass(
-                            modifier = Modifier.fillMaxSize(),
-                            blurRadius = 40.dp,
-                            tintColor = Color.White.copy(alpha = 0.5f)
-                        )
+            FrostedGlass(
+                modifier = Modifier.fillMaxSize(),
+                blurRadius = 40.dp,
+                tintColor = Color.White.copy(alpha = 0.5f)
+            )
         }
 
         Scaffold(
@@ -263,9 +262,9 @@ fun HomeScreen(
                 .graphicsLayer { alpha = homeAlpha },
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets.safeDrawing
-        ) { paddingValues -> 
+        ) { paddingValues ->
             @Suppress("UNUSED_VARIABLE")
-            val ignore = paddingValues 
+            val ignore = paddingValues
             Box(
                 modifier = Modifier.fillMaxSize()
             ) {
@@ -286,13 +285,13 @@ fun HomeScreen(
                 ) {
                     val statusBars = WindowInsets.statusBars.asPaddingValues()
                     val navigationBars = WindowInsets.navigationBars.asPaddingValues()
-                    
+
                     val topInset = statusBars.calculateTopPadding()
                     val bottomInset = navigationBars.calculateBottomPadding()
 
                     val layoutConfig = LayoutManager.calculateConfig(
-                        screenWidthDp = screenWidthDp, 
-                        screenHeightDp = screenHeightDp, 
+                        screenWidthDp = screenWidthDp,
+                        screenHeightDp = screenHeightDp,
                         densitySetting = preferences.gridSize,
                         topInset = topInset,
                         bottomInset = bottomInset
@@ -305,7 +304,7 @@ fun HomeScreen(
                     val unitHeight = layoutConfig.unitHeight
                     val iconSize = layoutConfig.iconSize
                     val fontSize = layoutConfig.fontSize
-                    
+
                     val unitWidthPx = with(density) { unitWidth.toPx() }
                     val unitHeightPx = with(density) { unitHeight.toPx() }
 
@@ -313,7 +312,7 @@ fun HomeScreen(
                         val meshOffset = meshCoords?.positionInWindow() ?: androidx.compose.ui.geometry.Offset.Zero
                         val localX = fingerPosition.x - meshOffset.x
                         val localY = fingerPosition.y - meshOffset.y
-                        
+
                         val meshWidthPx = with(density) { layoutConfig.actualGridWidth.toPx() }
                         val meshHeightPx = with(density) { layoutConfig.actualGridHeight.toPx() }
 
@@ -322,10 +321,10 @@ fun HomeScreen(
                         }
 
                         val snapFactor = LayoutManager.SNAP_FACTOR
-                        
+
                         val rawColRelative = (localX / unitWidthPx) - (spanX / 2f)
                         val rawRowRelative = (localY / unitHeightPx) - (spanY / 2f)
-                        
+
                         val snappedCol = kotlin.math.round(rawColRelative * snapFactor) / snapFactor
                         val snappedRow = kotlin.math.round(rawRowRelative * snapFactor) / snapFactor
 
@@ -354,19 +353,19 @@ fun HomeScreen(
                         val meshOffset = meshCoords?.positionInWindow() ?: androidx.compose.ui.geometry.Offset.Zero
                         val meshLeft = with(density) { meshOffset.x.toDp() }.value
                         val meshTop = with(density) { meshOffset.y.toDp() }.value
-                        
+
                         val unitW = unitWidth.value
                         val unitH = unitHeight.value
-                        
+
                         val itemTop = meshTop + itemRow * unitH
                         val itemBottom = meshTop + (itemRow + spanY) * unitH
                         val itemLeft = meshLeft + itemCol * unitW
                         val itemRight = meshLeft + (itemCol + spanX) * unitW
-                        
+
                         val itemCenterX = itemLeft + (spanX * unitW) / 2f
                         val screenWidth = screenWidthDp.value
                         val meshCenterX = meshLeft + (totalColumns * unitW) / 2f
-                        
+
                         val screenHeight = screenHeightDp.value
                         val itemCenterY = itemTop + (spanY * unitH) / 2f
                         val screenCenterY = screenHeight / 2f
@@ -374,7 +373,7 @@ fun HomeScreen(
                         // X: Anchor to the edge that gives more room
                         val isRightAligned = itemCenterX > meshCenterX
                         val x = if (isRightAligned) (itemRight - screenWidth).dp else itemLeft.dp
-                        
+
                         // Y: Anchor to Top edge if flipping UP, Bottom edge if flipping DOWN
                         val isBottomAligned = itemCenterY > screenCenterY
                         val y = if (isBottomAligned) {
@@ -384,7 +383,7 @@ fun HomeScreen(
                             // Anchor TOP of menu to BOTTOM of icon (with 8dp gap)
                             (itemBottom + 8).dp
                         }
-                        
+
                         return Triple(DpOffset(x, y), isRightAligned, isBottomAligned)
                     }
 
@@ -426,18 +425,23 @@ fun HomeScreen(
                                         onLongPress = { offset ->
                                             if ((editingWidgetId == -1) && (!preferences.lockLayout)) {
                                                 hapticFeedback(HapticEngine.HapticType.LONG_PRESS)
-                                                val (offset, right, bottom) = calculateSmartMenuOffset(
-                                                    itemRow = offset.y / unitHeightPx,
-                                                    itemCol = offset.x / unitWidthPx,
+                                                val row = offset.y / unitHeightPx
+                                                val col = offset.x / unitWidthPx
+                                                pendingAddAppRow = row
+                                                pendingAddAppCol = col
+                                                
+                                                val (smartOffset, right, bottom) = calculateSmartMenuOffset(
+                                                    itemRow = row,
+                                                    itemCol = col,
                                                     spanX = 0f,
                                                     spanY = 0f
                                                 )
-                                                contextMenuOffset = offset
+                                                contextMenuOffset = smartOffset
                                                 isRightAligned = right
                                                 isBottomAligned = bottom
                                                 showContextMenu = true
                                             }
-else if (preferences.lockLayout) {
+                                            else if (preferences.lockLayout) {
                                                 Toast.makeText(context, "Locked from launcher settings", Toast.LENGTH_SHORT).show()
                                             }
                                         }
@@ -445,7 +449,7 @@ else if (preferences.lockLayout) {
                                 }
                         ) {
                             // LOCAL COORDINATES (0,0 is top-left of this Mesh Box)
-                            
+
                             // 3. THE CORE BOX (Aligned to bold lines)
                             Box(
                                 modifier = Modifier
@@ -458,6 +462,21 @@ else if (preferences.lockLayout) {
                                 val ghostTargetHeight by animateDpAsState(targetValue = dragTargetBounds?.let { unitHeight * it.spanY } ?: 0.dp, label = "ghostH")
 
                                 val ghostColor = Color.Black.copy(alpha = 0.15f)
+
+                                if (editingWidgetId != -1) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .zIndex(90f)
+                                            .pointerInput(Unit) {
+                                                detectTapGestures(
+                                                    onTap = {
+                                                        editingWidgetId = -1
+                                                    }
+                                                )
+                                            }
+                                    )
+                                }
 
                                 if (draggingUniqueKey != null || draggingAppFromFolder != null || (editingWidgetId != -1 && dragTargetBounds != null)) {
                                     Box(
@@ -519,7 +538,7 @@ else if (preferences.lockLayout) {
                                                                             draggingUniqueKey = item.uniqueKey
                                                                         }
                                                                         dragTargetBounds = calculateTargetBounds(dragOffset + grabPoint, item.spanX, item.spanY)
-                                                                        
+
                                                                         // Real-time hover detection
                                                                         val newHoveredKey = if (isDragConfirmed) {
                                                                             dragTargetBounds?.let { b ->
@@ -566,11 +585,11 @@ else if (preferences.lockLayout) {
                                                                                 val shortcuts = viewModel.getShortcuts(item.appModel.packageName)
                                                                                 appMenuShortcuts = shortcuts
                                                                                 val (offset, right, bottom) = calculateSmartMenuOffset(rowToUse, item.column, 1f, 1f)
-                                                contextMenuOffset = offset
-                                                isRightAligned = right
-                                                isBottomAligned = bottom
-                                                appMenuLabel = item.appModel.label
-                                                showAppMenuPackage = item.appModel.packageName
+                                                                                contextMenuOffset = offset
+                                                                                isRightAligned = right
+                                                                                isBottomAligned = bottom
+                                                                                appMenuLabel = item.appModel.label
+                                                                                showAppMenuPackage = item.appModel.packageName
                                                                             }
                                                                         } else if (item is HomeItem.Folder) {
                                                                             val (offset, right, bottom) = calculateSmartMenuOffset(rowToUse, item.column, 1f, 1f)
@@ -593,24 +612,24 @@ else if (preferences.lockLayout) {
                                             contentAlignment = if (item is HomeItem.Widget) Alignment.TopStart else if (isDockItem) Alignment.BottomCenter else Alignment.TopCenter
                                         ) {
                                             when (item) {
-                                                is HomeItem.App -> AppItem(app = item.appModel, sharedTransitionScope = sharedTransitionScope, animatedVisibilityScope = animatedVisibilityScope, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, refreshTrigger = refreshTrigger, isHovered = isHovered, isBlocked = isBlocked, onClick = { 
+                                                is HomeItem.App -> AppItem(app = item.appModel, sharedTransitionScope = sharedTransitionScope, animatedVisibilityScope = animatedVisibilityScope, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, refreshTrigger = refreshTrigger, isHovered = isHovered, isBlocked = isBlocked, onClick = {
                                                     if (editingWidgetId != -1) {
                                                         editingWidgetId = -1
                                                         return@AppItem
                                                     }
                                                     if (draggingUniqueKey == null) {
                                                         hapticFeedback(HapticEngine.HapticType.CLICK)
-                                                        viewModel.launchApp(item.appModel.packageName) 
+                                                        viewModel.launchApp(item.appModel.packageName)
                                                     }
                                                 })
-                                                is HomeItem.Folder -> FolderItem(label = item.label, apps = item.apps, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, isHovered = isHovered, isBlocked = isBlocked, onClick = { 
+                                                is HomeItem.Folder -> FolderItem(label = item.label, apps = item.apps, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, isHovered = isHovered, isBlocked = isBlocked, onClick = {
                                                     if (editingWidgetId != -1) {
                                                         editingWidgetId = -1
                                                         return@FolderItem
                                                     }
                                                     if (draggingUniqueKey == null) {
                                                         hapticFeedback(HapticEngine.HapticType.CLICK)
-                                                        expandedFolderId = item.id 
+                                                        expandedFolderId = item.id
                                                     }
                                                 })
                                                 is HomeItem.Widget -> NeoGlideWidgetHost(
@@ -626,14 +645,15 @@ else if (preferences.lockLayout) {
                                                     unitWidth = unitWidth,
                                                     unitHeight = unitHeight,
                                                     isEditing = editingWidgetId == item.id,
-                                                    isBlocked = isBlocked || ((draggingUniqueKey == item.uniqueKey) && isCurrentDragBlocked),
+                                                    isBlocked = isBlocked,
                                                     modifier = Modifier,
                                                     onHapticFeedback = { hapticFeedback(it) },
-                                                    onDragStart = { 
+                                                    onDragStart = {
                                                         draggingUniqueKey = item.uniqueKey
                                                         showWidgetMenu = false
                                                     },
                                                     onResizeStart = {
+                                                        draggingUniqueKey = item.uniqueKey
                                                         showWidgetMenu = false
                                                     },
                                                     onLongClick = {
@@ -658,20 +678,29 @@ else if (preferences.lockLayout) {
                                                             editingWidgetId = -1
                                                         }
                                                     },
-                                                    onInteractionUpdate = { r, c, sx, sy -> 
+                                                    onInteractionUpdate = { r, c, sx, sy ->
                                                         dragTargetBounds = RectBounds(r, c, sx, sy)
+                                                        val targetRect = android.graphics.RectF(c, r, c + sx, r + sy)
+                                                        blockedUniqueKeys = homeItems.filter { other ->
+                                                            if (other.uniqueKey == item.uniqueKey) return@filter false
+                                                            val otherRow = if (other.row >= 99f) dockRow else other.row
+                                                            val otherRect = android.graphics.RectF(other.column, otherRow, other.column + other.spanX, otherRow + other.spanY)
+                                                            android.graphics.RectF.intersects(targetRect, otherRect)
+                                                        }.map { it.uniqueKey }.toSet()
                                                         isCurrentDragBlocked = viewModel.isSpaceOccupied(r, c, sx, sy, totalRows, item.uniqueKey)
                                                     },
                                                     onInteractionEnd = {
                                                         draggingUniqueKey = null
                                                         dragTargetBounds = null
                                                         isCurrentDragBlocked = false
+                                                        blockedUniqueKeys = emptySet()
                                                     },
                                                     onResize = { nr, nc, nsx, nsy ->
                                                         viewModel.updateWidgetBounds(item.id, nr, nc, nsx, nsy, totalRows)
                                                         dragTargetBounds = null
                                                         draggingUniqueKey = null
                                                         isCurrentDragBlocked = false
+                                                        blockedUniqueKeys = emptySet()
                                                     }
                                                 )
                                             }
@@ -697,35 +726,33 @@ else if (preferences.lockLayout) {
                                         alpha = 1.0f
                                         scaleX = liftScaleOverlay
                                         scaleY = liftScaleOverlay
-                                        shadowElevation = 16.dp.toPx()
-                                        shape = RoundedCornerShape(16.dp)
-                                        clip = true
-                                    }
+                                    },
+                                contentAlignment = Alignment.Center
                             ) {
                                 if (draggingItem != null && draggingItem !is HomeItem.Widget) {
                                     when (draggingItem) {
-                                        is HomeItem.App -> AppItem(app = draggingItem.appModel, sharedTransitionScope = sharedTransitionScope, animatedVisibilityScope = animatedVisibilityScope, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, refreshTrigger = refreshTrigger, sharedElementKeyPrefix = "drag-overlay", onClick = {})
-                                        is HomeItem.Folder -> FolderItem(label = draggingItem.label, apps = draggingItem.apps, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, onClick = {})
+                                        is HomeItem.App -> AppIcon(packageName = draggingItem.appModel.packageName, contentDescription = null, size = iconSize, useMonochrome = preferences.useMonochromeIcons)
+                                        is HomeItem.Folder -> FolderItem(label = draggingItem.label, apps = draggingItem.apps, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = false, onClick = null)
                                         is HomeItem.Widget -> {}
                                     }
                                 } else if (draggingAppFromFolder != null) {
-                                    AppItem(app = draggingAppFromFolder!!, sharedTransitionScope = sharedTransitionScope, animatedVisibilityScope = animatedVisibilityScope, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, refreshTrigger = refreshTrigger, sharedElementKeyPrefix = "drag-overlay", onClick = {})
+                                    AppIcon(packageName = draggingAppFromFolder!!.packageName, contentDescription = null, size = iconSize, useMonochrome = preferences.useMonochromeIcons)
                                 }
                             }
                         }
                     }
 
                     HomeContextMenu(
-                        expanded = showContextMenu, 
-                        onDismissRequest = { showContextMenu = false }, 
-                        offset = contextMenuOffset, 
+                        expanded = showContextMenu,
+                        onDismissRequest = { showContextMenu = false },
+                        offset = contextMenuOffset,
                         isRightAligned = isRightAligned,
                         isBottomAligned = isBottomAligned,
-                        onOpenWidgets = { showWidgetPicker = true }, 
-                        onAddApp = { showAppPicker = true }, 
+                        onOpenWidgets = { showWidgetPicker = true },
+                        onAddApp = { showAppPicker = true },
                         onOpenLauncherSettings = { showSettings = true }
                     )
-                    
+
                     if (showFolderMenu) {
                         val folderItem = homeItems.find { it.id == showFolderMenuId && it is HomeItem.Folder } as? HomeItem.Folder
                         FolderContextMenu(
@@ -746,17 +773,17 @@ else if (preferences.lockLayout) {
                     }
 
                     if (showAppMenuPackage != null) AppContextMenu(
-                        expanded = true, 
-                        onDismissRequest = { showAppMenuPackage = null }, 
-                        packageName = showAppMenuPackage!!, 
-                        label = appMenuLabel, 
-                        shortcuts = appMenuShortcuts, 
-                        offset = contextMenuOffset, 
+                        expanded = true,
+                        onDismissRequest = { showAppMenuPackage = null },
+                        packageName = showAppMenuPackage!!,
+                        label = appMenuLabel,
+                        shortcuts = appMenuShortcuts,
+                        offset = contextMenuOffset,
                         isRightAligned = isRightAligned,
                         isBottomAligned = isBottomAligned,
                         isPremium = isPremium,
-                        onShortcutClick = { viewModel.launchShortcut(it) }, 
-                        onHideToggle = { viewModel.hideApp(showAppMenuPackage!!) }, 
+                        onShortcutClick = { viewModel.launchShortcut(it) },
+                        onHideToggle = { viewModel.hideApp(showAppMenuPackage!!) },
                         onRemove = { viewModel.removeHomeApp(showAppMenuId) },
                         onShowPaywall = { /* Trigger paywall logic */ }
                     )
@@ -765,14 +792,14 @@ else if (preferences.lockLayout) {
                         WidgetContextMenu(
                             expanded = true,
                             onDismissRequest = { showWidgetMenu = false },
-                            onRemove = { 
+                            onRemove = {
                                 viewModel.removeWidget(showAppMenuId)
                                 showWidgetMenu = false
                                 editingWidgetId = -1
                             },
-                            onOpenApp = { 
+                            onOpenApp = {
                                 widgetItem?.let { viewModel.launchApp(it.widgetEntity.providerPackage) }
-                                showWidgetMenu = false 
+                                showWidgetMenu = false
                                 editingWidgetId = -1
                             },
                             onAppInfo = {
@@ -788,7 +815,7 @@ else if (preferences.lockLayout) {
                             },
                             label = appMenuLabel,
                             shortcuts = appMenuShortcuts,
-                            onShortcutClick = { 
+                            onShortcutClick = {
                                 viewModel.launchShortcut(it)
                                 editingWidgetId = -1
                             },
@@ -797,9 +824,9 @@ else if (preferences.lockLayout) {
                             isBottomAligned = isBottomAligned
                         )
                     }
-                    
+
                     val expandedFolder = remember(homeItems, expandedFolderId) { homeItems.find { it.id == expandedFolderId && it is HomeItem.Folder } as? HomeItem.Folder }
-                    if (expandedFolder != null) FolderExpansion(folderId = expandedFolder.id, label = expandedFolder.label, apps = expandedFolder.apps, unitWidth = unitWidth, unitHeight = unitHeight, iconSize = iconSize, fontSize = fontSize, onDismiss = { expandedFolderId = -1 }, onRemove = { viewModel.removeFolder(expandedFolder.id) }, onAddApps = { pendingFolderIdForAdd = expandedFolder.id; showAppPicker = true }, onLabelChange = { viewModel.updateFolderLabel(expandedFolder.id, it) }, onAppClick = { pkg, opts -> 
+                    if (expandedFolder != null) FolderExpansion(folderId = expandedFolder.id, label = expandedFolder.label, apps = expandedFolder.apps, unitWidth = unitWidth, unitHeight = unitHeight, iconSize = iconSize, fontSize = fontSize, spacing = layoutConfig.spacing, columns = columns, onDismiss = { expandedFolderId = -1 }, onRemove = { viewModel.removeFolder(expandedFolder.id) }, onAddApps = { pendingFolderIdForAdd = expandedFolder.id; showAppPicker = true }, onLabelChange = { viewModel.updateFolderLabel(expandedFolder.id, it) }, onAppClick = { pkg, opts ->
                         if (editingWidgetId != -1) {
                             editingWidgetId = -1
                             expandedFolderId = -1
@@ -807,23 +834,23 @@ else if (preferences.lockLayout) {
                         }
                         hapticFeedback(HapticEngine.HapticType.CLICK)
                         viewModel.launchApp(pkg, opts)
-                        expandedFolderId = -1 
-                    }, sharedTransitionScope = sharedTransitionScope, animatedVisibilityScope = animatedVisibilityScope, useMonochrome = preferences.useMonochromeIcons, refreshTrigger = refreshTrigger, onHapticFeedback = hapticFeedback, getShortcuts = { viewModel.getShortcuts(it) }, onShortcutClick = { viewModel.launchShortcut(it) }, onHideToggle = { viewModel.hideApp(it) }, onAddToHome = { viewModel.addHomeApp(it, 0f, 0f) }, isDrawerFolder = false, onAppDragStart = { app, startPos, grab -> 
+                        expandedFolderId = -1
+                    }, sharedTransitionScope = sharedTransitionScope, animatedVisibilityScope = animatedVisibilityScope, useMonochrome = preferences.useMonochromeIcons, refreshTrigger = refreshTrigger, onHapticFeedback = hapticFeedback, getShortcuts = { viewModel.getShortcuts(it) }, onShortcutClick = { viewModel.launchShortcut(it) }, onHideToggle = { viewModel.hideApp(it) }, onAddToHome = { viewModel.addHomeApp(it, 0f, 0f) }, isDrawerFolder = false, onAppDragStart = { app, startPos, grab ->
                         hapticFeedback(HapticEngine.HapticType.DRAG_START)
                         draggingAppFromFolder = app
                         dragOffset = startPos
                         grabPoint = grab
-                        isDragConfirmed = true 
+                        isDragConfirmed = true
                         draggingUniqueKey = "APP_FOLDER_DRAG" // Sentinel to trigger tray/mesh state
-                    }, onAppDrag = { dragAmount -> 
+                    }, onAppDrag = { dragAmount ->
                         dragOffset += dragAmount
                         dragTargetBounds = calculateTargetBounds(dragOffset + grabPoint, 1f, 1f)
-                        
+
                         // Hover/Collision check for dragging OUT of folder
                         val newHoveredKey = dragTargetBounds?.let { b ->
                             homeItems.find { other ->
                                 // Skip the folder we are coming from if possible, or just use center distance
-                                if (other.id == expandedFolderId) return@find false 
+                                if (other.id == expandedFolderId) return@find false
                                 val otherRow = if (other.row >= 99f) dockRow else other.row
                                 val distSq = (b.row - otherRow) * (b.row - otherRow) + (b.col - other.column) * (b.col - other.column)
                                 distSq < 0.0625f
@@ -845,28 +872,40 @@ else if (preferences.lockLayout) {
                         } ?: emptySet()
 
                         isCurrentDragBlocked = blockedUniqueKeys.isNotEmpty()
-                    }, onAppDragEnd = { 
-                        if (isDragConfirmed) { 
+                    }, onAppDragEnd = {
+                        if (isDragConfirmed) {
                             hapticFeedback(HapticEngine.HapticType.DRAG_END)
-                            dragTargetBounds?.let { viewModel.removeAppFromFolder(expandedFolder.id, draggingAppFromFolder!!.packageName, it.row, it.col) } 
+                            dragTargetBounds?.let { viewModel.removeAppFromFolder(expandedFolder.id, draggingAppFromFolder!!.packageName, it.row, it.col) }
                         }
                         draggingAppFromFolder = null
                         draggingUniqueKey = null
                         hoveredUniqueKey = null
                         blockedUniqueKeys = emptySet()
                         dragTargetBounds = null
-                        expandedFolderId = -1 
-                    }, onAppDragCancel = { 
+                        expandedFolderId = -1
+                    }, onAppDragCancel = {
                         draggingAppFromFolder = null
                         draggingUniqueKey = null
                         hoveredUniqueKey = null
                         blockedUniqueKeys = emptySet()
                         dragTargetBounds = null
-                        expandedFolderId = -1 
+                        expandedFolderId = -1
                     })
 
                     if (showAppPicker) AppPickerDialog(title = "Add Application", apps = viewModel.availableAppsForPicker.collectAsStateWithLifecycle().value, recentlyUsedApps = viewModel.recentlyUsedApps.collectAsStateWithLifecycle().value, onAppSelected = { viewModel.addHomeApp(it.packageName, pendingAddAppRow, pendingAddAppCol); showAppPicker = false }, onDismissRequest = { showAppPicker = false })
-                    if (showWidgetPicker) WidgetPickerDialog(appsWithWidgets = viewModel.appsWithWidgets.collectAsStateWithLifecycle().value, allWidgetProviders = viewModel.appWidgetManager.installedProviders, unitWidthDp = unitWidth.value, unitHeightDp = unitHeight.value, maxColumns = columns, onGetWidgets = { viewModel.getWidgetsForApp(it) }, onWidgetSelected = { info -> showWidgetPicker = false; val id = viewModel.allocateWidgetId(); if (viewModel.appWidgetManager.bindAppWidgetIdIfAllowed(id, info.provider)) viewModel.completeWidgetConfiguration(id) }, onDismissRequest = { showWidgetPicker = false })
+                    if (showWidgetPicker) WidgetPickerDialog(
+                        appsWithWidgets = viewModel.appsWithWidgets.collectAsStateWithLifecycle().value, 
+                        allWidgetProviders = viewModel.appWidgetManager.installedProviders, 
+                        unitWidthDp = unitWidth.value, 
+                        unitHeightDp = unitHeight.value, 
+                        maxColumns = columns, 
+                        onGetWidgets = { viewModel.getWidgetsForApp(it) }, 
+                        onWidgetSelected = { info -> 
+                            showWidgetPicker = false
+                            viewModel.addNewWidget(info, pendingAddAppRow, pendingAddAppCol)
+                        }, 
+                        onDismissRequest = { showWidgetPicker = false }
+                    )
                 }
             }
         }
@@ -877,16 +916,16 @@ else if (preferences.lockLayout) {
         AnimatedVisibility(visible = showDrawer, enter = slideInVertically(initialOffsetY = { it }) + fadeIn(), exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()) {
             Surface(modifier = Modifier.fillMaxSize(), shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)) {
                 DrawerScreen(
-                    viewModel = drawerViewModel, 
-                    sharedTransitionScope = sharedTransitionScope, 
-                    animatedVisibilityScope = this@AnimatedVisibility, 
-                    onAppClick = { pkg, opts -> 
+                    viewModel = drawerViewModel,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = this@AnimatedVisibility,
+                    onAppClick = { pkg, opts ->
                         viewModel.recordDrawerAppLaunch()
-                        viewModel.launchApp(pkg, opts) 
-                    }, 
-                    onShortcutClick = { 
+                        viewModel.launchApp(pkg, opts)
+                    },
+                    onShortcutClick = {
                         viewModel.recordDrawerAppLaunch()
-                        viewModel.launchShortcut(it) 
+                        viewModel.launchShortcut(it)
                     },
                     onAddToHome = { pkg ->
                         viewModel.addHomeApp(pkg, 0f, 0f) // Add to home logic

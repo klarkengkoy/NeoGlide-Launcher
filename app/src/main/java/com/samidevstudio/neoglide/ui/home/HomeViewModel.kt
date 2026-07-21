@@ -3,12 +3,15 @@ package com.samidevstudio.neoglide.ui.home
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProviderInfo
+import android.content.ComponentName
 import android.content.Context
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.samidevstudio.neoglide.data.local.entity.WidgetEntity
 import com.samidevstudio.neoglide.data.repository.AppLabelMode
 import com.samidevstudio.neoglide.data.repository.AppRepository
+import com.samidevstudio.neoglide.data.repository.CategoryRepository
 import com.samidevstudio.neoglide.data.repository.HomeRepository
 import com.samidevstudio.neoglide.data.repository.UserPreferencesRepository
 import com.samidevstudio.neoglide.data.repository.WidgetRepository
@@ -17,7 +20,6 @@ import com.samidevstudio.neoglide.domain.model.AppShortcut
 import com.samidevstudio.neoglide.service.NeoGlideNotificationListener
 import com.samidevstudio.neoglide.ui.utils.LayoutManager
 import com.samidevstudio.neoglide.ui.utils.WidgetUtils
-import androidx.compose.ui.unit.dp
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -79,6 +81,8 @@ sealed class HomeItem {
 sealed class UiEvent {
     data class ShowToast(val message: String) : UiEvent()
     data class FolderCreated(val folderId: Int) : UiEvent()
+    data class RequestWidgetBind(val widgetId: Int, val provider: ComponentName) : UiEvent()
+    data class RequestWidgetConfig(val widgetId: Int) : UiEvent()
 }
 
 @HiltViewModel
@@ -87,6 +91,7 @@ class HomeViewModel @Inject constructor(
     private val appRepository: AppRepository,
     private val widgetRepository: WidgetRepository,
     private val homeRepository: HomeRepository,
+    private val categoryRepository: CategoryRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
     val appWidgetManager: AppWidgetManager,
     val appWidgetHost: AppWidgetHost,
@@ -284,10 +289,23 @@ class HomeViewModel @Inject constructor(
 
 
 
-    val allApps: StateFlow<List<AppModel>> = appRepository.allApps
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val allApps: StateFlow<List<AppModel>> = combine(
+        appRepository.allApps,
+        categoryRepository.allCategories
+    ) { apps, overrides ->
+        val overrideMap = overrides.associateBy { it.name }
+        apps.map { app ->
+            val override = overrideMap[app.category.name]
+            if (override != null) {
+                app.copy(category = app.category.copy(
+                    label = override.label ?: app.category.label,
+                    iconName = override.iconName ?: app.category.iconName
+                ))
+            } else app
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val recentlyUsedApps: StateFlow<List<AppModel>> = appRepository.allApps
+    val recentlyUsedApps: StateFlow<List<AppModel>> = allApps
         .map { apps ->
             apps.asSequence()
                 .filter { it.lastUsedTime > 0 }
@@ -649,6 +667,28 @@ class HomeViewModel @Inject constructor(
 
     fun allocateWidgetId(): Int {
         return appWidgetHost.allocateAppWidgetId()
+    }
+
+    fun addNewWidget(info: AppWidgetProviderInfo, row: Float, col: Float) {
+        _pendingWidgetRow.value = row
+        _pendingWidgetCol.value = col
+        val widgetId = appWidgetHost.allocateAppWidgetId()
+        if (appWidgetManager.bindAppWidgetIdIfAllowed(widgetId, info.provider)) {
+            // Bound successfully. Now check if it needs configuration.
+            if (info.configure != null) {
+                viewModelScope.launch {
+                    _uiEvent.emit(UiEvent.RequestWidgetConfig(widgetId))
+                }
+            } else {
+                // Doesn't need configuration, just add it.
+                completeWidgetConfiguration(widgetId)
+            }
+        } else {
+            // Needs binding permission (launch system binder)
+            viewModelScope.launch {
+                _uiEvent.emit(UiEvent.RequestWidgetBind(widgetId, info.provider))
+            }
+        }
     }
 
     fun completeWidgetConfiguration(widgetId: Int) {
