@@ -18,8 +18,8 @@ import com.samidevstudio.neoglide.data.repository.WidgetRepository
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.domain.model.AppShortcut
 import com.samidevstudio.neoglide.service.NeoGlideNotificationListener
-import com.samidevstudio.neoglide.ui.utils.LayoutManager
-import com.samidevstudio.neoglide.ui.utils.WidgetUtils
+import com.samidevstudio.neoglide.ui.layout.LayoutManager
+import com.samidevstudio.neoglide.ui.layout.WidgetUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -174,7 +174,8 @@ class HomeViewModel @Inject constructor(
                         screenHeightDp = screenHeightDp.dp, 
                         densitySetting = size,
                         topInset = 80.dp,
-                        bottomInset = 48.dp
+                        bottomInset = 48.dp,
+                        showLabels = (labelMode == AppLabelMode.HOME_ONLY) || (labelMode == AppLabelMode.BOTH)
                     )
                     val columns = layoutConfig.totalColumns
                     val maxRows = layoutConfig.totalRows
@@ -201,7 +202,8 @@ class HomeViewModel @Inject constructor(
                 screenHeightDp = screenHeightDp.dp, 
                 densitySetting = prefs.gridSize,
                 topInset = 80.dp,
-                bottomInset = 48.dp
+                bottomInset = 48.dp,
+                showLabels = (prefs.appLabelMode == AppLabelMode.HOME_ONLY) || (prefs.appLabelMode == AppLabelMode.BOTH)
             )
             val snapFactor = LayoutManager.SNAP_FACTOR
 
@@ -409,36 +411,90 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    fun migrateLayoutForLabelMode(newMode: AppLabelMode) {
+        viewModelScope.launch {
+            val oldPrefs = userPreferencesRepository.userPreferencesFlow.first()
+            val oldShowLabels = (oldPrefs.appLabelMode == AppLabelMode.HOME_ONLY) || (oldPrefs.appLabelMode == AppLabelMode.BOTH)
+            val newShowLabels = (newMode == AppLabelMode.HOME_ONLY) || (newMode == AppLabelMode.BOTH)
+            
+            if (oldShowLabels == newShowLabels) {
+                userPreferencesRepository.updateAppLabelMode(newMode)
+                return@launch
+            }
+
+            val screenWidthDp = context.resources.configuration.screenWidthDp
+            val screenHeightDp = context.resources.configuration.screenHeightDp
+
+            val oldConfig = LayoutManager.calculateConfig(
+                screenWidthDp = screenWidthDp.dp,
+                screenHeightDp = screenHeightDp.dp,
+                densitySetting = oldPrefs.gridSize,
+                topInset = 80.dp,
+                bottomInset = 48.dp,
+                showLabels = oldShowLabels
+            )
+
+            val newConfig = LayoutManager.calculateConfig(
+                screenWidthDp = screenWidthDp.dp,
+                screenHeightDp = screenHeightDp.dp,
+                densitySetting = oldPrefs.gridSize,
+                topInset = 80.dp,
+                bottomInset = 48.dp,
+                showLabels = newShowLabels
+            )
+
+            val heightRatio = oldConfig.unitHeight.value / newConfig.unitHeight.value
+            val items = homeItems.value
+
+            // 1. Mathematically migrate all items in DB
+            items.forEach { item ->
+                val newRow = item.row * heightRatio
+                // Widgets need their spanY scaled to maintain physical size
+                val newSpanY = if (item is HomeItem.Widget) item.spanY * heightRatio else item.spanY
+                
+                when (item) {
+                    is HomeItem.App -> homeRepository.updateHomeAppPosition(item.id, newRow, item.column)
+                    is HomeItem.Folder -> homeRepository.updateFolderPosition(item.id, newRow, item.column)
+                    is HomeItem.Widget -> homeRepository.updateWidgetBounds(item.id, newRow, item.column, item.spanX, newSpanY)
+                }
+            }
+
+            // 2. Update Preference so the grid capacity and rendering updates
+            userPreferencesRepository.updateAppLabelMode(newMode)
+
+            // 3. Trigger sanitization to clean up overlaps/out-of-bounds
+            sanitizeGridItems(newConfig.totalColumns, newConfig.totalRows)
+        }
+    }
+
     fun sanitizeGridItems(columns: Float, maxRows: Float) {
         viewModelScope.launch {
-            val items = homeItems.value
+            val rawItems = homeItems.value
+            // Prioritize Widgets, then Folders, then Apps for space booking
+            val sortedItems = rawItems.sortedBy { 
+                when(it) {
+                    is HomeItem.Widget -> 0
+                    is HomeItem.Folder -> 1
+                    is HomeItem.App -> 2
+                }
+            }
+            
             val removedItems = mutableListOf<String>()
+            val bookedRects = mutableListOf<android.graphics.RectF>()
 
-            // Keep track of spots we've already "booked" during this sanitization pass
-            // We use a local list to prevent stacking before the repository updates the Flow
-            val bookedRects = items.mapNotNull { item ->
-                val isAppOrFolder = (item is HomeItem.App) || (item is HomeItem.Folder)
-                val showLabels = userPreferencesRepository.userPreferencesFlow.first().let {
-                    (it.appLabelMode == AppLabelMode.HOME_ONLY) || (it.appLabelMode == AppLabelMode.BOTH)
-                }
-                val effectiveSpanY = if (isAppOrFolder && showLabels) 1.5f else item.spanY
+            sortedItems.forEach { item ->
+                val effectiveSpanY = item.spanY
+                val epsilon = 0.05f
+                
+                val currentRect = android.graphics.RectF(item.column + epsilon, item.row + epsilon, item.column + item.spanX - epsilon, item.row + effectiveSpanY - epsilon)
+                val isInside = item.column + item.spanX <= columns && item.row + effectiveSpanY <= maxRows
+                val isColliding = bookedRects.any { android.graphics.RectF.intersects(it, currentRect) }
 
-                // If it's already inside, book it. If outside, don't book yet.
-                if (item.column + item.spanX <= columns && item.row + effectiveSpanY <= maxRows) {
-                    android.graphics.RectF(item.column, item.row, item.column + item.spanX, item.row + effectiveSpanY)
-                } else null
-            }.toMutableList()
-
-            items.forEach { item ->
-                val isAppOrFolder = (item is HomeItem.App) || (item is HomeItem.Folder)
-                val showLabels = userPreferencesRepository.userPreferencesFlow.first().let {
-                    (it.appLabelMode == AppLabelMode.HOME_ONLY) || (it.appLabelMode == AppLabelMode.BOTH)
-                }
-                val effectiveSpanY = if (isAppOrFolder && showLabels) 1.5f else item.spanY
-
-                val isOutside = item.column + item.spanX > columns || item.row + effectiveSpanY > maxRows
-
-                if (isOutside) {
+                if (isInside && !isColliding) {
+                    // Valid spot, book it
+                    bookedRects.add(android.graphics.RectF(item.column + epsilon, item.row + epsilon, item.column + item.spanX - epsilon, item.row + effectiveSpanY - epsilon))
+                } else {
+                    // Needs relocation or removal
                     var foundRow = -1f
                     var foundCol = -1f
 
@@ -452,11 +508,8 @@ class HomeViewModel @Inject constructor(
 
                             if (col + item.spanX > columns || row + effectiveSpanY > maxRows) continue
 
-                            val targetRect = android.graphics.RectF(col, row, col + item.spanX, row + effectiveSpanY)
-
-                            // Check if this spot is booked by any other item
-                            val isOccupied = bookedRects.any { android.graphics.RectF.intersects(it, targetRect) }
-                            if (isOccupied) continue
+                            val targetRect = android.graphics.RectF(col + epsilon, row + epsilon, col + item.spanX - epsilon, row + effectiveSpanY - epsilon)
+                            if (bookedRects.any { android.graphics.RectF.intersects(it, targetRect) }) continue
 
                             foundRow = row
                             foundCol = col
@@ -465,7 +518,8 @@ class HomeViewModel @Inject constructor(
                     }
 
                     if (foundRow != -1f) {
-                        bookedRects.add(android.graphics.RectF(foundCol, foundRow, foundCol + item.spanX, foundRow + effectiveSpanY))
+                        val newRect = android.graphics.RectF(foundCol + epsilon, foundRow + epsilon, foundCol + item.spanX - epsilon, foundRow + effectiveSpanY - epsilon)
+                        bookedRects.add(newRect)
                         when (item) {
                             is HomeItem.App -> homeRepository.updateHomeAppPosition(item.id, foundRow, foundCol)
                             is HomeItem.Widget -> homeRepository.updateWidgetBounds(item.id, foundRow, foundCol, item.spanX, item.spanY)
@@ -543,21 +597,21 @@ class HomeViewModel @Inject constructor(
         ignoreUniqueKey: String? = null
     ): CollisionResult {
         val currentItems = homeItems.value
-        val draggedRect = android.graphics.RectF(newCol, newRow, newCol + draggedItem.spanX, newRow + draggedItem.spanY)
+        val epsilon = 0.05f
+        val draggedRect = android.graphics.RectF(newCol + epsilon, newRow + epsilon, newCol + draggedItem.spanX - epsilon, newRow + draggedItem.spanY - epsilon)
 
         currentItems.forEach { item ->
             // Skip self or ignored item via uniqueKey
             if (item.uniqueKey == ignoreUniqueKey) return@forEach
 
             val effectiveRow = when {
-                item.row >= 99.5f -> (maxRows - 1.5f).coerceAtLeast(0f)
                 item.row >= 99f -> (maxRows - 1f).coerceAtLeast(0f)
                 else -> item.row
             }
 
             val visualCol = item.column
 
-            val itemRect = android.graphics.RectF(visualCol, effectiveRow, visualCol + item.spanX, effectiveRow + item.spanY)
+            val itemRect = android.graphics.RectF(visualCol + epsilon, effectiveRow + epsilon, visualCol + item.spanX - epsilon, effectiveRow + item.spanY - epsilon)
 
             if (android.graphics.RectF.intersects(draggedRect, itemRect)) {
                 // Potential merge if both are apps and overlap is significant (e.g. centers are close)
@@ -582,16 +636,16 @@ class HomeViewModel @Inject constructor(
     }
 
     fun isSpaceOccupied(row: Float, col: Float, spanX: Float, spanY: Float, maxRows: Float, ignoreUniqueKey: String?): Boolean {
-        val rect = android.graphics.RectF(col, row, col + spanX, row + spanY)
+        val epsilon = 0.05f
+        val rect = android.graphics.RectF(col + epsilon, row + epsilon, col + spanX - epsilon, row + spanY - epsilon)
         return homeItems.value.any { item ->
             if (item.uniqueKey == ignoreUniqueKey) return@any false
             
             val effectiveRow = when {
-                item.row >= 99.5f -> (maxRows - 1.5f).coerceAtLeast(0f)
                 item.row >= 99f -> (maxRows - 1f).coerceAtLeast(0f)
                 else -> item.row
             }
-            val itemRect = android.graphics.RectF(item.column, effectiveRow, item.column + item.spanX, effectiveRow + item.spanY)
+            val itemRect = android.graphics.RectF(item.column + epsilon, effectiveRow + epsilon, item.column + item.spanX - epsilon, effectiveRow + item.spanY - epsilon)
             android.graphics.RectF.intersects(rect, itemRect)
         }
     }
@@ -645,7 +699,8 @@ class HomeViewModel @Inject constructor(
                 screenHeightDp = screenHeightDp.dp, 
                 densitySetting = prefs.gridSize,
                 topInset = 80.dp,
-                bottomInset = 48.dp
+                bottomInset = 48.dp,
+                showLabels = (prefs.appLabelMode == AppLabelMode.HOME_ONLY) || (prefs.appLabelMode == AppLabelMode.BOTH)
             )
             val columns = layoutConfig.totalColumns
             val effectiveMaxRows = layoutConfig.totalRows
@@ -709,7 +764,8 @@ class HomeViewModel @Inject constructor(
                 screenHeightDp = screenHeightDp.dp, 
                 densitySetting = prefs.gridSize,
                 topInset = 80.dp,
-                bottomInset = 48.dp
+                bottomInset = 48.dp,
+                showLabels = (prefs.appLabelMode == AppLabelMode.HOME_ONLY) || (prefs.appLabelMode == AppLabelMode.BOTH)
             )
             val columns = layoutConfig.totalColumns
             val effectiveMaxRows = layoutConfig.totalRows

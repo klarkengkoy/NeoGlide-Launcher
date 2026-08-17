@@ -1,8 +1,9 @@
-package com.samidevstudio.neoglide.ui.components.category
+package com.samidevstudio.neoglide.ui.drawer.components.category
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,7 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.samidevstudio.neoglide.ui.utils.resolveIcon
+import com.samidevstudio.neoglide.ui.utils.icons.resolveIcon
 
 @Composable
 fun AddCategoryDialog(
@@ -150,7 +151,7 @@ private fun CapacityWarning(onSwitchToVertical: () -> Unit) {
                 )
                 TextButton(
                     onClick = onSwitchToVertical,
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                    contentPadding = PaddingValues(0.dp)
                 ) {
                     Text("Switch to Vertical Rail")
                 }

@@ -1,4 +1,4 @@
-package com.samidevstudio.neoglide.ui.components
+package com.samidevstudio.neoglide.ui.home.components
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Launch
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -31,9 +32,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import coil.compose.AsyncImage
+import com.samidevstudio.neoglide.domain.model.AppShortcut
 
 @Composable
 fun WidgetContextMenu(
@@ -43,8 +47,8 @@ fun WidgetContextMenu(
     onOpenApp: () -> Unit,
     onAppInfo: () -> Unit,
     label: String,
-    shortcuts: List<com.samidevstudio.neoglide.domain.model.AppShortcut> = emptyList(),
-    onShortcutClick: (com.samidevstudio.neoglide.domain.model.AppShortcut) -> Unit = {},
+    shortcuts: List<AppShortcut> = emptyList(),
+    onShortcutClick: (AppShortcut) -> Unit = {},
     isRightAligned: Boolean = false,
     isBottomAligned: Boolean = false,
     offset: DpOffset = DpOffset(0.dp, 0.dp)
@@ -52,7 +56,7 @@ fun WidgetContextMenu(
     if (expanded) {
         val density = LocalDensity.current
         val offsetPx = with(density) {
-            androidx.compose.ui.unit.IntOffset(
+            IntOffset(
                 offset.x.roundToPx(),
                 offset.y.roundToPx()
             )
@@ -87,8 +91,8 @@ fun WidgetContextMenu(
 fun WidgetContextMenuContent(
     label: String,
     isRightAligned: Boolean,
-    shortcuts: List<com.samidevstudio.neoglide.domain.model.AppShortcut>,
-    onShortcutClick: (com.samidevstudio.neoglide.domain.model.AppShortcut) -> Unit,
+    shortcuts: List<AppShortcut>,
+    onShortcutClick: (AppShortcut) -> Unit,
     onDismissRequest: () -> Unit,
     onRemove: () -> Unit,
     onOpenApp: () -> Unit,
@@ -162,7 +166,7 @@ fun WidgetContextMenuContent(
                             horizontalArrangement = if (isRightAligned) Arrangement.End else Arrangement.Start
                         ) {
                             if (!isRightAligned) {
-                                coil.compose.AsyncImage(
+                                AsyncImage(
                                     model = shortcut.icon,
                                     contentDescription = null,
                                     modifier = Modifier.size(24.dp)
@@ -179,7 +183,7 @@ fun WidgetContextMenuContent(
                             )
                             if (isRightAligned) {
                                 Spacer(modifier = Modifier.width(12.dp))
-                                coil.compose.AsyncImage(
+                                AsyncImage(
                                     model = shortcut.icon,
                                     contentDescription = null,
                                     modifier = Modifier.size(24.dp)
@@ -187,7 +191,7 @@ fun WidgetContextMenuContent(
                             }
                         }
                         if (index < shortcuts.size - 1) {
-                            androidx.compose.material3.HorizontalDivider(
+                            HorizontalDivider(
                                 modifier = Modifier.padding(horizontal = 16.dp),
                                 thickness = 0.5.dp,
                                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)

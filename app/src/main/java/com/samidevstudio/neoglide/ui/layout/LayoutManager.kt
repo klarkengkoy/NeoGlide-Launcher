@@ -1,4 +1,4 @@
-package com.samidevstudio.neoglide.ui.utils
+package com.samidevstudio.neoglide.ui.layout
 
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -53,6 +53,13 @@ object LayoutManager {
         val expansionOffsetH: Float,
     )
 
+    /**
+     * Calculates the layout configuration for the launcher grid.
+     * 
+     * IMPORTANT: To ensure consistency across OS updates and navigation modes, 
+     * screenWidthDp and screenHeightDp should be sourced from LocalConfiguration 
+     * (usable area) rather than LocalWindowInfo (full window), especially on Android 15+.
+     */
     fun calculateConfig(
         screenWidthDp: Dp, 
         screenHeightDp: Dp, 
@@ -61,22 +68,24 @@ object LayoutManager {
         topInset: Dp = 48.dp,
         bottomInset: Dp = 48.dp,
         minSpacing: Float = MIN_SPACING,
-        coreColumns: Int = 5
+        coreColumns: Int = 5,
+        showLabels: Boolean = true
     ): LayoutConfig {
         val screenWidth = screenWidthDp.value
         val screenHeight = screenHeightDp.value
         
         // 1. Precise Tray Dimensions
+        // We use the full reported height but subtract insets to find the drawable area.
         val trayWidthBase = forcedWidth?.value ?: (screenWidth - (2 * TRAY_MARGIN))
-        val actualTrayHeight = screenHeight - topInset.value - bottomInset.value
+        val actualTrayHeight = (screenHeight - topInset.value - bottomInset.value).coerceAtLeast(100f)
         
-        // STABILITY CLAMP: If topInset is reported as 0 (during transitions), 
+        // STABILITY CLAMP: If topInset is reported as 0 (during transitions or OS glitches), 
         // fallback to a minimum safe value to prevent grid capacity from flickering.
         val stableTopInset = topInset.value.coerceAtLeast(MIN_STATUS_BAR_DP)
         
         // CAPACITY REFERENCE: Always calculate row count based on a 3-button nav height (RESERVE_NAV_DP)
-        // to ensure the grid doesn't shrink/grow when toggling gesture navigation.
-        val capacityTrayHeight = screenHeight - stableTopInset - RESERVE_NAV_DP
+        // to ensure the grid doesn't shrink/grow when toggling gesture navigation or when system bars flicker.
+        val capacityTrayHeight = (screenHeight - stableTopInset - RESERVE_NAV_DP).coerceAtLeast(100f)
         
         // 2. Select Icon Size (Downgrade to fit core columns)
         val sizesToTry = GridSize.entries.asSequence().filter { it.ordinal <= densitySetting.ordinal }.sortedByDescending { it.ordinal }
@@ -107,7 +116,11 @@ object LayoutManager {
         val fontSizeSp = selectedFontSize.sp
 
         val unitWidthBase = selectedIconSize + minSpacing
-        val unitHeightBase = unitWidthBase + (selectedFontSize * 1.5f)
+        val unitHeightBase = if (showLabels) {
+            unitWidthBase + (selectedFontSize * 1.5f)
+        } else {
+            unitWidthBase
+        }
         val snapUnitW = unitWidthBase / SNAP_FACTOR
         val snapUnitH = unitHeightBase / SNAP_FACTOR
 

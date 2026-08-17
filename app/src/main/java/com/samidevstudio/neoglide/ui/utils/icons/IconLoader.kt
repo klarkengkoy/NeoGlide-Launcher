@@ -1,4 +1,4 @@
-package com.samidevstudio.neoglide.ui.utils
+package com.samidevstudio.neoglide.ui.utils.icons
 
 import android.content.Context
 import android.content.pm.LauncherApps

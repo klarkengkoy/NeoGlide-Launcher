@@ -1,4 +1,4 @@
-package com.samidevstudio.neoglide.ui.components.category
+package com.samidevstudio.neoglide.ui.drawer.components.category
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,9 +37,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.samidevstudio.neoglide.data.repository.CategoryBarType
 import com.samidevstudio.neoglide.domain.model.AppCategory
 import com.samidevstudio.neoglide.ui.drawer.DrawerViewModel
-import com.samidevstudio.neoglide.ui.utils.toIcon
+import com.samidevstudio.neoglide.ui.utils.icons.toIcon
 import kotlinx.coroutines.launch
 
 @Composable
@@ -53,7 +54,7 @@ fun AddCategoryDialogRefined(
     val context = LocalContext.current
     val categorizedApps by drawerViewModel.categorizedApps.collectAsState()
     val preferences by drawerViewModel.userPreferences.collectAsState()
-    val isBottomRail = preferences.categoryBarType == com.samidevstudio.neoglide.data.repository.CategoryBarType.BOTTOM
+    val isBottomRail = preferences.categoryBarType == CategoryBarType.BOTTOM
     val scope = rememberCoroutineScope()
     
     val enabledCategories = categorizedApps.mapNotNull { it.first?.name }.toSet()

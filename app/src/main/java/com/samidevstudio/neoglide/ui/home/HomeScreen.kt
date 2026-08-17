@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntOffset
@@ -68,19 +69,19 @@ import com.samidevstudio.neoglide.ui.components.AppContextMenu
 import com.samidevstudio.neoglide.ui.components.AppIcon
 import com.samidevstudio.neoglide.ui.components.AppItem
 import com.samidevstudio.neoglide.ui.components.AppPickerDialog
-import com.samidevstudio.neoglide.ui.components.FolderContextMenu
-import com.samidevstudio.neoglide.ui.components.FolderExpansion
-import com.samidevstudio.neoglide.ui.components.FolderItem
+import com.samidevstudio.neoglide.ui.components.folder.FolderContextMenu
+import com.samidevstudio.neoglide.ui.components.folder.FolderExpansion
+import com.samidevstudio.neoglide.ui.components.folder.FolderItem
 import com.samidevstudio.neoglide.ui.components.FrostedGlass
-import com.samidevstudio.neoglide.ui.components.HomeContextMenu
-import com.samidevstudio.neoglide.ui.components.NeoGlideWidgetHost
-import com.samidevstudio.neoglide.ui.components.WidgetContextMenu
-import com.samidevstudio.neoglide.ui.components.WidgetPickerDialog
+import com.samidevstudio.neoglide.ui.home.components.HomeContextMenu
+import com.samidevstudio.neoglide.ui.home.components.NeoGlideWidgetHost
+import com.samidevstudio.neoglide.ui.home.components.WidgetContextMenu
+import com.samidevstudio.neoglide.ui.home.components.WidgetPickerDialog
 import com.samidevstudio.neoglide.ui.drawer.DrawerScreen
 import com.samidevstudio.neoglide.ui.settings.SettingsSheet
-import com.samidevstudio.neoglide.ui.utils.HapticEngine
-import com.samidevstudio.neoglide.ui.utils.LayoutManager
-import com.samidevstudio.neoglide.ui.utils.rememberHapticFeedback
+import com.samidevstudio.neoglide.ui.utils.system.HapticEngine
+import com.samidevstudio.neoglide.ui.layout.LayoutManager
+import com.samidevstudio.neoglide.ui.utils.system.rememberHapticFeedback
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel as hiltViewModelV2
@@ -226,10 +227,9 @@ fun HomeScreen(
         }
     }
 
-    val windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
-    val containerSize = windowInfo.containerSize
-    val screenWidthDp = with(density) { containerSize.width.toDp() }
-    val screenHeightDp = with(density) { containerSize.height.toDp() }
+    val configuration = LocalConfiguration.current
+    val screenWidthDp = configuration.screenWidthDp.dp
+    val screenHeightDp = configuration.screenHeightDp.dp
 
     Box(
         modifier = modifier
@@ -294,7 +294,8 @@ fun HomeScreen(
                         screenHeightDp = screenHeightDp,
                         densitySetting = preferences.gridSize,
                         topInset = topInset,
-                        bottomInset = bottomInset
+                        bottomInset = bottomInset,
+                        showLabels = (preferences.appLabelMode == AppLabelMode.HOME_ONLY) || (preferences.appLabelMode == AppLabelMode.BOTH)
                     )
 
                     val columns = layoutConfig.columns
@@ -392,10 +393,15 @@ fun HomeScreen(
                     }
                     val isLifting = (draggingUniqueKey != null || draggingAppFromFolder != null)
 
-                    // 1. THE TRAY (Offset for Optical Balance: Symmetric 56dp)
+                    // 1. THE TRAY (Full Screen, Padding from LayoutManager)
                     Box(
                         modifier = Modifier
-                            .padding(top = layoutConfig.topPadding, bottom = layoutConfig.bottomPadding, start = 16.dp, end = 16.dp)
+                            .padding(
+                                top = layoutConfig.topPadding, 
+                                bottom = layoutConfig.bottomPadding, 
+                                start = layoutConfig.sidePadding, 
+                                end = layoutConfig.sidePadding
+                            )
                             .fillMaxSize()
                     ) {
                         if (isLifting || editingWidgetId != -1) {
@@ -407,13 +413,13 @@ fun HomeScreen(
                             ) {}
                         }
 
-                        // 2. THE MESH BOX (Centered inside Tray)
+                        // 2. THE MESH BOX
                         Box(
                             modifier = Modifier
                                 .align(Alignment.Center)
                                 .size(width = layoutConfig.actualGridWidth, height = layoutConfig.actualGridHeight)
                                 .onGloballyPositioned { meshCoords = it }
-                                .graphicsLayer { clip = true }
+                                .graphicsLayer { clip = false }
                                 .pointerInput(Unit) {
                                     detectTapGestures(
                                         onTap = {
@@ -557,16 +563,17 @@ fun HomeScreen(
                                                                         }
 
                                                                         blockedUniqueKeys = if (isDragConfirmed && dragTargetBounds != null) {
+                                                                            val epsilon = 0.05f
                                                                             val targetRect = android.graphics.RectF(
-                                                                                dragTargetBounds!!.col,
-                                                                                dragTargetBounds!!.row,
-                                                                                dragTargetBounds!!.col + item.spanX,
-                                                                                dragTargetBounds!!.row + item.spanY
+                                                                                dragTargetBounds!!.col + epsilon,
+                                                                                dragTargetBounds!!.row + epsilon,
+                                                                                dragTargetBounds!!.col + item.spanX - epsilon,
+                                                                                dragTargetBounds!!.row + item.spanY - epsilon
                                                                             )
                                                                             homeItems.filter { other ->
                                                                                 if (other.uniqueKey == item.uniqueKey || other.uniqueKey == newHoveredKey) return@filter false
                                                                                 val otherRow = if (other.row >= 99f) dockRow else other.row
-                                                                                val otherRect = android.graphics.RectF(other.column, otherRow, other.column + other.spanX, otherRow + other.spanY)
+                                                                                val otherRect = android.graphics.RectF(other.column + epsilon, otherRow + epsilon, other.column + other.spanX - epsilon, otherRow + other.spanY - epsilon)
                                                                                 android.graphics.RectF.intersects(targetRect, otherRect)
                                                                             }.map { it.uniqueKey }.toSet()
                                                                         } else emptySet()
@@ -609,7 +616,13 @@ fun HomeScreen(
                                                         }
                                                     } else Modifier
                                                 ),
-                                            contentAlignment = if (item is HomeItem.Widget) Alignment.TopStart else if (isDockItem) Alignment.BottomCenter else Alignment.TopCenter
+                                            contentAlignment = if (item is HomeItem.Widget) {
+                                                Alignment.TopStart
+                                            } else if (showLabels) {
+                                                if (isDockItem) Alignment.BottomCenter else Alignment.TopCenter
+                                            } else {
+                                                Alignment.Center
+                                            }
                                         ) {
                                             when (item) {
                                                 is HomeItem.App -> AppItem(app = item.appModel, sharedTransitionScope = sharedTransitionScope, animatedVisibilityScope = animatedVisibilityScope, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, refreshTrigger = refreshTrigger, isHovered = isHovered, isBlocked = isBlocked, onClick = {
@@ -872,6 +885,8 @@ fun HomeScreen(
                         } ?: emptySet()
 
                         isCurrentDragBlocked = blockedUniqueKeys.isNotEmpty()
+                    }, onAppDragIn = {
+                        // Optional: trigger re-expansion animation if needed
                     }, onAppDragEnd = {
                         if (isDragConfirmed) {
                             hapticFeedback(HapticEngine.HapticType.DRAG_END)
@@ -911,7 +926,11 @@ fun HomeScreen(
         }
 
         if (shouldShowDefaultPrompt) DefaultLauncherDialog(onSetDefault = { viewModel.openDefaultLauncherSettings() }, onDismiss = { viewModel.dismissDefaultPrompt() })
-        if (showSettings) SettingsSheet(onDismiss = { showSettings = false }, viewModel = settingsViewModel)
+        if (showSettings) SettingsSheet(
+            onDismiss = { showSettings = false }, 
+            viewModel = settingsViewModel,
+            onMigrateLabels = { viewModel.migrateLayoutForLabelMode(it) }
+        )
 
         AnimatedVisibility(visible = showDrawer, enter = slideInVertically(initialOffsetY = { it }) + fadeIn(), exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()) {
             Surface(modifier = Modifier.fillMaxSize(), shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)) {
@@ -929,7 +948,8 @@ fun HomeScreen(
                     },
                     onAddToHome = { pkg ->
                         viewModel.addHomeApp(pkg, 0f, 0f) // Add to home logic
-                    }
+                    },
+                    onMigrateLabels = { viewModel.migrateLayoutForLabelMode(it) }
                 )
             }
         }

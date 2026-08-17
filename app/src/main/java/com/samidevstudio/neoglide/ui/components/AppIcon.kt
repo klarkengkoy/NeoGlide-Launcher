@@ -28,8 +28,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.samidevstudio.neoglide.ui.utils.LocalIconCache
-import com.samidevstudio.neoglide.ui.utils.LocalIconLoader
+import com.samidevstudio.neoglide.ui.utils.icons.LocalIconCache
+import com.samidevstudio.neoglide.ui.utils.icons.LocalIconLoader
 
 @Composable
 fun rememberDrawablePainter(drawable: Drawable?): Painter {

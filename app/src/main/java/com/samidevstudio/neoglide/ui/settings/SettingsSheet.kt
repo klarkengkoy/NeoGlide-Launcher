@@ -117,10 +117,10 @@ import com.samidevstudio.neoglide.data.repository.VerticalAnchor
 import com.samidevstudio.neoglide.domain.model.AppCategory
 import com.samidevstudio.neoglide.ui.components.AppIcon
 import com.samidevstudio.neoglide.ui.components.MultiAppPickerDialog
-import com.samidevstudio.neoglide.ui.components.category.AddCategoryDialogRefined
-import com.samidevstudio.neoglide.ui.components.category.ManageCategoriesDialog
-import com.samidevstudio.neoglide.ui.utils.HapticEngine
-import com.samidevstudio.neoglide.ui.utils.rememberHapticFeedback
+import com.samidevstudio.neoglide.ui.drawer.components.category.AddCategoryDialogRefined
+import com.samidevstudio.neoglide.ui.drawer.components.category.ManageCategoriesDialog
+import com.samidevstudio.neoglide.ui.utils.system.HapticEngine
+import com.samidevstudio.neoglide.ui.utils.system.rememberHapticFeedback
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -128,7 +128,8 @@ import java.util.Locale
 @Composable
 fun SettingsSheet(
     onDismiss: () -> Unit,
-    viewModel: SettingsViewModel = hiltViewModel()
+    viewModel: SettingsViewModel = hiltViewModel(),
+    onMigrateLabels: ((AppLabelMode) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val preferences by viewModel.userPreferences.collectAsStateWithLifecycle()
@@ -142,6 +143,7 @@ fun SettingsSheet(
 
     var activeDialog by remember { mutableStateOf<String?>(null) }
     var restoreError by remember { mutableStateOf<String?>(null) }
+    var pendingLabelMode by remember { mutableStateOf<AppLabelMode?>(null) }
     val pendingResetAction = remember { mutableStateOf<ResetAction?>(null) }
 
     LaunchedEffect(restoreStatus) {
@@ -324,7 +326,24 @@ fun SettingsSheet(
         "label_settings" -> AppLabelSettingsDialog(
             labelMode = preferences.appLabelMode,
             onDismiss = { activeDialog = null },
-            onSelectLabelMode = { viewModel.setAppLabelMode(it) }
+            onSelectLabelMode = { mode ->
+                val oldShowLabels = (preferences.appLabelMode == AppLabelMode.HOME_ONLY) || (preferences.appLabelMode == AppLabelMode.BOTH)
+                val newShowLabels = (mode == AppLabelMode.HOME_ONLY) || (mode == AppLabelMode.BOTH)
+                
+                if (newShowLabels && !oldShowLabels) {
+                    pendingLabelMode = mode
+                    activeDialog = "confirm_label_migration"
+                } else if (!newShowLabels && oldShowLabels) {
+                    if (onMigrateLabels != null) {
+                        onMigrateLabels(mode)
+                    } else {
+                        viewModel.setAppLabelMode(mode)
+                    }
+                    activeDialog = null
+                } else {
+                    viewModel.setAppLabelMode(mode)
+                }
+            }
         )
         "hidden_apps" -> HiddenAppsDialog(
             onDismiss = { activeDialog = null },
@@ -458,6 +477,30 @@ fun SettingsSheet(
             },
             dismissButton = {
                 TextButton(onClick = { pendingResetAction.value = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (activeDialog == "confirm_label_migration") {
+        AlertDialog(
+            onDismissRequest = { activeDialog = "label_settings" },
+            title = { Text("Enable Labels?") },
+            text = { Text("Enabling labels will increase icon height and adjust the grid. Some icons might be removed if they no longer fit the new layout. Proceed?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingLabelMode?.let { mode ->
+                        if (onMigrateLabels != null) {
+                            onMigrateLabels(mode)
+                        } else {
+                            viewModel.setAppLabelMode(mode)
+                        }
+                    }
+                    activeDialog = null
+                    pendingLabelMode = null
+                }) { Text("Confirm") }
+            },
+            dismissButton = {
+                TextButton(onClick = { activeDialog = "label_settings" }) { Text("Cancel") }
             }
         )
     }

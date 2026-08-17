@@ -1,4 +1,4 @@
-package com.samidevstudio.neoglide.ui.components
+package com.samidevstudio.neoglide.ui.components.folder
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
@@ -35,7 +36,7 @@ fun FolderContextMenu(
     if (expanded) {
         val density = LocalDensity.current
         val offsetPx = with(density) {
-            androidx.compose.ui.unit.IntOffset(
+            IntOffset(
                 offset.x.roundToPx(),
                 offset.y.roundToPx()
             )

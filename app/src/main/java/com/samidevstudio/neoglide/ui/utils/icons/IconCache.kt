@@ -1,9 +1,10 @@
-package com.samidevstudio.neoglide.ui.utils
+package com.samidevstudio.neoglide.ui.utils.icons
 
 import android.graphics.drawable.Drawable
 import android.util.LruCache
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -17,10 +18,10 @@ class IconCache @Inject constructor() {
     }
 
     // Tracks if a package has dynamic metadata (Calendar/Clock)
-    private val dynamicStatus = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    private val dynamicStatus = ConcurrentHashMap<String, Boolean>()
     
     // Prevents concurrent redundant loads
-    private val loadingMutexes = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
+    private val loadingMutexes = ConcurrentHashMap<String, Mutex>()
     private val globalMutex = Mutex()
 
     fun get(key: String): Pair<Drawable?, Boolean>? = memoryCache.get(key)

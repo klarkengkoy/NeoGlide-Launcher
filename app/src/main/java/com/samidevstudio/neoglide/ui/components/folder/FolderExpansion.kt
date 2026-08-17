@@ -1,5 +1,7 @@
-package com.samidevstudio.neoglide.ui.components
+package com.samidevstudio.neoglide.ui.components.folder
 
+import android.os.Bundle
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
@@ -7,6 +9,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -45,16 +48,21 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextRange
@@ -63,13 +71,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.samidevstudio.neoglide.domain.model.AppCategory
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.domain.model.AppShortcut
-import com.samidevstudio.neoglide.ui.utils.HapticEngine
-import com.samidevstudio.neoglide.ui.utils.toIcon
+import com.samidevstudio.neoglide.ui.utils.system.HapticEngine
+import com.samidevstudio.neoglide.ui.utils.icons.toIcon
+import com.samidevstudio.neoglide.ui.components.AppItem
+import com.samidevstudio.neoglide.ui.components.AppContextMenu
+import com.samidevstudio.neoglide.ui.components.AppIcon
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalFoundationApi::class)
@@ -78,15 +92,15 @@ fun FolderExpansion(
     folderId: Int,
     label: String,
     apps: List<AppModel>,
-    unitWidth: androidx.compose.ui.unit.Dp = 80.dp,
-    unitHeight: androidx.compose.ui.unit.Dp = 96.dp,
-    iconSize: androidx.compose.ui.unit.Dp = 56.dp,
-    fontSize: androidx.compose.ui.unit.TextUnit = 13.sp,
-    spacing: androidx.compose.ui.unit.Dp = 16.dp,
+    unitWidth: Dp = 80.dp,
+    unitHeight: Dp = 96.dp,
+    iconSize: Dp = 56.dp,
+    fontSize: TextUnit = 13.sp,
+    spacing: Dp = 16.dp,
     columns: Int = 4,
     onDismiss: () -> Unit,
     onLabelChange: (String) -> Unit,
-    onAppClick: (String, android.os.Bundle?) -> Unit,
+    onAppClick: (String, Bundle?) -> Unit,
     onDissolve: () -> Unit = {},
     onRemove: () -> Unit = {},
     onAddApps: () -> Unit = {},
@@ -106,23 +120,32 @@ fun FolderExpansion(
     onHapticFeedback: (HapticEngine.HapticType) -> Unit = {},
     isLocked: Boolean = false,
     autoFocusLabel: Boolean = false,
-    onAppDragStart: (AppModel, androidx.compose.ui.geometry.Offset, androidx.compose.ui.geometry.Offset) -> Unit = { _, _, _ -> },
-    onAppDrag: (androidx.compose.ui.geometry.Offset) -> Unit = {},
-    onAppDragOut: (AppModel, androidx.compose.ui.geometry.Offset, androidx.compose.ui.geometry.Offset) -> Unit = { _, _, _ -> },
+    onAppDragStart: (AppModel, Offset, Offset) -> Unit = { _, _, _ -> },
+    onAppDrag: (Offset) -> Unit = {},
+    onAppDragOut: (AppModel, Offset, Offset) -> Unit = { _, _, _ -> },
+    onAppDragIn: () -> Unit = {},
     onAppDragEnd: () -> Unit = {},
     onAppDragCancel: () -> Unit = {}
 ) {
     var textFieldValue by remember { mutableStateOf(TextFieldValue(text = label)) }
     var draggingApp by remember { mutableStateOf<AppModel?>(null) }
     var isDragConfirmed by remember { mutableStateOf(false) }
-    var accumulatedDrag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    var accumulatedDrag by remember { mutableStateOf(Offset.Zero) }
     var isDraggedOut by remember { mutableStateOf(false) }
-    var dragOffset by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-    var grabPoint by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
-    var rootCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    var grabPoint by remember { mutableStateOf(Offset.Zero) }
+    var rootCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var showMenu by remember { mutableStateOf(false) }
+    
+    val currentOnAppDragStart by rememberUpdatedState(onAppDragStart)
+    val currentOnAppDrag by rememberUpdatedState(onAppDrag)
+    val currentOnAppDragOut by rememberUpdatedState(onAppDragOut)
+    val currentOnAppDragIn by rememberUpdatedState(onAppDragIn)
+    val currentOnAppDragEnd by rememberUpdatedState(onAppDragEnd)
+    val currentOnAppDragCancel by rememberUpdatedState(onAppDragCancel)
+
     val density = LocalDensity.current
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
 
@@ -158,7 +181,7 @@ fun FolderExpansion(
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 12.dp,
             shadowElevation = 16.dp,
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         ) {
             Box {
                 Column(
@@ -196,7 +219,7 @@ fun FolderExpansion(
                                 .fillMaxWidth()
                                 .focusRequester(focusRequester)
                                 .then(if (isLocked) Modifier.clickable { 
-                                    android.widget.Toast.makeText(context, "Locked from launcher settings", android.widget.Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Locked from launcher settings", Toast.LENGTH_SHORT).show()
                                 } else Modifier)
                         )
 
@@ -205,7 +228,7 @@ fun FolderExpansion(
                                 if (!isLocked) {
                                     showMenu = true 
                                 } else {
-                                    android.widget.Toast.makeText(context, "Locked from launcher settings", android.widget.Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Locked from launcher settings", Toast.LENGTH_SHORT).show()
                                 }
                             }) {
                                 Icon(
@@ -305,7 +328,7 @@ fun FolderExpansion(
                         verticalArrangement = Arrangement.spacedBy(spacing)
                     ) {
                         items(apps, key = { it.packageName }) { app ->
-                            var itemCoords by remember { mutableStateOf<androidx.compose.ui.layout.LayoutCoordinates?>(null) }
+                            var itemCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
                             val isBeingDragged = draggingApp?.packageName == app.packageName
                             var showAppMenu by remember { mutableStateOf(false) }
                             var shortcuts by remember { mutableStateOf<List<AppShortcut>>(emptyList()) }
@@ -328,7 +351,7 @@ fun FolderExpansion(
                                                 if (!isLocked) {
                                                     onHapticFeedback(HapticEngine.HapticType.LONG_PRESS)
                                                     draggingApp = app
-                                                    accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
+                                                    accumulatedDrag = Offset.Zero
                                                     isDragConfirmed = false
                                                     
                                                     // offset is the touch point relative to the item (0..size)
@@ -336,10 +359,12 @@ fun FolderExpansion(
                                                     grabPoint = offset 
                                                     
                                                     // Standardize dragOffset to TOP-LEFT of the icon in Window coordinates
-                                                    val touchWindow = itemCoords?.localToWindow(offset) ?: androidx.compose.ui.geometry.Offset.Zero
+                                                    val touchWindow = itemCoords?.localToWindow(offset) ?: Offset.Zero
                                                     dragOffset = touchWindow - offset
+                                                    
+                                                    currentOnAppDragStart(app, dragOffset, grabPoint)
                                                 } else {
-                                                    android.widget.Toast.makeText(context, "Locked from launcher settings", android.widget.Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, "Locked from launcher settings", Toast.LENGTH_SHORT).show()
                                                 }
                                             },
                                             onDrag = { change, amount ->
@@ -351,11 +376,10 @@ fun FolderExpansion(
                                                     if (!isDragConfirmed && accumulatedDrag.getDistance() > with(density) { 10.dp.toPx() }) {
                                                         isDragConfirmed = true
                                                         onHapticFeedback(HapticEngine.HapticType.DRAG_START)
-                                                        onAppDragStart(app, dragOffset, grabPoint)
                                                     }
 
                                                     if (isDragConfirmed) {
-                                                        onAppDrag(amount)
+                                                        currentOnAppDrag(amount)
 
                                                         // Introduce a slop/threshold before collapsing the folder
                                                         val movement = accumulatedDrag.getDistance()
@@ -364,7 +388,11 @@ fun FolderExpansion(
                                                         if (movement > slop && draggingApp != null && !isDraggedOut) {
                                                             // Collapse only after meaningful movement
                                                             isDraggedOut = true
-                                                            onAppDragOut(app, dragOffset, amount)
+                                                            currentOnAppDragOut(app, dragOffset, amount)
+                                                        } else if (movement < slop * 0.8f && isDraggedOut) {
+                                                            // Re-appear if dragged back
+                                                            isDraggedOut = false
+                                                            currentOnAppDragIn()
                                                         }
                                                     }
                                                 }
@@ -374,7 +402,7 @@ fun FolderExpansion(
                                                     if (isDragConfirmed) {
                                                         onHapticFeedback(HapticEngine.HapticType.DRAG_END)
                                                         // Only collapse if we actually dragged out
-                                                        onAppDragEnd()
+                                                        currentOnAppDragEnd()
                                                     } else {
                                                         showAppMenu = true
                                                         // Don't call onAppDragEnd() here yet, let the menu show
@@ -386,7 +414,7 @@ fun FolderExpansion(
                                             },
                                             onDragCancel = {
                                                 if (!isLocked) {
-                                                    onAppDragCancel()
+                                                    currentOnAppDragCancel()
                                                 }
                                                 draggingApp = null
                                                 isDraggedOut = false
@@ -452,7 +480,7 @@ fun FolderExpansion(
                             // Convert window-relative dragOffset (top-left) to local coordinates of root Box
                             val localTopLeft = rootCoords?.windowToLocal(dragOffset) ?: dragOffset
 
-                            androidx.compose.ui.unit.IntOffset(
+                            IntOffset(
                                 localTopLeft.x.roundToInt(),
                                 localTopLeft.y.roundToInt()
                             )
@@ -461,7 +489,7 @@ fun FolderExpansion(
                         .graphicsLayer {
                             scaleX = liftScale
                             scaleY = liftScale
-                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
+                            transformOrigin = TransformOrigin(
                                 grabPoint.x / with(density) { unitWidth.toPx() },
                                 grabPoint.y / with(density) { unitHeight.toPx() }
                             )

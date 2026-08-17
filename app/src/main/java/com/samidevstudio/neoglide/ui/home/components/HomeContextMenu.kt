@@ -1,4 +1,4 @@
-package com.samidevstudio.neoglide.ui.components
+package com.samidevstudio.neoglide.ui.home.components
 
 import android.content.ComponentName
 import android.content.Intent
@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
@@ -55,7 +56,7 @@ fun HomeContextMenu(
     if (expanded) {
         val density = LocalDensity.current
         val offsetPx = with(density) {
-            androidx.compose.ui.unit.IntOffset(
+            IntOffset(
                 offset.x.roundToPx(),
                 offset.y.roundToPx()
             )

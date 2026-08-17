@@ -1,4 +1,4 @@
-package com.samidevstudio.neoglide.ui.components
+package com.samidevstudio.neoglide.ui.components.folder
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -24,25 +24,30 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.ui.theme.BadgeRed
-import com.samidevstudio.neoglide.ui.utils.HapticEngine
-import com.samidevstudio.neoglide.ui.utils.LocalWallpaperIsLight
+import com.samidevstudio.neoglide.ui.utils.system.HapticEngine
+import com.samidevstudio.neoglide.ui.utils.system.LocalWallpaperIsLight
+import com.samidevstudio.neoglide.ui.components.AppIcon
 
 @Composable
 fun FolderItem(
     label: String,
     apps: List<AppModel>,
     modifier: Modifier = Modifier,
-    iconSize: androidx.compose.ui.unit.Dp = 56.dp,
-    fontSize: androidx.compose.ui.unit.TextUnit = 11.sp,
+    iconSize: Dp = 56.dp,
+    fontSize: TextUnit = 11.sp,
     useMonochrome: Boolean = false,
     showLabel: Boolean = true,
     isHovered: Boolean = false,
@@ -151,13 +156,13 @@ fun FolderItem(
                     fontSize = fontSize,
                     color = if (isWallpaperLight) Color.Black.copy(alpha = 0.8f) else Color.White,
                     shadow = if (isWallpaperLight) {
-                        androidx.compose.ui.graphics.Shadow(
+                        Shadow(
                             color = Color.White.copy(alpha = 0.5f),
-                            offset = androidx.compose.ui.geometry.Offset(0f, 1f),
+                            offset = Offset(0f, 1f),
                             blurRadius = 2f
                         )
                     } else {
-                        androidx.compose.ui.graphics.Shadow(
+                        Shadow(
                             color = Color.Black.copy(alpha = 0.5f),
                             offset = androidx.compose.ui.geometry.Offset(1f, 1f),
                             blurRadius = 4f
@@ -174,7 +179,7 @@ fun FolderItem(
 }
 
 @Composable
-private fun MiniAppIcon(app: AppModel?, useMonochrome: Boolean, size: androidx.compose.ui.unit.Dp) {
+private fun MiniAppIcon(app: AppModel?, useMonochrome: Boolean, size: Dp) {
     Box(modifier = Modifier.size(size)) {
         if (app != null) {
             AppIcon(

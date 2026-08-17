@@ -91,10 +91,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.times
@@ -113,16 +115,16 @@ import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.domain.model.AppShortcut
 import com.samidevstudio.neoglide.ui.components.AppContextMenu
 import com.samidevstudio.neoglide.ui.components.AppItem
-import com.samidevstudio.neoglide.ui.components.FolderExpansion
-import com.samidevstudio.neoglide.ui.components.FolderItem
+import com.samidevstudio.neoglide.ui.components.folder.FolderExpansion
+import com.samidevstudio.neoglide.ui.components.folder.FolderItem
 import com.samidevstudio.neoglide.ui.components.SearchAppItem
 import com.samidevstudio.neoglide.ui.settings.SettingsSheet
 import com.samidevstudio.neoglide.ui.settings.SettingsViewModel
 import com.samidevstudio.neoglide.ui.theme.BadgeRed
-import com.samidevstudio.neoglide.ui.utils.HapticEngine
-import com.samidevstudio.neoglide.ui.utils.LayoutManager
-import com.samidevstudio.neoglide.ui.utils.rememberHapticFeedback
-import com.samidevstudio.neoglide.ui.utils.toIcon
+import com.samidevstudio.neoglide.ui.utils.system.HapticEngine
+import com.samidevstudio.neoglide.ui.layout.LayoutManager
+import com.samidevstudio.neoglide.ui.utils.system.rememberHapticFeedback
+import com.samidevstudio.neoglide.ui.utils.icons.toIcon
 import kotlinx.coroutines.launch
 
 internal class DragTargetInfo {
@@ -138,6 +140,8 @@ internal class DragTargetInfo {
     var draggableFolderApps by mutableStateOf<List<AppModel>>(emptyList())
     var draggableFolderName by mutableStateOf("")
     var sourceFolderPosition by mutableStateOf(Offset.Zero)
+    var sourceFolderId by mutableIntStateOf(-1)
+    var isFolderInvisible: Boolean by mutableStateOf(false)
 }
 
 internal class BoxedOffset {
@@ -145,6 +149,9 @@ internal class BoxedOffset {
 }
 
 internal val LocalDragTargetInfo = compositionLocalOf { DragTargetInfo() }
+
+private val LOGICAL_DRAWER_SPACING = 30.dp
+private val VISUAL_DRAWER_SPACING = 10.dp
 
 enum class CategoryOrientation {
     HORIZONTAL_BOTTOM,
@@ -163,6 +170,7 @@ fun DrawerScreen(
     onAppClick: (String, android.os.Bundle?) -> Unit,
     onShortcutClick: (AppShortcut) -> Unit,
     onAddToHome: (String) -> Unit = {},
+    onMigrateLabels: (AppLabelMode) -> Unit = {}
 ) {
     val dragInfo = remember { DragTargetInfo() }
     
@@ -176,6 +184,7 @@ fun DrawerScreen(
             onAppClick = onAppClick,
             onShortcutClick = onShortcutClick,
             onAddToHome = onAddToHome,
+            onMigrateLabels = onMigrateLabels,
             dragInfo = dragInfo
         )
     }
@@ -192,6 +201,7 @@ private fun DrawerContent(
     onAppClick: (String, android.os.Bundle?) -> Unit,
     onShortcutClick: (AppShortcut) -> Unit,
     onAddToHome: (String) -> Unit,
+    onMigrateLabels: (AppLabelMode) -> Unit,
     dragInfo: DragTargetInfo
 ) {
     val categorizedApps by viewModel.categorizedApps.collectAsStateWithLifecycle()
@@ -212,7 +222,6 @@ private fun DrawerContent(
     var isSearchActive by remember { mutableStateOf(false) }
     var expandedFolderId by remember { mutableIntStateOf(-1) }
     var autoFocusFolderName by remember { mutableStateOf(false) }
-    var isFolderInvisibleByDrag by remember { mutableStateOf(false) }
     var showAppPicker by remember { mutableStateOf(false) }
     var pendingFolderIdForAdd by remember { mutableIntStateOf(-1) }
     
@@ -279,11 +288,9 @@ private fun DrawerContent(
         }
     }
 
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
-    val containerSize = windowInfo.containerSize
-    val screenWidthDp = with(density) { containerSize.width.toDp() }
-    val screenHeightDp = with(density) { containerSize.height.toDp() }
+    val configuration = LocalConfiguration.current
+    val screenWidthDp = configuration.screenWidthDp.dp
+    val screenHeightDp = configuration.screenHeightDp.dp
 
     val statusBars = WindowInsets.statusBars.asPaddingValues()
     val navigationBars = WindowInsets.navigationBars.asPaddingValues()
@@ -292,10 +299,10 @@ private fun DrawerContent(
 
     val isVerticalRail = showCategoryBar && (orientation == CategoryOrientation.VERTICAL_LEFT || orientation == CategoryOrientation.VERTICAL_RIGHT)
     val railWidth = if (isVerticalRail) 56.dp else 0.dp
-    val drawerSpacing = 30.dp
+    val drawerSpacing = LOGICAL_DRAWER_SPACING
     val forcedWidth = screenWidthDp - (drawerSpacing * 2) - railWidth
 
-    val layoutConfig = remember(preferences.gridSize, forcedWidth, screenHeightDp, topInset, bottomInset) {
+    val layoutConfig = remember(preferences.gridSize, forcedWidth, screenHeightDp, topInset, bottomInset, preferences.appLabelMode) {
         LayoutManager.calculateConfig(
             screenWidthDp = screenWidthDp, 
             screenHeightDp = screenHeightDp, 
@@ -304,7 +311,8 @@ private fun DrawerContent(
             topInset = topInset,
             bottomInset = bottomInset,
             minSpacing = 30f,
-            coreColumns = 4
+            coreColumns = 4,
+            showLabels = preferences.appLabelMode == AppLabelMode.DRAWER_ONLY || preferences.appLabelMode == AppLabelMode.BOTH
         )
     }
 
@@ -350,8 +358,8 @@ private fun DrawerContent(
             onSettingsClick = { showSettings = true },
             onFolderClick = { expandedFolderId = it },
             columns = columns,
-            spacing = layoutConfig.spacing,
-            iconSpacing = drawerSpacing,
+            spacing = VISUAL_DRAWER_SPACING,
+            iconSpacing = drawerSpacing + (VISUAL_DRAWER_SPACING - LOGICAL_DRAWER_SPACING) / 2,
             iconSize = iconSize,
             fontSize = fontSize,
             topPadding = layoutConfig.topPadding,
@@ -363,7 +371,6 @@ private fun DrawerContent(
             expandedFolderId = expandedFolderId,
             autoFocusFolderName = autoFocusFolderName,
             showAppPicker = showAppPicker,
-            isFolderInvisibleByDrag = isFolderInvisibleByDrag,
             pendingFolderIdForAdd = pendingFolderIdForAdd,
             categorizedApps = categorizedApps,
             selectedCategory = selectedCategory,
@@ -384,12 +391,13 @@ private fun DrawerContent(
             onDismissFolder = { 
                 expandedFolderId = -1
                 autoFocusFolderName = false
+                dragInfo.isFolderInvisible = false
             },
-            onSetFolderInvisible = { isFolderInvisibleByDrag = it },
             onShowAppPicker = { showAppPicker = it },
             onSetPendingFolder = { pendingFolderIdForAdd = it },
+            onMigrateLabels = onMigrateLabels,
             unitWidth = unitWidth,
-            spacing = layoutConfig.spacing,
+            spacing = VISUAL_DRAWER_SPACING,
             columns = columns,
             iconSize = iconSize,
             fontSize = fontSize
@@ -427,7 +435,7 @@ private fun DrawerMainLayout(
     onSettingsClick: () -> Unit,
     onFolderClick: (Int) -> Unit,
     columns: Int,
-    spacing: androidx.compose.ui.unit.Dp,
+    spacing: Dp,
     iconSpacing: androidx.compose.ui.unit.Dp,
     iconSize: androidx.compose.ui.unit.Dp,
     fontSize: androidx.compose.ui.unit.TextUnit,
@@ -610,7 +618,6 @@ private fun DrawerOverlays(
     expandedFolderId: Int,
     autoFocusFolderName: Boolean,
     showAppPicker: Boolean,
-    isFolderInvisibleByDrag: Boolean,
     pendingFolderIdForAdd: Int,
     categorizedApps: List<Pair<AppCategory?, List<DrawerItem>>>,
     selectedCategory: AppCategory?,
@@ -629,21 +636,20 @@ private fun DrawerOverlays(
     refreshTrigger: Int,
     onDismissSettings: () -> Unit,
     onDismissFolder: () -> Unit,
-    onSetFolderInvisible: (Boolean) -> Unit,
     onShowAppPicker: (Boolean) -> Unit,
     onSetPendingFolder: (Int) -> Unit,
-    unitWidth: androidx.compose.ui.unit.Dp,
+    onMigrateLabels: (AppLabelMode) -> Unit,
+    unitWidth: Dp,
     spacing: androidx.compose.ui.unit.Dp,
     columns: Int,
     iconSize: androidx.compose.ui.unit.Dp,
     fontSize: androidx.compose.ui.unit.TextUnit
 ) {
-    val density = androidx.compose.ui.platform.LocalDensity.current
-
     if (showSettings) {
         SettingsSheet(
             onDismiss = onDismissSettings,
-            viewModel = settingsViewModel
+            viewModel = settingsViewModel,
+            onMigrateLabels = onMigrateLabels
         )
     }
 
@@ -670,7 +676,7 @@ private fun DrawerOverlays(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .graphicsLayer { alpha = if (isFolderInvisibleByDrag) 0f else 1f }
+                    .graphicsLayer { alpha = if (dragInfo.isFolderInvisible) 0f else 1f }
             ) {
                 currentExpandedFolder?.let { folder ->
                     FolderExpansion(
@@ -715,9 +721,11 @@ private fun DrawerOverlays(
                             dragInfo.dragOffset = Offset.Zero
                             dragInfo.grabOffset = grabPoint
                             dragInfo.sourceFolderPosition = drawerRootCoords?.windowToLocal(windowOffset + grabPoint) ?: (windowOffset + grabPoint)
+                            dragInfo.sourceFolderId = folder.id
                         },
                         onAppDrag = { amount -> dragInfo.dragOffset += amount },
-                        onAppDragOut = { _, _, _ -> onSetFolderInvisible(true) },
+                        onAppDragOut = { _, _, _ -> dragInfo.isFolderInvisible = true },
+                        onAppDragIn = { dragInfo.isFolderInvisible = false },
                         onAppDragEnd = {
                             hapticFeedback(HapticEngine.HapticType.DRAG_END)
                             val appToDrop = dragInfo.draggableItem
@@ -727,26 +735,16 @@ private fun DrawerOverlays(
                             
                             if (appToDrop != null) {
                                 val finalTouchPos = dragInfo.dragPosition + dragInfo.dragOffset
-                                val localTouch = drawerRootCoords?.windowToLocal(finalTouchPos) ?: finalTouchPos
-                                val itemSizePx = with(density) { 80.dp.toPx() }
-                                val sourceRect = android.graphics.RectF(
-                                    dragInfo.sourceFolderPosition.x - itemSizePx / 2f,
-                                    dragInfo.sourceFolderPosition.y - itemSizePx / 2f,
-                                    dragInfo.sourceFolderPosition.x + itemSizePx / 2f,
-                                    dragInfo.sourceFolderPosition.y + itemSizePx / 2f
-                                )
-                                val isBackOnParent = sourceRect.contains(localTouch.x, localTouch.y)
-
-                                if (targetFolderId == folder.id || (isFolderInvisibleByDrag && isBackOnParent)) {
-                                    viewModel.showToast("Item already in this folder")
-                                } else if (targetFolderId != -1) {
+                                if (targetFolderId != -1 && targetFolderId != folder.id) {
                                     viewModel.addAppToFolder(targetFolderId, appToDrop.packageName)
                                 } else if (targetApp != null && appToDrop.packageName != targetApp.packageName) {
                                     viewModel.createFolder(appA = appToDrop, appB = targetApp, category = selectedCategory)
                                 } else if (categoryToDrop != null) {
                                     viewModel.moveAppToCategory(appToDrop.packageName, categoryToDrop)
-                                } else if (isFolderInvisibleByDrag) {
+                                } else if (dragInfo.isFolderInvisible) {
                                     viewModel.removeAppFromFolder(folder.id, appToDrop.packageName)
+                                } else {
+                                    viewModel.showToast("Item already in this folder")
                                 }
                             }
                             
@@ -756,7 +754,7 @@ private fun DrawerOverlays(
                             dragInfo.hoveredApp = null
                             dragInfo.hoveredFolderId = -1
                             onDismissFolder()
-                            onSetFolderInvisible(false)
+                            dragInfo.isFolderInvisible = false
                         },
                         onAppDragCancel = {
                             dragInfo.isDragging = false
@@ -765,7 +763,7 @@ private fun DrawerOverlays(
                             dragInfo.hoveredApp = null
                             dragInfo.hoveredFolderId = -1
                             onDismissFolder()
-                            onSetFolderInvisible(false)
+                            dragInfo.isFolderInvisible = false
                         }
                     )
                 }
@@ -824,8 +822,8 @@ private fun DrawerFloatingDragIcon(
             modifier = Modifier
                 .offset { 
                     androidx.compose.ui.unit.IntOffset(
-                        (dragInfo.dragPosition.x + dragInfo.dragOffset.x).toInt(),
-                        (dragInfo.dragPosition.y + dragInfo.dragOffset.y).toInt()
+                        (dragInfo.dragPosition.x + dragInfo.dragOffset.x - dragInfo.grabOffset.x).toInt(),
+                        (dragInfo.dragPosition.y + dragInfo.dragOffset.y - dragInfo.grabOffset.y).toInt()
                     )
                 }
                 .size(80.dp)
@@ -1219,12 +1217,13 @@ fun CategorySelector(
                 
                 var isHovered = false
                 if (dragInfo.isDragging) {
-                    val touchInDrawer = dragInfo.dragPosition + dragInfo.dragOffset + dragInfo.grabOffset
-                    val localTouchPos = if (isVertical) touchInDrawer.y - containerLocalOffset.y else touchInDrawer.x - containerLocalOffset.x
-                    val crossAxisTouchPos = if (isVertical) touchInDrawer.x - containerLocalOffset.x else touchInDrawer.y - containerLocalOffset.y
+                    val touchWindow = dragInfo.dragPosition + dragInfo.dragOffset
+                    val touchLocal = drawerRootCoords?.windowToLocal(touchWindow) ?: touchWindow
+                    val localTouchPos = if (isVertical) touchLocal.y - containerLocalOffset.y else touchLocal.x - containerLocalOffset.x
+                    val crossAxisTouchPos = if (isVertical) touchLocal.x - containerLocalOffset.x else touchLocal.y - containerLocalOffset.y
                     
                     val crossAxisLimit = with(density) { if (isVertical) 56.dp.toPx() else 64.dp.toPx() }
-                    isHovered = crossAxisTouchPos >= 0 && crossAxisTouchPos <= crossAxisLimit &&
+                    isHovered = crossAxisTouchPos >= 0f && crossAxisTouchPos <= crossAxisLimit &&
                                     localTouchPos >= itemStart && localTouchPos <= itemEnd
                     
                     if (isHovered) {
@@ -1407,7 +1406,7 @@ fun AppGrid(
     refreshTrigger: Int = 0,
     iconSize: androidx.compose.ui.unit.Dp = 56.dp,
     fontSize: androidx.compose.ui.unit.TextUnit = 13.sp,
-    rootCoords: androidx.compose.ui.layout.LayoutCoordinates? = null,
+    rootCoords: LayoutCoordinates? = null,
     getShortcuts: suspend (String) -> List<AppShortcut> = { emptyList() },
     onShortcutClick: (AppShortcut) -> Unit = {},
     onHideToggle: (String, Boolean) -> Unit = { _, _ -> },
@@ -1455,6 +1454,12 @@ fun AppGrid(
                 val density = androidx.compose.ui.platform.LocalDensity.current
                 val coroutineScope = rememberCoroutineScope()
                 
+                val currentOnDrop by rememberUpdatedState(onDrop)
+                val currentOnMerge by rememberUpdatedState(onMerge)
+                val currentOnFolderMerge by rememberUpdatedState(onFolderMerge)
+                val currentOnFolderMove by rememberUpdatedState(onFolderMove)
+                val currentGetShortcuts by rememberUpdatedState(getShortcuts)
+
                 val itemPosition = remember { BoxedOffset() }
                 var accumulatedDrag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
                 var isDragConfirmed by remember { mutableStateOf(false) }
@@ -1474,7 +1479,7 @@ fun AppGrid(
                                         accumulatedDrag = androidx.compose.ui.geometry.Offset.Zero
                                         isDragConfirmed = false
                                         val currentPos = itemPosition.value
-                                        dragInfo.dragPosition = rootCoords?.windowToLocal(currentPos) ?: currentPos
+                                        dragInfo.dragPosition = currentPos + offset
                                         
                                         dragInfo.grabOffset = offset
                                         if (drawerItem is DrawerItem.App) {
@@ -1514,21 +1519,21 @@ fun AppGrid(
                                             val targetFolderId = dragInfo.hoveredFolderId
                                             if (appToDrop != null) {
                                                 if (targetFolderId != -1) {
-                                                    onFolderMerge(appToDrop, targetFolderId)
+                                                    currentOnFolderMerge(appToDrop, targetFolderId)
                                                 } else if (targetApp != null && appToDrop.packageName != targetApp.packageName) {
-                                                    onMerge(appToDrop, targetApp)
+                                                    currentOnMerge(appToDrop, targetApp)
                                                 } else if (categoryToDrop != null) {
-                                                    onDrop(appToDrop, categoryToDrop)
+                                                    currentOnDrop(appToDrop, categoryToDrop)
                                                 }
                                             } else if (folderToDrop != -1) {
                                                 if (categoryToDrop != null) {
-                                                    onFolderMove(folderToDrop, categoryToDrop)
+                                                    currentOnFolderMove(folderToDrop, categoryToDrop)
                                                 }
                                             }
                                         } else {
                                             if (drawerItem is DrawerItem.App) {
                                                 coroutineScope.launch {
-                                                    shortcuts = getShortcuts(drawerItem.appModel.packageName)
+                                                    shortcuts = currentGetShortcuts(drawerItem.appModel.packageName)
                                                     showMenu = true
                                                 }
                                             }
@@ -1537,6 +1542,7 @@ fun AppGrid(
                                     dragInfo.isDragging = false
                                     dragInfo.draggableItem = null
                                     dragInfo.draggableFolderId = -1
+                                    dragInfo.sourceFolderId = -1
                                     dragInfo.hoveredCategory = null
                                     dragInfo.hoveredApp = null
                                     dragInfo.hoveredFolderId = -1
@@ -1547,6 +1553,7 @@ fun AppGrid(
                                         dragInfo.isDragging = false
                                         dragInfo.draggableItem = null
                                         dragInfo.draggableFolderId = -1
+                                        dragInfo.sourceFolderId = -1
                                         dragInfo.hoveredCategory = null
                                         dragInfo.hoveredApp = null
                                         dragInfo.hoveredFolderId = -1
@@ -1557,9 +1564,9 @@ fun AppGrid(
                         }
                 ) {
                     if (dragInfo.isDragging) {
-                        val dragTopLeft = dragInfo.dragPosition + dragInfo.dragOffset
+                        val dragTopLeft = dragInfo.dragPosition + dragInfo.dragOffset - dragInfo.grabOffset
                         val currentPos = itemPosition.value
-                        val targetTopLeft = rootCoords?.windowToLocal(currentPos) ?: currentPos
+                        val targetTopLeft = currentPos
                         val distSq = (dragTopLeft.x - targetTopLeft.x) * (dragTopLeft.x - targetTopLeft.x) +
                                    (dragTopLeft.y - targetTopLeft.y) * (dragTopLeft.y - targetTopLeft.y)
                         val thresholdPx = with(density) { 40.dp.toPx() }
@@ -1570,7 +1577,9 @@ fun AppGrid(
                                     onHapticFeedback(HapticEngine.HapticType.GRID_SNAP)
                                 }
                                 dragInfo.hoveredApp = drawerItem.appModel
-                            } else if (drawerItem is DrawerItem.Folder && dragInfo.draggableFolderId != drawerItem.id) {
+                            } else if (drawerItem is DrawerItem.Folder && 
+                                       dragInfo.draggableFolderId != drawerItem.id &&
+                                       dragInfo.sourceFolderId != drawerItem.id) {
                                 if (dragInfo.hoveredFolderId != drawerItem.id) {
                                     onHapticFeedback(HapticEngine.HapticType.GRID_SNAP)
                                 }

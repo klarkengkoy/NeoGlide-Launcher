@@ -1,4 +1,4 @@
-package com.samidevstudio.neoglide.ui.components
+package com.samidevstudio.neoglide.ui.home.components
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding

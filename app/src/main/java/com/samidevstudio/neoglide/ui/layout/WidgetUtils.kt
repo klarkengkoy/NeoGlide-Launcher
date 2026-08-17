@@ -1,10 +1,12 @@
-package com.samidevstudio.neoglide.ui.utils
+package com.samidevstudio.neoglide.ui.layout
 
 import android.appwidget.AppWidgetHostView
 import android.appwidget.AppWidgetProviderInfo
 import android.content.Context
 import android.graphics.Rect
 import android.os.Build
+import kotlin.math.floor
+import kotlin.math.round
 
 object WidgetUtils {
     /**
@@ -58,13 +60,13 @@ object WidgetUtils {
             val snapFactor = LayoutManager.SNAP_FACTOR
             val rawSpan = minSize / unitSize
             // Round to nearest snap increment
-            val snappedSpan = kotlin.math.round(rawSpan * snapFactor) / snapFactor
+            val snappedSpan = round(rawSpan * snapFactor) / snapFactor
             
             // If we are over a boundary by less than the threshold, snap down anyway
             val incrementSize = unitSize / snapFactor
             val overflow = minSize % incrementSize
             if (overflow > 0 && overflow <= tightFitThreshold && snappedSpan > (1f / snapFactor)) {
-                return kotlin.math.floor((rawSpan * snapFactor).toDouble()).toFloat() / snapFactor
+                return floor((rawSpan * snapFactor).toDouble()).toFloat() / snapFactor
             }
             
             return snappedSpan.coerceAtLeast(1f / snapFactor)
@@ -103,9 +105,9 @@ object WidgetUtils {
         val overflow = rawHeightDp % incrementDp
         
         val spanY = if (overflow > 0 && overflow <= tightFitThreshold && rawSpanY > (1f / snapFactor)) {
-            (kotlin.math.floor((rawSpanY * snapFactor).toDouble()) / snapFactor).toFloat()
+            (floor((rawSpanY * snapFactor).toDouble()) / snapFactor).toFloat()
         } else {
-            kotlin.math.round(rawSpanY * snapFactor) / snapFactor
+            round(rawSpanY * snapFactor) / snapFactor
         }.coerceIn(0.5f, 15f)
 
         return spanX to spanY

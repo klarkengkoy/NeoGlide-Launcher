@@ -1,9 +1,9 @@
-package com.samidevstudio.neoglide.ui.components
+package com.samidevstudio.neoglide.ui.home.components
 
 import android.appwidget.AppWidgetProviderInfo
 import android.os.Build
+import android.widget.ImageView
 import android.widget.RemoteViews
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -55,7 +55,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.core.graphics.drawable.toBitmap
 import com.samidevstudio.neoglide.domain.model.AppModel
-import com.samidevstudio.neoglide.ui.utils.WidgetUtils
+import com.samidevstudio.neoglide.ui.components.AppIcon
+import androidx.compose.foundation.Image
+import com.samidevstudio.neoglide.ui.layout.WidgetUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -289,7 +291,7 @@ private fun WidgetProviderItem(
                                 val rv = RemoteViews(info.provider.packageName, info.previewLayout)
                                 rv.apply(ctx, null)
                             } catch (_: Exception) {
-                                android.widget.ImageView(ctx).apply {
+                                ImageView(ctx).apply {
                                     previewDrawable?.let { setImageBitmap(it.toBitmap()) }
                                 }
                             }

@@ -16,7 +16,7 @@ import com.samidevstudio.neoglide.domain.classifier.AppCategoryClassifier
 import com.samidevstudio.neoglide.domain.model.AppCategory
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.domain.model.AppShortcut
-import com.samidevstudio.neoglide.ui.utils.IconLoader
+import com.samidevstudio.neoglide.ui.utils.icons.IconLoader
 import com.samidevstudio.neoglide.ui.utils.PaletteUtils
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope

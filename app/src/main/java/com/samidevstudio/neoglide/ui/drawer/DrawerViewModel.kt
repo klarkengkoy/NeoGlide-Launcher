@@ -158,7 +158,8 @@ class DrawerViewModel @Inject constructor(
                 .map { DrawerItem.App(it) }
             
             // Map to null key for consistency with selectedCategory being null
-            listOf(null to (unifiedFolders + appItems))
+            val unifiedList = (unifiedFolders + appItems).sortedBy { it.label }
+            listOf(null to unifiedList)
         } else {
             // CATEGORIZED MODE
             val appItems = filteredApps
@@ -237,7 +238,8 @@ class DrawerViewModel @Inject constructor(
             )
             
             sortedKeys.map { key ->
-                key to (finalGrouped[key] ?: emptyList())
+                val itemsInGroup = finalGrouped[key] ?: emptyList()
+                key to itemsInGroup.sortedBy { it.label }
             }
         }
         result

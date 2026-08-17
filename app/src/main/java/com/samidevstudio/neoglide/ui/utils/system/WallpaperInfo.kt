@@ -1,4 +1,4 @@
-package com.samidevstudio.neoglide.ui.utils
+package com.samidevstudio.neoglide.ui.utils.system
 
 import androidx.compose.runtime.staticCompositionLocalOf
 

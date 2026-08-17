@@ -1,4 +1,4 @@
-package com.samidevstudio.neoglide.ui.components.category
+package com.samidevstudio.neoglide.ui.drawer.components.category
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn

@@ -50,7 +50,7 @@ import androidx.compose.ui.unit.sp
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.domain.model.AppShortcut
 import com.samidevstudio.neoglide.ui.theme.BadgeRed
-import com.samidevstudio.neoglide.ui.utils.LocalWallpaperIsLight
+import com.samidevstudio.neoglide.ui.utils.system.LocalWallpaperIsLight
 
 @OptIn(ExperimentalSharedTransitionApi::class, ExperimentalFoundationApi::class)
 @Composable
