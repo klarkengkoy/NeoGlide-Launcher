@@ -13,6 +13,7 @@ import com.samidevstudio.neoglide.data.local.dao.FolderDao
 import com.samidevstudio.neoglide.data.local.entity.AppEntity
 import com.samidevstudio.neoglide.di.ApplicationScope
 import com.samidevstudio.neoglide.domain.classifier.AppCategoryClassifier
+import com.samidevstudio.neoglide.domain.classifier.CategoryFallbackResolver
 import com.samidevstudio.neoglide.domain.model.AppCategory
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.domain.model.AppShortcut
@@ -180,6 +181,8 @@ class AppRepository @Inject constructor(
                     existingLastUsedTime = existing?.lastUsedTime ?: 0L,
                     existingCategory = if (forceRecategorize) null else existing?.category,
                     existingHue = if (forceRecalculateColors) null else existing?.dominantHue,
+                    existingUserCategorized = if (forceRecategorize) false else (existing?.isUserCategorized ?: false),
+                    existingScoresStr = if (forceRecategorize) null else existing?.topCategoryScores
                 )
             }
             .distinctBy { it.packageName }
@@ -214,7 +217,9 @@ class AppRepository @Inject constructor(
                         classifier = classifier,
                         existingLastUsedTime = existing?.lastUsedTime ?: 0L,
                         existingCategory = existing?.category,
-                        existingHue = existing?.dominantHue
+                        existingHue = existing?.dominantHue,
+                        existingUserCategorized = existing?.isUserCategorized ?: false,
+                        existingScoresStr = existing?.topCategoryScores
                     )
                 )
             } else {
@@ -233,7 +238,7 @@ class AppRepository @Inject constructor(
     }
 
     suspend fun updateAppCategory(packageName: String, category: AppCategory) = withContext(Dispatchers.IO) {
-        appDao.updateAppCategory(packageName, category.name)
+        appDao.updateAppCategory(packageName, category.name, isUserCategorized = true)
     }
 
     suspend fun updateAllAppsInCategory(oldCategory: String, newCategory: String) = withContext(Dispatchers.IO) {
@@ -249,7 +254,9 @@ class AppRepository @Inject constructor(
         classifier: AppCategoryClassifier,
         existingLastUsedTime: Long = 0L,
         existingCategory: String? = null,
-        existingHue: Float? = null
+        existingHue: Float? = null,
+        existingUserCategorized: Boolean = false,
+        existingScoresStr: String? = null
     ): AppEntity {
         val installTime = try {
             packageManager.getPackageInfo(app.packageName, 0).firstInstallTime
@@ -264,13 +271,30 @@ class AppRepository @Inject constructor(
             0f
         }
 
+        val label = packageManager.getApplicationLabel(app).toString()
+        val appInfoCategory = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) app.category else -1
+        val permissions = try {
+            val packageInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getPackageInfo(app.packageName, PackageManager.PackageInfoFlags.of(PackageManager.GET_PERMISSIONS.toLong()))
+            } else {
+                packageManager.getPackageInfo(app.packageName, PackageManager.GET_PERMISSIONS)
+            }
+            packageInfo.requestedPermissions?.toList() ?: emptyList()
+        } catch (_: Exception) { emptyList() }
+
+        val (classificationWinner, scoresMap) = classifier.classifyWithScores(app.packageName, label, appInfoCategory, permissions)
+        val finalCategory = existingCategory ?: classificationWinner.name
+        val scoresSerialized = existingScoresStr ?: CategoryFallbackResolver.serializeScores(scoresMap)
+
         return AppEntity(
             packageName = app.packageName,
-            label = packageManager.getApplicationLabel(app).toString(),
-            category = existingCategory ?: classifier.classify(app.packageName, context).name,
+            label = label,
+            category = finalCategory,
             installTime = installTime,
             lastUsedTime = existingLastUsedTime,
             dominantHue = hue,
+            isUserCategorized = existingUserCategorized,
+            topCategoryScores = scoresSerialized
         )
     }
 
@@ -463,7 +487,9 @@ class AppRepository @Inject constructor(
             isFavorite = isFavorite,
             lastUsedTime = lastUsedTime,
             installTime = installTime,
-            dominantHue = dominantHue ?: 0f
+            dominantHue = dominantHue ?: 0f,
+            isUserCategorized = isUserCategorized,
+            topScores = CategoryFallbackResolver.deserializeScores(topCategoryScores)
         )
     }
 
@@ -487,7 +513,7 @@ class AppRepository @Inject constructor(
             val currentCategoryName = app.category
 
             // Manual/Custom categories never steal and are never stolen from automatically
-            if (currentCategoryName in customCategoryNames) continue
+            if (app.isUserCategorized || currentCategoryName in customCategoryNames) continue
 
             val packageInfo = try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -555,7 +581,7 @@ class AppRepository @Inject constructor(
 
     suspend fun moveAppsToCategory(packageNames: List<String>, categoryName: String) = withContext(Dispatchers.IO) {
         packageNames.forEach { pkg ->
-            appDao.updateAppCategory(pkg, categoryName)
+            appDao.updateAppCategory(pkg, categoryName, isUserCategorized = true)
         }
     }
 

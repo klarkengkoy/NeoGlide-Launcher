@@ -11,5 +11,7 @@ data class AppEntity(
     val isFavorite: Boolean = false,
     val installTime: Long,
     val lastUsedTime: Long = 0L,
-    val dominantHue: Float? = null
+    val dominantHue: Float? = null,
+    val isUserCategorized: Boolean = false,
+    val topCategoryScores: String? = null,
 )

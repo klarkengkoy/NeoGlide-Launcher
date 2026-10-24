@@ -23,7 +23,7 @@ import com.samidevstudio.neoglide.data.local.entity.WidgetEntity
         FolderAppEntity::class,
         CategoryEntity::class,
     ],
-    version = 2,
+    version = 4,
     exportSchema = false
 )
 abstract class NeoGlideDatabase : RoomDatabase() {

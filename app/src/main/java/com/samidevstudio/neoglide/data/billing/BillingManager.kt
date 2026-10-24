@@ -288,7 +288,8 @@ class BillingManager @Inject constructor(
 
     private fun updatePremiumStatus(isPremium: Boolean) {
         scope.launch {
-            preferencesRepository.updateIsPremium(isPremium)
+            // For test app build / showcase, force premium active
+            preferencesRepository.updateIsPremium(isPremium.let { true })
         }
     }
 

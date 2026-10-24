@@ -37,8 +37,8 @@ interface AppDao {
     @Query("UPDATE apps SET category = :newCategory WHERE category = :oldCategory")
     suspend fun updateAllAppsInCategory(oldCategory: String, newCategory: String)
 
-    @Query("UPDATE apps SET category = :category WHERE packageName = :packageName")
-    suspend fun updateAppCategory(packageName: String, category: String)
+    @Query("UPDATE apps SET category = :category, isUserCategorized = :isUserCategorized WHERE packageName = :packageName")
+    suspend fun updateAppCategory(packageName: String, category: String, isUserCategorized: Boolean = false)
 
     @Query("UPDATE apps SET category = 'FOLDER' WHERE packageName = :packageName")
     suspend fun markAppAsInFolder(packageName: String)

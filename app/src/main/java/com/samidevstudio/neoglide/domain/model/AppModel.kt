@@ -7,21 +7,23 @@ data class AppModel(
     val isFavorite: Boolean = false,
     val lastUsedTime: Long = 0L,
     val installTime: Long = 0L,
-    val dominantHue: Float = 0f
+    val dominantHue: Float = 0f,
+    val isUserCategorized: Boolean = false,
+    val topScores: Map<AppCategory, Float> = emptyMap(),
 )
 
 data class AppShortcut(
     val id: String,
     val label: String,
     val packageName: String,
-    val icon: Any? = null
+    val icon: Any? = null,
 )
 
 data class AppCategory(
     val name: String, 
     val isCustom: Boolean = false,
     val iconName: String? = null,
-    val label: String? = null
+    val label: String? = null,
 ) {
     val displayName: String get() = label ?: name.lowercase().replaceFirstChar { it.uppercase() }
 
@@ -63,6 +65,10 @@ data class AppCategory(
         val HOME = AppCategory("HOME", iconName = "home")
         val KIDS = AppCategory("KIDS", iconName = "child_care")
         val WALLET = AppCategory("WALLET", iconName = "account_balance_wallet")
+        val BROWSER = AppCategory("BROWSER", iconName = "language")
+        val SECURITY = AppCategory("SECURITY", iconName = "security")
+        val PERSONALIZATION = AppCategory("PERSONALIZATION", iconName = "palette")
+        val DEVELOPER = AppCategory("DEVELOPER", iconName = "code")
         val OTHER = AppCategory("OTHER", iconName = "apps")
         
         // Internal launcher categories
@@ -74,7 +80,7 @@ data class AppCategory(
             FINANCE, WALLET, SHOPPING, PHOTOGRAPHY, HEALTH, FITNESS, 
             NAVIGATION, MAPS, FOOD, EDUCATION, TOOLS, UTILITIES, 
             WEATHER, NEWS, MUSIC, TRAVEL, LIFESTYLE, BOOKS, 
-            SPORTS, HOME, KIDS, OTHER
+            SPORTS, HOME, KIDS, BROWSER, SECURITY, PERSONALIZATION, DEVELOPER, OTHER
         )
 
         fun fromString(value: String): AppCategory {

@@ -5,8 +5,10 @@
 ## Key Features
 
 ### 1. The Glide Experience
-*   **Ergonomic Category Rail**: Thumb-optimized side scrubber for high-speed navigation between app groups. Dockable to the Left, Right, or Bottom.
-*   **Semantic Reclassification**: Intelligent engine that automatically groups apps into logical categories while allowing full custom management.
+*   **Ergonomic Category Rail**: Dynamic screen-capacity rail scrubber for high-speed navigation between app groups. Dockable to Left, Right, or Bottom.
+*   **Refined Waterfall Categorization**: 4-stage intelligence engine (Known Packages, System Tags, Dilution-Weighted Keyword Heuristics) that automatically classifies apps across 32 built-in categories.
+*   **Ranked Fallback & Related Resolution**: Top-3 score persistence with 1-hop related fallback resolution so apps seamlessly map to active rail tabs without needing overflow menus.
+*   **Permanent User Locks**: User manual category moves are locked persistently and never overwritten by auto-reclassification.
 *   **Adaptive Quick Access**: A minimalist, intelligent bottom dock that scales across all device types and screen densities.
 
 ### 2. Home Screen & Customization

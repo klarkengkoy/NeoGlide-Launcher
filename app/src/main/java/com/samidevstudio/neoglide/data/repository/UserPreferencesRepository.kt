@@ -76,9 +76,11 @@ data class UserPreferences(
     val iconPackPackageName: String? = null,
     val hapticsEnabled: Boolean = true,
     val isSortReverse: Boolean = false,
-    val isPremium: Boolean = false,
+    val isPremium: Boolean = true,
     val isFirstInstallRun: Boolean = true,
-    val orderedCategories: List<String> = emptyList()
+    val orderedCategories: List<String> = emptyList(),
+    val userAddedCategories: Set<String> = emptySet(),
+    val userRemovedCategories: Set<String> = emptySet()
 )
 
 @Singleton
@@ -109,6 +111,8 @@ class UserPreferencesRepository @Inject constructor(
         val IS_PREMIUM = booleanPreferencesKey("is_premium")
         val IS_FIRST_INSTALL_RUN = booleanPreferencesKey("is_first_install_run")
         val ORDERED_CATEGORIES = stringPreferencesKey("ordered_categories")
+        val USER_ADDED_CATEGORIES = stringSetPreferencesKey("user_added_categories")
+        val USER_REMOVED_CATEGORIES = stringSetPreferencesKey("user_removed_categories")
     }
 
     val userPreferencesFlow: Flow<UserPreferences> = context.dataStore.data
@@ -192,9 +196,11 @@ class UserPreferencesRepository @Inject constructor(
                 iconPackPackageName = preferences[PreferencesKeys.ICON_PACK_PACKAGE_NAME],
                 hapticsEnabled = preferences[PreferencesKeys.HAPTICS_ENABLED] ?: true,
                 isSortReverse = preferences[PreferencesKeys.IS_SORT_REVERSE] ?: false,
-                isPremium = preferences[PreferencesKeys.IS_PREMIUM] ?: false,
+                isPremium = preferences[PreferencesKeys.IS_PREMIUM] ?: true,
                 isFirstInstallRun = preferences[PreferencesKeys.IS_FIRST_INSTALL_RUN] ?: true,
-                orderedCategories = orderedCategories
+                orderedCategories = orderedCategories,
+                userAddedCategories = preferences[PreferencesKeys.USER_ADDED_CATEGORIES] ?: emptySet(),
+                userRemovedCategories = preferences[PreferencesKeys.USER_REMOVED_CATEGORIES] ?: emptySet()
             )
         }
 
@@ -349,6 +355,28 @@ class UserPreferencesRepository @Inject constructor(
             if (current.remove(categoryName)) {
                 preferences[PreferencesKeys.ORDERED_CATEGORIES] = current.joinToString("|")
             }
+        }
+    }
+
+    suspend fun addUserCategoryToRail(categoryName: String) {
+        context.dataStore.edit { preferences ->
+            val added = (preferences[PreferencesKeys.USER_ADDED_CATEGORIES] ?: emptySet()).toMutableSet()
+            val removed = (preferences[PreferencesKeys.USER_REMOVED_CATEGORIES] ?: emptySet()).toMutableSet()
+            added.add(categoryName)
+            removed.remove(categoryName)
+            preferences[PreferencesKeys.USER_ADDED_CATEGORIES] = added
+            preferences[PreferencesKeys.USER_REMOVED_CATEGORIES] = removed
+        }
+    }
+
+    suspend fun removeUserCategoryFromRail(categoryName: String) {
+        context.dataStore.edit { preferences ->
+            val added = (preferences[PreferencesKeys.USER_ADDED_CATEGORIES] ?: emptySet()).toMutableSet()
+            val removed = (preferences[PreferencesKeys.USER_REMOVED_CATEGORIES] ?: emptySet()).toMutableSet()
+            added.remove(categoryName)
+            removed.add(categoryName)
+            preferences[PreferencesKeys.USER_ADDED_CATEGORIES] = added
+            preferences[PreferencesKeys.USER_REMOVED_CATEGORIES] = removed
         }
     }
 }

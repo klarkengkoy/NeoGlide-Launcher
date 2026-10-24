@@ -13,11 +13,13 @@ import com.samidevstudio.neoglide.data.repository.HorizontalAnchor
 import com.samidevstudio.neoglide.data.repository.SearchRepository
 import com.samidevstudio.neoglide.data.repository.UserPreferencesRepository
 import com.samidevstudio.neoglide.data.repository.VerticalAnchor
+import com.samidevstudio.neoglide.domain.classifier.CategoryFallbackResolver
 import com.samidevstudio.neoglide.domain.model.AppCategory
 import com.samidevstudio.neoglide.domain.model.AppModel
 import com.samidevstudio.neoglide.domain.model.AppShortcut
 import com.samidevstudio.neoglide.service.NeoGlideNotificationListener
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -57,6 +59,7 @@ sealed class DrawerUiEvent {
 @OptIn(FlowPreview::class)
 @HiltViewModel
 class DrawerViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val appRepository: AppRepository,
     private val searchRepository: SearchRepository,
     private val userPreferencesRepository: UserPreferencesRepository,
@@ -162,11 +165,40 @@ class DrawerViewModel @Inject constructor(
             listOf(null to unifiedList)
         } else {
             // CATEGORIZED MODE
+            val primaryCounts = apps
+                .filter { it.packageName !in prefs.hiddenPackages && it.category != AppCategory.FOLDER }
+                .groupingBy { it.category }
+                .eachCount()
+
+            val userAdded = prefs.userAddedCategories.map { AppCategory.fromString(it) }.toSet()
+            val userRemoved = prefs.userRemovedCategories.map { AppCategory.fromString(it) }.toSet()
+            val currentRail = prefs.orderedCategories.map { AppCategory.fromString(it) }
+
+            val maxSlots = CategoryFallbackResolver.getMaxRailSlots(context, prefs.categoryBarType)
+            val railCategories = CategoryFallbackResolver.computeRailCategories(
+                primaryAppCounts = primaryCounts,
+                currentRail = currentRail,
+                userAdded = userAdded,
+                userRemoved = userRemoved,
+                anchor = AppCategory.TOOLS,
+                maxSlots = maxSlots,
+                minApps = 3
+            )
+            val railSet = railCategories.toSet()
+
             val appItems = filteredApps
                 .filter { it.category != AppCategory.FOLDER }
                 .map { app ->
-                    val category = if (app.packageName in prefs.hiddenPackages) AppCategory.HIDDEN else app.category
-                    category to DrawerItem.App(app)
+                    val displayCat = CategoryFallbackResolver.resolveDisplayCategory(
+                        isHidden = app.packageName in prefs.hiddenPackages,
+                        isUserAssigned = app.isUserCategorized,
+                        storedCategory = app.category,
+                        scores = app.topScores,
+                        rail = railSet,
+                        anchor = AppCategory.TOOLS,
+                        minScore = 0.5f
+                    )
+                    displayCat to DrawerItem.App(app)
                 }
             
             val folderItems = folders

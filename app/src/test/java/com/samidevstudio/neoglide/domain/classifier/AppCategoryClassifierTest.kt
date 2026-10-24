@@ -10,10 +10,37 @@ class AppCategoryClassifierTest {
     private val classifier = AppCategoryClassifier()
 
     @Test
-    fun `Signal 1 - Maps ApplicationInfo category correctly`() {
+    fun `Pre-Step 0 - KnownPackages matches famous apps directly`() {
+        val whatsapp = classifier.classify(
+            packageName = "com.whatsapp",
+            label = "WhatsApp",
+            appInfoCategory = -1,
+            permissions = emptyList()
+        )
+        assertEquals(AppCategory.COMMUNICATION, whatsapp)
+
+        val maps = classifier.classify(
+            packageName = "com.google.android.apps.maps",
+            label = "Google Maps",
+            appInfoCategory = -1,
+            permissions = emptyList()
+        )
+        assertEquals(AppCategory.MAPS, maps)
+
+        val chrome = classifier.classify(
+            packageName = "com.android.chrome",
+            label = "Chrome",
+            appInfoCategory = -1,
+            permissions = emptyList()
+        )
+        assertEquals(AppCategory.BROWSER, chrome)
+    }
+
+    @Test
+    fun `Step 1 - Trusted ApplicationInfo CATEGORY_GAME matches GAMING`() {
         val result = classifier.classify(
-            packageName = "com.test.app",
-            label = "Test App",
+            packageName = "com.test.game",
+            label = "Custom Game",
             appInfoCategory = ApplicationInfo.CATEGORY_GAME,
             permissions = emptyList()
         )
@@ -21,59 +48,63 @@ class AppCategoryClassifierTest {
     }
 
     @Test
-    fun `Signal 2 - Scores permissions correctly (Photography)`() {
-        val result = classifier.classify(
-            packageName = "com.test.app",
-            label = "Test App",
-            appInfoCategory = -1, // Undefined
-            permissions = listOf("android.permission.CAMERA")
-        )
-        assertEquals(AppCategory.PHOTOGRAPHY, result)
-    }
-
-    @Test
-    fun `Signal 2 - Scores permissions correctly (Social)`() {
-        val result = classifier.classify(
-            packageName = "com.test.app",
-            label = "Test App",
-            appInfoCategory = -1,
-            permissions = listOf("android.permission.READ_CONTACTS", "android.permission.SEND_SMS")
-        )
-        assertEquals(AppCategory.SOCIAL, result)
-    }
-
-    @Test
-    fun `Signal 2b - Matches keywords in package name`() {
-        val result = classifier.classify(
-            packageName = "com.duolingo",
-            label = "Duolingo",
-            appInfoCategory = -1,
-            permissions = emptyList()
-        )
-        assertEquals(AppCategory.EDUCATION, result)
-    }
-
-    @Test
-    fun `Signal 2b - Matches keywords in label`() {
-        val result = classifier.classify(
-            packageName = "com.app.any",
+    fun `Step 2 - Matches clear keyword matches in label or package`() {
+        val shopping = classifier.classify(
+            packageName = "com.custom.shopping",
             label = "Shopping Cart",
             appInfoCategory = -1,
             permissions = emptyList()
         )
-        assertEquals(AppCategory.SHOPPING, result)
-    }
+        assertEquals(AppCategory.SHOPPING, shopping)
 
-    @Test
-    fun `Tie-break - Priority follows UTILITIES over PRODUCTIVITY`() {
-        // "calendar" is Productivity, "clock" is Utilities.
-        // Priority list: UTILITIES > PRODUCTIVITY
-        val result = classifier.classify(
-            packageName = "com.app.task.clock",
-            label = "Task Clock",
+        val finance = classifier.classify(
+            packageName = "com.test.bank",
+            label = "My Bank Balance",
             appInfoCategory = -1,
             permissions = emptyList()
         )
-        assertEquals(AppCategory.UTILITIES, result)
+        assertEquals(AppCategory.FINANCE, finance)
+    }
+
+    @Test
+    fun `Step 3 - High confidence permissions match correctly`() {
+        val comm = classifier.classify(
+            packageName = "org.custom.app",
+            label = "Random App",
+            appInfoCategory = -1,
+            permissions = listOf("android.permission.SEND_SMS", "android.permission.RECEIVE_SMS")
+        )
+        assertEquals(AppCategory.COMMUNICATION, comm)
+
+        val productivity = classifier.classify(
+            packageName = "org.custom.app2",
+            label = "Random App 2",
+            appInfoCategory = -1,
+            permissions = listOf("android.permission.READ_CALENDAR", "android.permission.WRITE_CALENDAR")
+        )
+        assertEquals(AppCategory.PRODUCTIVITY, productivity)
+    }
+
+    @Test
+    fun `Step 3 - Generic permissions like CAMERA alone do not force PHOTOGRAPHY`() {
+        val result = classifier.classify(
+            packageName = "com.unknown.app",
+            label = "My Generic App",
+            appInfoCategory = -1,
+            permissions = listOf("android.permission.CAMERA")
+        )
+        // Camera alone is no longer a high-confidence trigger for PHOTOGRAPHY
+        assertEquals(AppCategory.OTHER, result)
+    }
+
+    @Test
+    fun `Fallback - Weak or unknown apps fallback to OTHER`() {
+        val result = classifier.classify(
+            packageName = "com.xyz.unknown",
+            label = "Xyz App",
+            appInfoCategory = -1,
+            permissions = emptyList()
+        )
+        assertEquals(AppCategory.OTHER, result)
     }
 }
