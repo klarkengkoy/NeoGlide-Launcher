@@ -1,50 +1,58 @@
 # NeoGlide Launcher: Smart Organizer
 
-**NeoGlide Launcher** is a smart, clean, and lightweight Android launcher designed for responsiveness and intelligent organization. It brings a refinement and intelligence to Android devices, offering smooth category navigation and advanced ergonomics without the bloat.
+NeoGlide Launcher is an Android launcher that groups apps into categories. A category rail lets you switch between groups and can sit on the left, right, or bottom of the screen.
+
+## Showcase
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/klarkengkoy/klarkengkoy/main/assets/screenshots/neoglide%20launcher/showcase/01_make-it-truly-yours_left.png" alt="NeoGlide Launcher personalization showcase, left panel" width="45%" />
+  <img src="https://raw.githubusercontent.com/klarkengkoy/klarkengkoy/main/assets/screenshots/neoglide%20launcher/showcase/02_make-it-truly-yours_right.png" alt="NeoGlide Launcher personalization showcase, right panel" width="45%" />
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/klarkengkoy/klarkengkoy/main/assets/screenshots/neoglide%20launcher/showcase/03_switch-with-glide.png" alt="Switch with Glide" width="30%" />
+  <img src="https://raw.githubusercontent.com/klarkengkoy/klarkengkoy/main/assets/screenshots/neoglide%20launcher/showcase/04_made-for-your-grip.png" alt="Made for your grip" width="30%" />
+  <img src="https://raw.githubusercontent.com/klarkengkoy/klarkengkoy/main/assets/screenshots/neoglide%20launcher/showcase/05_keep-your-apps-close.png" alt="Keep your apps close" width="30%" />
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/klarkengkoy/klarkengkoy/main/assets/screenshots/neoglide%20launcher/showcase/06_protect-private-apps.png" alt="Protect private apps" width="30%" />
+  <img src="https://raw.githubusercontent.com/klarkengkoy/klarkengkoy/main/assets/screenshots/neoglide%20launcher/showcase/07_search-your-way.png" alt="Search your way" width="30%" />
+</p>
 
 ## Key Features
 
-### 1. The Glide Experience
-*   **Ergonomic Category Rail**: Dynamic screen-capacity rail scrubber for high-speed navigation between app groups. Dockable to Left, Right, or Bottom.
-*   **Refined Waterfall Categorization**: 4-stage intelligence engine (Known Packages, System Tags, Dilution-Weighted Keyword Heuristics) that automatically classifies apps across 32 built-in categories.
-*   **Ranked Fallback & Related Resolution**: Top-3 score persistence with 1-hop related fallback resolution so apps seamlessly map to active rail tabs without needing overflow menus.
-*   **Permanent User Locks**: User manual category moves are locked persistently and never overwritten by auto-reclassification.
-*   **Adaptive Quick Access**: A minimalist, intelligent bottom dock that scales across all device types and screen densities.
+### App Organization
+*   Group apps into 32 built-in categories using known packages, system tags, and keyword matching.
+*   Switch between groups with the category rail, positioned on either side or along the bottom.
+*   Map apps to related categories when their preferred category is not active.
+*   Move apps between categories manually; automatic categorization preserves those choices.
+*   Keep frequently used apps in the bottom dock.
 
-### 2. Home Screen & Customization
-*   **Square Grid Engine**: Adaptive units that dynamically calculate the perfect grid (4, 5, or 6 columns) based on your device.
-*   **Precision Interaction**: Elastic drag-and-drop, ghost target guides, and intelligent collision detection for stable layout management.
-*   **Material 3 Dynamic Theming**: Full Material You support with automatic color extraction from your wallpaper.
-*   **Advanced Personalization**: Monochrome icon support, switchable grid densities, and independent label visibility modes.
+### Home Screen & Customization
+*   Arrange apps on a 4-, 5-, or 6-column grid with drag-and-drop placement guides.
+*   Use wallpaper-based Material You colors and monochrome icons.
+*   Adjust grid density and app label visibility.
+*   Add and resize widgets to fit the home screen.
 
-### 3. Intelligence & Performance
-*   **Universal Search**: Integrated local search with AI-powered usage suggestions and real-time web suggestions (Google, DuckDuckGo, Brave, etc.).
-*   **Proactive Performance**: Zero-stutter icon warmup and a smart "Peek" window that preserves state during quick multitasking.
-*   **Device-Independent Widgets**: Projected span calculation and precision resize handles for a perfect widget setup on any screen.
+### Search & Multitasking
+*   Search installed apps and get web suggestions from providers including Google, DuckDuckGo, and Brave.
+*   Return to the launcher shortly after opening an app without resetting its previous state.
 
-### 4. Privacy & Security
-*   **Biometric Vault**: Secure, hidden app collection protected by your fingerprint or PIN.
-*   **Complete App Hiding**: Seamlessly exclude applications from the home screen and drawer to keep your interface tidy.
+### Privacy
+*   Keep a hidden app collection behind fingerprint or PIN authentication.
+*   Hide apps from the home screen and app drawer.
 
 ## Technical Highlights
 
-The project is built using modern Android standards and a clean architecture:
-*   **Language**: 100% Kotlin
-*   **UI Framework**: Jetpack Compose with Shared Element Transitions
-*   **Navigation**: Navigation 3 for seamless screen flows
-*   **Persistence**: Room for metadata and DataStore for reactive preferences
-*   **Performance**: Baseline Profiles and proactive caching for a zero-stutter experience
+*   **Language**: Kotlin
+*   **UI**: Jetpack Compose with shared element transitions
+*   **Navigation**: Navigation 3
+*   **Storage**: Room for metadata and DataStore for preferences
+*   **Performance**: Baseline Profiles and icon caching
 
 ## Project Status
 
-**NeoGlide Launcher v1.0.0** is currently a closed-source project. While the source code remains private, I am committed to making the application accessible to the community.
+NeoGlide Launcher is closed-source. This repository provides the project overview and screenshots.
 
 ### How to Get the App
-*   **GitHub Releases**: APKs will be available in the [Releases](https://github.com/klarkengkoy/NeoGlide-Launcher/releases) section soon.
-*   **Play Store**: Coming soon to the Google Play Store.
-
-## Project Vision
-
-NeoGlide Launcher aims to be the fastest and most ergonomic way to navigate large app libraries on Android. It prioritizes low resource usage and meaningful organization, filling the gap between minimalist launchers and feature-heavy alternatives.
-
----
+*   **GitHub Releases**: Check [Releases](https://github.com/klarkengkoy/NeoGlide-Launcher/releases) for APK availability.
+*   **Play Store**: A Play Store release is planned.
