@@ -5,17 +5,7 @@ NeoGlide Launcher is an Android launcher that groups apps into categories. A cat
 ## Showcase
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/klarkengkoy/klarkengkoy/main/assets/screenshots/neoglide%20launcher/showcase/01_make-it-truly-yours_left.png" alt="NeoGlide Launcher personalization showcase, left panel" width="45%" />
-  <img src="https://raw.githubusercontent.com/klarkengkoy/klarkengkoy/main/assets/screenshots/neoglide%20launcher/showcase/02_make-it-truly-yours_right.png" alt="NeoGlide Launcher personalization showcase, right panel" width="45%" />
-</p>
-<p align="center">
-  <img src="https://raw.githubusercontent.com/klarkengkoy/klarkengkoy/main/assets/screenshots/neoglide%20launcher/showcase/03_switch-with-glide.png" alt="Switch with Glide" width="30%" />
-  <img src="https://raw.githubusercontent.com/klarkengkoy/klarkengkoy/main/assets/screenshots/neoglide%20launcher/showcase/04_made-for-your-grip.png" alt="Made for your grip" width="30%" />
-  <img src="https://raw.githubusercontent.com/klarkengkoy/klarkengkoy/main/assets/screenshots/neoglide%20launcher/showcase/05_keep-your-apps-close.png" alt="Keep your apps close" width="30%" />
-</p>
-<p align="center">
-  <img src="https://raw.githubusercontent.com/klarkengkoy/klarkengkoy/main/assets/screenshots/neoglide%20launcher/showcase/06_protect-private-apps.png" alt="Protect private apps" width="30%" />
-  <img src="https://raw.githubusercontent.com/klarkengkoy/klarkengkoy/main/assets/screenshots/neoglide%20launcher/showcase/07_search-your-way.png" alt="Search your way" width="30%" />
+  <a href="https://klarkengkoy.github.io/klarkengkoy/#neoglide-title"><img src="https://raw.githubusercontent.com/klarkengkoy/klarkengkoy/main/assets/portfolio-button.svg" alt="View NeoGlide Launcher in my portfolio" width="240" height="56" /></a>
 </p>
 
 ## Key Features
@@ -51,7 +41,7 @@ NeoGlide Launcher is an Android launcher that groups apps into categories. A cat
 
 ## Project Status
 
-NeoGlide Launcher is closed-source. This repository provides the project overview and screenshots.
+NeoGlide Launcher is closed-source. This README provides the project overview; screenshots are available in the linked portfolio showcase.
 
 ### How to Get the App
 *   **GitHub Releases**: Check [Releases](https://github.com/klarkengkoy/NeoGlide-Launcher/releases) for APK availability.
