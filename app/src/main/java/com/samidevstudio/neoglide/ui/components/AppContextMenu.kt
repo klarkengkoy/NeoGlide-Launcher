@@ -3,7 +3,6 @@ package com.samidevstudio.neoglide.ui.components
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -327,26 +326,25 @@ fun AppContextMenuContent(
 @Composable
 private fun MenuSegment(
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.surface,
+    color: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
     onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     Surface(
         modifier = modifier
             .width(IntrinsicSize.Max)
-            .border(
-                width = 0.5.dp,
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f),
-                shape = RoundedCornerShape(26.dp)
-            )
             .then(
-                if (onClick != null) Modifier.clip(RoundedCornerShape(26.dp)).clickable(onClick = onClick)
+                if (onClick != null) Modifier.clip(RoundedCornerShape(20.dp)).clickable(onClick = onClick)
                 else Modifier
             ),
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(20.dp),
         color = color,
-        tonalElevation = 8.dp,
-        shadowElevation = 12.dp
+        border = androidx.compose.foundation.BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+        ),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
     ) {
         content()
     }
@@ -364,7 +362,7 @@ private fun MenuItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = if (isRightAligned) Arrangement.End else Arrangement.Start
     ) {
@@ -402,28 +400,31 @@ private fun MenuItem(
     }
 }
 
-@Preview(showBackground = true)
+@Preview(name = "Light Mode", showBackground = true)
+@Preview(name = "Dark Mode", uiMode = android.content.res.Configuration.UI_MODE_NIGHT_YES, showBackground = true)
 @Composable
 fun AppContextMenuPreview() {
     NeoGlideLauncherTheme {
-        Box(modifier = Modifier.padding(16.dp)) {
-            AppContextMenuContent(
-                packageName = "com.example.app",
-                label = "Example App",
-                shortcuts = listOf(
-                    AppShortcut("1", "New Chat", "com.example.app"),
-                    AppShortcut("2", "Contacts", "com.example.app")
-                ),
-                isHidden = false,
-                isPremium = false,
-                isRightAligned = false,
-                onDismissRequest = {},
-                onShortcutClick = {},
-                onHideToggle = {},
-                onAddToHome = {},
-                onRemove = null,
-                onShowPaywall = {}
-            )
+        Surface {
+            Box(modifier = Modifier.padding(16.dp)) {
+                AppContextMenuContent(
+                    packageName = "com.example.app",
+                    label = "Example App",
+                    shortcuts = listOf(
+                        AppShortcut("1", "New Chat", "com.example.app"),
+                        AppShortcut("2", "Contacts", "com.example.app")
+                    ),
+                    isHidden = false,
+                    isPremium = false,
+                    isRightAligned = false,
+                    onDismissRequest = {},
+                    onShortcutClick = {},
+                    onHideToggle = {},
+                    onAddToHome = {},
+                    onRemove = null,
+                    onShowPaywall = {}
+                )
+            }
         }
     }
 }

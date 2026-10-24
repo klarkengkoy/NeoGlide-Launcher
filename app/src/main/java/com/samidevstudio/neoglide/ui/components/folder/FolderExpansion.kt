@@ -178,10 +178,10 @@ fun FolderExpansion(
                 .wrapContentHeight()
                 .clickable(enabled = false) {}, // Consume clicks
             shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 12.dp,
-            shadowElevation = 16.dp,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 0.dp,
+            shadowElevation = 6.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
         ) {
             Box {
                 Column(
@@ -204,9 +204,8 @@ fun FolderExpansion(
                                     onLabelChange(it.text)
                                 }
                             },
-                            textStyle = TextStyle(
+                            textStyle = MaterialTheme.typography.titleLarge.copy(
                                 color = MaterialTheme.colorScheme.onSurface,
-                                fontSize = 24.sp,
                                 fontWeight = FontWeight.Bold,
                                 textAlign = TextAlign.Center
                             ),

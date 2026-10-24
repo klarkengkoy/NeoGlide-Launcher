@@ -1336,7 +1336,7 @@ private fun CategoryIconItem(
         Surface(
             color = color,
             contentColor = if (isHovered) MaterialTheme.colorScheme.onSecondaryContainer else if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(10.dp),
             modifier = Modifier.fillMaxSize()
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -1344,42 +1344,14 @@ private fun CategoryIconItem(
             }
         }
         
-        if (hasNotification) {
-            val borderColor = MaterialTheme.colorScheme.surface
-            if (notificationCount > 0) {
-                Box(
-                    modifier = Modifier
-                        .zIndex(1f)
-                        .align(Alignment.TopEnd)
-                        .offset(x = 6.dp, y = (-6).dp)
-                        .background(borderColor, CircleShape)
-                        .padding(1.5.dp)
-                        .background(BadgeRed, CircleShape)
-                        .padding(horizontal = 4.dp, vertical = 1.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = if (notificationCount > 99) "99+" else notificationCount.toString(),
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    )
-                }
-            } else {
-                Box(
-                    modifier = Modifier
-                        .zIndex(1f)
-                        .align(Alignment.TopEnd)
-                        .padding(2.dp)
-                        .size(10.dp)
-                        .background(borderColor, CircleShape)
-                        .padding(1.5.dp)
-                        .background(BadgeRed, CircleShape)
-                )
-            }
-        }
+        com.samidevstudio.neoglide.ui.components.NotificationBadge(
+            hasNotification = hasNotification,
+            notificationCount = notificationCount,
+            iconSize = size,
+            borderColor = MaterialTheme.colorScheme.surface,
+            isConstantSmallSize = true,
+            modifier = Modifier.zIndex(1f).align(Alignment.TopEnd)
+        )
     }
 }
 
