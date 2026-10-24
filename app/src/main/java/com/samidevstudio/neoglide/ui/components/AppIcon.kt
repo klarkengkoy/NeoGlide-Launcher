@@ -1,5 +1,6 @@
 package com.samidevstudio.neoglide.ui.components
 
+import android.content.res.Configuration
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
@@ -9,7 +10,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Android
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -25,9 +30,12 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.samidevstudio.neoglide.ui.theme.NeoGlideLauncherTheme
 import com.samidevstudio.neoglide.ui.utils.icons.LocalIconCache
 import com.samidevstudio.neoglide.ui.utils.icons.LocalIconLoader
 
@@ -62,10 +70,29 @@ fun AppIcon(
     iconPackPackageName: String? = null,
     refreshTrigger: Int = 0, // Used to force re-fetch from LauncherApps
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+
+    if (LocalView.current.isInEditMode) {
+        Box(
+            modifier = modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Android,
+                contentDescription = contentDescription,
+                tint = colorScheme.onPrimaryContainer,
+                modifier = Modifier.size((size.value * 0.6f).dp)
+            )
+        }
+        return
+    }
+
     val context = LocalContext.current
     val iconCache = LocalIconCache.current
     val iconLoader = LocalIconLoader.current
-    val colorScheme = MaterialTheme.colorScheme
 
     val cacheKey = "$packageName-$useMonochrome-$iconPackPackageName"
 
@@ -125,6 +152,23 @@ fun AppIcon(
                 modifier = imageModifier,
                 colorFilter = if (isActuallyMonochrome) ColorFilter.tint(colorScheme.onPrimaryContainer) else null
             )
+        }
+    }
+}
+
+@Preview(name = "Light Mode", showBackground = true)
+@Preview(name = "Dark Mode", uiMode = Configuration.UI_MODE_NIGHT_YES, showBackground = true)
+@Composable
+private fun AppIconPreview() {
+    NeoGlideLauncherTheme {
+        Surface {
+            Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center) {
+                AppIcon(
+                    packageName = "com.example.app",
+                    contentDescription = "Sample App",
+                    size = 56.dp
+                )
+            }
         }
     }
 }

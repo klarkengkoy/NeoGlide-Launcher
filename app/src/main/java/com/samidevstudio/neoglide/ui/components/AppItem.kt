@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -124,7 +125,7 @@ fun AppItem(
         } else Modifier
 
         val labelStyle = if (sharedElementKeyPrefix == "dock" || sharedElementKeyPrefix == "home") {
-            MaterialTheme.typography.labelSmall.copy(
+            MaterialTheme.typography.labelMedium.copy(
                 fontSize = fontSize,
                 fontWeight = FontWeight.Medium,
                 color = if (isWallpaperLight) Color.Black.copy(alpha = 0.8f) else Color.White,
@@ -143,7 +144,7 @@ fun AppItem(
                 }
             )
         } else {
-            MaterialTheme.typography.labelSmall.copy(
+            MaterialTheme.typography.labelMedium.copy(
                 fontSize = fontSize,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface
@@ -207,41 +208,13 @@ fun AppItem(
                     )
                     
                     // NOTIFICATION BADGE
-                    if (hasNotification) {
-                        val borderColor = if (sharedElementKeyPrefix != "drawer") Color.White else MaterialTheme.colorScheme.surface
-                        
-                        if (notificationCount > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .offset(x = 4.dp, y = (-4).dp)
-                                    .background(borderColor, CircleShape)
-                                    .padding(1.5.dp)
-                                    .background(BadgeRed, CircleShape)
-                                    .padding(horizontal = 4.dp, vertical = 1.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = if (notificationCount > 99) "99+" else notificationCount.toString(),
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                )
-                            }
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(2.dp)
-                                    .size(12.dp)
-                                    .background(borderColor, CircleShape)
-                                    .padding(2.dp)
-                                    .background(BadgeRed, CircleShape)
-                            )
-                        }
-                    }
+                    NotificationBadge(
+                        hasNotification = hasNotification,
+                        notificationCount = notificationCount,
+                        iconSize = iconSize,
+                        borderColor = if (sharedElementKeyPrefix != "drawer") Color.White else MaterialTheme.colorScheme.surface,
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    )
                     
                     if (onLongClick == null) {
                         AppContextMenu(
@@ -373,41 +346,13 @@ fun SearchAppItem(
                     )
                     
                     // NOTIFICATION BADGE
-                    if (hasNotification) {
-                        val borderColor = Color.White
-                        
-                        if (notificationCount > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .offset(x = 4.dp, y = (-4).dp)
-                                    .background(borderColor, CircleShape)
-                                    .padding(1.5.dp)
-                                    .background(BadgeRed, CircleShape)
-                                    .padding(horizontal = 4.dp, vertical = 1.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = if (notificationCount > 99) "99+" else notificationCount.toString(),
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                )
-                            }
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(2.dp)
-                                    .size(12.dp)
-                                    .background(borderColor, CircleShape)
-                                    .padding(2.dp)
-                                    .background(BadgeRed, CircleShape)
-                            )
-                        }
-                    }
+                    NotificationBadge(
+                        hasNotification = hasNotification,
+                        notificationCount = notificationCount,
+                        iconSize = iconSize,
+                        borderColor = Color.White,
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    )
                     
                     if (onLongClick == null) {
                         AppContextMenu(
@@ -444,6 +389,62 @@ fun SearchAppItem(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun NotificationBadge(
+    hasNotification: Boolean,
+    notificationCount: Int,
+    iconSize: androidx.compose.ui.unit.Dp = 56.dp,
+    modifier: Modifier = Modifier,
+    borderColor: Color = MaterialTheme.colorScheme.surface,
+    isConstantSmallSize: Boolean = false
+) {
+    if (!hasNotification) return
+
+    val scaleFactor = if (isConstantSmallSize) 0.8f else (iconSize.value / 56f).coerceIn(0.8f, 1.4f)
+    val badgeOffset = if (isConstantSmallSize) 6.dp else (5f * scaleFactor).dp
+    val dotSize = if (isConstantSmallSize) 10.dp else (13f * scaleFactor).coerceAtLeast(12f).dp
+    val badgeMinHeight = if (isConstantSmallSize) 16.dp else (20f * scaleFactor).coerceAtLeast(18f).dp
+    val badgeFontSize = if (isConstantSmallSize) 8.sp else (11f * scaleFactor).coerceAtLeast(10f).sp
+    val horizontalPadding = if (isConstantSmallSize) 4.dp else (5f * scaleFactor).dp
+    val verticalPadding = if (isConstantSmallSize) 1.dp else (2f * scaleFactor).dp
+
+    Box(modifier = modifier) {
+        if (notificationCount > 0) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = badgeOffset, y = -badgeOffset)
+                    .background(borderColor, CircleShape)
+                    .padding(1.5.dp)
+                    .background(BadgeRed, CircleShape)
+                    .defaultMinSize(minWidth = badgeMinHeight, minHeight = badgeMinHeight)
+                    .padding(horizontal = horizontalPadding, vertical = verticalPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = if (notificationCount > 99) "99+" else notificationCount.toString(),
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = badgeFontSize,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    textAlign = TextAlign.Center
+                )
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .offset(x = if (isConstantSmallSize) 4.dp else badgeOffset * 0.7f, y = if (isConstantSmallSize) (-4).dp else -badgeOffset * 0.7f)
+                    .size(dotSize)
+                    .background(borderColor, CircleShape)
+                    .padding(1.5.dp)
+                    .background(BadgeRed, CircleShape)
+            )
         }
     }
 }

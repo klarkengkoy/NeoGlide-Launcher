@@ -1,5 +1,6 @@
 package com.samidevstudio.neoglide.ui.components.folder
 
+import android.content.res.Configuration
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,8 +33,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
+import com.samidevstudio.neoglide.ui.theme.NeoGlideLauncherTheme
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.samidevstudio.neoglide.domain.model.AppModel
@@ -112,47 +116,20 @@ fun FolderItem(
             }
 
             // NOTIFICATION BADGE
-            if (hasNotification) {
-                val borderColor = Color.White
-                if (notificationCount > 0) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .offset(x = 4.dp, y = (-4).dp)
-                            .background(borderColor, CircleShape)
-                            .padding(1.5.dp)
-                            .background(BadgeRed, CircleShape)
-                            .padding(horizontal = 4.dp, vertical = 1.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = if (notificationCount > 99) "99+" else notificationCount.toString(),
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        )
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .offset(x = 2.dp, y = (-2).dp)
-                            .size(10.dp)
-                            .background(borderColor, CircleShape)
-                            .padding(1.5.dp)
-                            .background(BadgeRed, CircleShape)
-                    )
-                }
-            }
+            com.samidevstudio.neoglide.ui.components.NotificationBadge(
+                hasNotification = hasNotification,
+                notificationCount = notificationCount,
+                iconSize = iconSize,
+                borderColor = Color.White,
+                modifier = Modifier.align(Alignment.TopEnd)
+            )
         }
 
         if (showLabel) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall.copy(
+                style = MaterialTheme.typography.labelMedium.copy(
                     fontSize = fontSize,
                     color = if (isWallpaperLight) Color.Black.copy(alpha = 0.8f) else Color.White,
                     shadow = if (isWallpaperLight) {
@@ -189,6 +166,24 @@ private fun MiniAppIcon(app: AppModel?, useMonochrome: Boolean, size: Dp) {
                 size = size,
                 modifier = Modifier.fillMaxSize()
             )
+        }
+    }
+}
+
+@Preview(name = "Light Mode", showBackground = true)
+@Preview(name = "Dark Mode", uiMode = Configuration.UI_MODE_NIGHT_YES, showBackground = true)
+@Composable
+private fun FolderItemPreview() {
+    NeoGlideLauncherTheme {
+        Surface {
+            Box(modifier = Modifier.size(96.dp), contentAlignment = Alignment.Center) {
+                FolderItem(
+                    label = "Social",
+                    apps = emptyList(),
+                    hasNotification = true,
+                    notificationCount = 3
+                )
+            }
         }
     }
 }

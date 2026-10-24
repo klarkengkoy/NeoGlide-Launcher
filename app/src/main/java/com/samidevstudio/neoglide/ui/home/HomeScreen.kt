@@ -625,16 +625,29 @@ fun HomeScreen(
                                             }
                                         ) {
                                             when (item) {
-                                                is HomeItem.App -> AppItem(app = item.appModel, sharedTransitionScope = sharedTransitionScope, animatedVisibilityScope = animatedVisibilityScope, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, refreshTrigger = refreshTrigger, isHovered = isHovered, isBlocked = isBlocked, onClick = {
-                                                    if (editingWidgetId != -1) {
-                                                        editingWidgetId = -1
-                                                        return@AppItem
+                                                is HomeItem.App -> AppItem(
+                                                    app = item.appModel,
+                                                    sharedTransitionScope = sharedTransitionScope,
+                                                    animatedVisibilityScope = animatedVisibilityScope,
+                                                    sharedElementKeyPrefix = if (isDockItem) "dock" else "home",
+                                                    iconSize = iconSize,
+                                                    fontSize = fontSize,
+                                                    useMonochrome = preferences.useMonochromeIcons,
+                                                    showLabel = showLabels,
+                                                    refreshTrigger = refreshTrigger,
+                                                    isHovered = isHovered,
+                                                    isBlocked = isBlocked,
+                                                    onClick = {
+                                                        if (editingWidgetId != -1) {
+                                                            editingWidgetId = -1
+                                                            return@AppItem
+                                                        }
+                                                        if (draggingUniqueKey == null) {
+                                                            hapticFeedback(HapticEngine.HapticType.CLICK)
+                                                            viewModel.launchApp(item.appModel.packageName)
+                                                        }
                                                     }
-                                                    if (draggingUniqueKey == null) {
-                                                        hapticFeedback(HapticEngine.HapticType.CLICK)
-                                                        viewModel.launchApp(item.appModel.packageName)
-                                                    }
-                                                })
+                                                )
                                                 is HomeItem.Folder -> FolderItem(label = item.label, apps = item.apps, iconSize = iconSize, fontSize = fontSize, useMonochrome = preferences.useMonochromeIcons, showLabel = showLabels, isHovered = isHovered, isBlocked = isBlocked, onClick = {
                                                     if (editingWidgetId != -1) {
                                                         editingWidgetId = -1
