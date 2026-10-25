@@ -11,11 +11,11 @@ plugins {
 }
 
 android {
-    namespace = "com.samidevstudio.neoglide"
+    namespace = "com.smyddevstudio.neoglidelauncher"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.samidevstudio.neoglide"
+        applicationId = "com.smyddevstudio.neoglidelauncher"
         minSdk = 24
         targetSdk = 37
         versionCode = project.property("VERSION_CODE").toString().toInt()
